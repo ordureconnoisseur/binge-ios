@@ -1,16 +1,24 @@
 import SwiftUI
 
-// TikTok-style paged reel. Fetches a random page of scenes from
-// Stash and renders them in a vertical TabView with .page style —
-// SwiftUI handles paging, deceleration, and predicted touch frames
-// natively, which is what gives the native version its smoothness
-// advantage over the web's scroll-snap approach.
+// Vertical paged reel — iOS 17 native pattern.
 //
-// Pagination strategy in v0.1 is simple: load PAGE_SIZE scenes
-// once. When the user nears the end (within 3 slides of the
-// fetched list) we load another page and append. Pagination by
-// `sort: "random"` from Stash means duplicates are possible —
-// dedupe by id at append time.
+// Earlier version used the SwiftUI rotation trick (TabView with
+// .page style rotated 90°) to fake vertical paging. That's
+// historically how people did it before iOS 17, but it has known
+// issues: relies on UIScreen.main.bounds (deprecated), produces
+// off-centre layouts when the rotated frame math doesn't account
+// for the tab bar / safe area, and breaks on iPad multitasking.
+//
+// iOS 17 ships native vertical paging via:
+//   - ScrollView(.vertical) + LazyVStack with scrollTargetLayout()
+//   - .scrollTargetBehavior(.paging) — enables paging snap
+//   - .scrollPosition(id:) — tracks/binds the visible item
+//
+// Each slide explicitly sizes to the GeometryReader's height so a
+// swipe always advances exactly one full screen.
+//
+// Pagination: when the active scene is within 3 of the tail of the
+// fetched list, request another page. Dedupe by id on append.
 struct ReelView: View {
     @AppStorage("binge.stashUrl") private var stashUrl: String = ""
     @AppStorage("binge.stashApiKey") private var stashApiKey: String = ""
@@ -18,7 +26,7 @@ struct ReelView: View {
     @State private var scenes: [BingeScene] = []
     @State private var seenIds: Set<String> = []
     @State private var page: Int = 1
-    @State private var activeIndex: Int = 0
+    @State private var activeId: String?
     @State private var loading: Bool = false
     @State private var error: String?
 
@@ -29,70 +37,67 @@ struct ReelView: View {
     }
 
     var body: some View {
-        ZStack {
-            Color.black.ignoresSafeArea()
-            if scenes.isEmpty {
-                if let error {
-                    VStack(spacing: 10) {
-                        Text("Couldn't load scenes")
-                            .foregroundStyle(.white)
-                            .font(.headline)
-                        Text(error)
-                            .foregroundStyle(.white.opacity(0.6))
-                            .font(.footnote)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, 30)
-                    }
-                } else {
-                    ProgressView()
-                        .tint(.white)
-                }
-            } else {
-                TabView(selection: $activeIndex) {
-                    ForEach(Array(scenes.enumerated()), id: \.offset) {
-                        index,
-                        scene in
-                        SceneSlideView(
-                            scene: scene,
-                            isActive: index == activeIndex,
-                            baseURL: stashUrl,
-                            apiKey: stashApiKey,
-                            onLike: handleLike
-                        )
-                        .tag(index)
-                        .rotationEffect(.degrees(-90))
-                        .frame(
-                            width: UIScreen.main.bounds.width,
-                            height: UIScreen.main.bounds.height
-                        )
-                    }
-                }
-                // Rotate the TabView so its horizontal paging
-                // becomes vertical. Same trick the official AppKit
-                // TikTok-style demos use — SwiftUI's TabView only
-                // pages horizontally natively.
-                .rotationEffect(.degrees(90))
-                .frame(
-                    width: UIScreen.main.bounds.height,
-                    height: UIScreen.main.bounds.width
-                )
-                .offset(
-                    x: (UIScreen.main.bounds.width - UIScreen.main.bounds.height)
-                        / 2,
-                    y: (UIScreen.main.bounds.height - UIScreen.main.bounds.width)
-                        / 2
-                )
-                .tabViewStyle(.page(indexDisplayMode: .never))
-                .ignoresSafeArea()
+        GeometryReader { geo in
+            ZStack {
+                Color.black.ignoresSafeArea()
+                content(geo: geo)
             }
         }
         .task {
             await loadMoreIfNeeded()
         }
-        .onChange(of: activeIndex) { _, idx in
+        .onChange(of: activeId) { _, newId in
+            // Tail-load: when the user reaches the last few items,
+            // fetch another page so the reel feels endless.
+            guard let newId else { return }
+            guard let idx = scenes.firstIndex(where: { $0.id == newId })
+            else { return }
             if idx >= scenes.count - 3 {
                 Task { await loadMoreIfNeeded() }
             }
+        }
+    }
+
+    @ViewBuilder
+    private func content(geo: GeometryProxy) -> some View {
+        if scenes.isEmpty {
+            if let error {
+                VStack(spacing: 10) {
+                    Text("Couldn't load scenes")
+                        .foregroundStyle(.white)
+                        .font(.headline)
+                    Text(error)
+                        .foregroundStyle(.white.opacity(0.6))
+                        .font(.footnote)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 30)
+                }
+            } else {
+                ProgressView()
+                    .tint(.white)
+            }
+        } else {
+            ScrollView(.vertical, showsIndicators: false) {
+                LazyVStack(spacing: 0) {
+                    ForEach(scenes, id: \.id) { scene in
+                        SceneSlideView(
+                            scene: scene,
+                            isActive: scene.id == activeId,
+                            baseURL: stashUrl,
+                            apiKey: stashApiKey,
+                            onLike: handleLike
+                        )
+                        // Each slide claims the full GeometryReader
+                        // size so paging snaps one screen at a time.
+                        .frame(width: geo.size.width, height: geo.size.height)
+                        .id(scene.id)
+                    }
+                }
+                .scrollTargetLayout()
+            }
+            .scrollTargetBehavior(.paging)
+            .scrollPosition(id: $activeId)
+            .ignoresSafeArea()
         }
     }
 
@@ -115,6 +120,9 @@ struct ReelView: View {
             }
             scenes.append(contentsOf: newOnes)
             for s in newOnes { seenIds.insert(s.id) }
+            // Seed activeId on first batch so .scrollPosition has a
+            // stable target for the user's initial position.
+            if activeId == nil { activeId = newOnes.first?.id }
             page += 1
         } catch {
             self.error = (error as? LocalizedError)?.errorDescription

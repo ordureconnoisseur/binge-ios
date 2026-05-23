@@ -25,11 +25,14 @@ struct SceneSlideView: View {
 
     var body: some View {
         ZStack {
-            Color.black.ignoresSafeArea()
+            Color.black
 
             if let player {
+                // Video fills the slide. The slide itself is sized
+                // by ReelView's GeometryReader so we don't need to
+                // ignoresSafeArea here — the ScrollView container
+                // already does that.
                 VideoPlayerView(player: player)
-                    .ignoresSafeArea()
                     .onTapGesture(count: 2) { triggerLike() }
                     .onTapGesture { togglePause() }
             }
