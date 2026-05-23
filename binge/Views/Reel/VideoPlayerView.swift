@@ -18,7 +18,16 @@ struct VideoPlayerView: UIViewRepresentable {
     func makeUIView(context: Context) -> PlayerUIView {
         let view = PlayerUIView()
         view.playerLayer.player = player
-        view.playerLayer.videoGravity = .resizeAspectFill
+        // Aspect-fit (letterbox), NOT aspect-fill (crop). When a
+        // landscape (16:9) video plays in a portrait (9:16) slide,
+        // .resizeAspectFill would crop the sides to fill the slide
+        // vertically — losing actual video content. .resizeAspect
+        // shows the whole frame and pads with black above/below.
+        // The slide's own black background fills the leftover area,
+        // producing clean letterbox bars rather than the next
+        // slide's frame bleeding to the edges of the visible video.
+        view.playerLayer.videoGravity = .resizeAspect
+        view.backgroundColor = .black
         return view
     }
 
