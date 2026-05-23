@@ -85,52 +85,24 @@ struct BingeScene: Decodable, Identifiable, Hashable {
 
     // The URL the AVPlayer hits.
     //
-    // AVPlayer is fussier than the browser <video> element about
-    // source variations — HEVC profiles, unusual chroma sampling,
-    // certain MPEG-4 variants, container quirks. The web reel rides
-    // on the browser's much wider compatibility envelope, so it can
-    // default to `paths.stream` (Stash's "auto" choice, often the
-    // raw file). iOS can't.
+    // Reverted to the simple paths.stream default after a brief
+    // experiment with "always force MP4 transcode" broke playback
+    // for most scenes on the user's Stash install. The MP4
+    // transcode endpoints listed in sceneStreams must require auth
+    // handling we're not doing right (cookie vs ApiKey header, or
+    // query-string apikey, etc.) — and we don't have visibility
+    // into the failure mode from the iOS side.
     //
-    // Strategy on iOS: always prefer a transcoded endpoint over
-    // the raw file. Stash's MP4 transcode is universally H.264 —
-    // bulletproof on AVPlayer. HLS is the next-best — Stash
-    // transcodes the segments to MP4 fragments which AVPlayer
-    // handles natively. Only fall back to paths.stream when
-    // neither transcode is configured (rare Stash install).
+    // Diagnostic logging stays. When a scene fails, the Xcode
+    // console shows exactly which URL was tried + the source
+    // codec, which makes future fixes targeted instead of guesses.
     //
-    // Trade-off: pays the Stash-side transcode cost even for
-    // files that would have played fine direct. Acceptable for
-    // the reliability gain. Future work: a user-facing toggle
-    // (Auto / Direct / MP4 / WebM / HLS) like the web app for
-    // power users who want manual control.
+    // Future work: a Settings toggle (Auto / Direct / MP4 / HLS)
+    // like the web app — opt-in transcode override for users who
+    // know their Stash install supports a specific endpoint.
     func streamURL(base: String) -> URL? {
-        if let mp4 = preferredStream(matching: ["mp4"]) {
-            return logged("MP4 transcode", absoluteURL(mp4, base: base))
-        }
-        if let hls = preferredStream(matching: ["hls", "mpegurl", "x-mpegurl"]) {
-            return logged("HLS transcode", absoluteURL(hls, base: base))
-        }
         guard let stream = paths.stream else { return nil }
-        return logged("paths.stream fallback", absoluteURL(stream, base: base))
-    }
-
-    /// Pick a sceneStreams entry whose label or mime contains any
-    /// of the given needles. Excludes "Direct stream" variants
-    /// because those serve the raw file (with the label set to e.g.
-    /// "Direct stream MP4" even if the file is HEVC).
-    private func preferredStream(matching needles: [String]) -> String? {
-        for s in sceneStreams {
-            let label = (s.label ?? "").lowercased()
-            let mime = (s.mimeType ?? "").lowercased()
-            if label.contains("direct") { continue }
-            for needle in needles {
-                if label.contains(needle) || mime.contains(needle) {
-                    return s.url
-                }
-            }
-        }
-        return nil
+        return logged(absoluteURL(stream, base: base))
     }
 
     private func absoluteURL(_ pathOrURL: String, base: String) -> URL? {
@@ -143,14 +115,18 @@ struct BingeScene: Decodable, Identifiable, Hashable {
 
     /// Console-log the picked URL so debugging "this scene plays
     /// audio with a black frame" is just a matter of looking at
-    /// the Xcode console. Returns the URL untouched so it can be
-    /// chained inline in the picker above.
-    private func logged(_ kind: String, _ url: URL?) -> URL? {
+    /// the Xcode console. Returns the URL untouched.
+    private func logged(_ url: URL?) -> URL? {
         if let url {
+            let streamsSummary = sceneStreams
+                .prefix(5)
+                .map { "[\($0.label ?? "?")|\($0.mimeType ?? "?")]" }
+                .joined(separator: " ")
             print(
-                "[binge] streamURL[\(id)] kind=\(kind) "
+                "[binge] streamURL[\(id)] "
                     + "codec=\(files.first?.videoCodec ?? "?") "
-                    + "url=\(url.absoluteString)"
+                    + "url=\(url.absoluteString) "
+                    + "streams=\(streamsSummary)"
             )
         }
         return url
