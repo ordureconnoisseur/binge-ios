@@ -97,7 +97,14 @@ struct ReelView: View {
             }
             .scrollTargetBehavior(.paging)
             .scrollPosition(id: $activeId)
-            .ignoresSafeArea()
+            // NOTE: NO .ignoresSafeArea() here. The GeometryReader's
+            // `geo.size.height` already excludes the tab bar — slides
+            // are sized to fit within the safe area. If we extend
+            // the ScrollView past the safe area (i.e. behind the tab
+            // bar), the viewport becomes taller than each slide, so
+            // paging snaps mid-screen and you see two slides at once.
+            // Keeping the ScrollView within safe area is what makes
+            // slide-bottom align with screen-bottom-of-content.
         }
     }
 
