@@ -3,6 +3,21 @@ import Foundation
 // GraphQL query strings ported from the web plugin's src/api/queries.ts.
 // One string per query, named identically so the cross-reference is
 // obvious. Companion `Codable` response types live in Models/.
+enum Mutations {
+    /// Increment the scene's O-counter. Mirrors the web plugin's
+    /// `sceneIncrementO` mutation — used by the double-tap-to-like
+    /// gesture in the reel.
+    static let sceneIncrementO = """
+        mutation SceneIncrementO($id: ID!) {
+            sceneIncrementO(id: $id)
+        }
+        """
+}
+
+struct IncrementOResponse: Decodable {
+    let sceneIncrementO: Int
+}
+
 enum Queries {
     /// Connection check — used by SettingsView's "Connect" button.
     /// Returns Stash's running version; used only to confirm the

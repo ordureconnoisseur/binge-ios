@@ -20,23 +20,18 @@ struct RootView: View {
     }
 }
 
-// Placeholder until ReelView / HomeView / PerformerProfileView land.
-// Just a stub TabView so the build runs end-to-end this week and we
-// can iterate from there.
+// v0.1 = reel + settings only. Home / profile / discovery land in
+// later versions once we've validated that native AVPlayer + paged
+// TabView actually feel meaningfully smoother than the web app.
 private struct MainShell: View {
     var body: some View {
         TabView {
-            Text("Home")
-                .tabItem { Label("Home", systemImage: "house") }
-
-            Text("Reel")
+            ReelView()
                 .tabItem { Label("For You", systemImage: "play.square") }
-
-            Text("Profile")
-                .tabItem { Label("Profile", systemImage: "person.circle") }
 
             SettingsView(mode: .normal)
                 .tabItem { Label("Settings", systemImage: "gearshape") }
         }
+        .tint(.white)
     }
 }
