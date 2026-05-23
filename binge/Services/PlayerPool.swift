@@ -1,7 +1,7 @@
 import AVFoundation
 import Foundation
 
-// LRU cache of AVPlayer instances keyed by scene id. Solves
+// LRU cache of AVQueuePlayer instances keyed by scene id. Solves
 // LazyVStack churn: when a slide unmounts its SceneSlideView's
 // @State is lost, but its player stays alive HERE. When the user
 // scrolls back, the pool returns the same warm player — instant
@@ -12,16 +12,20 @@ import Foundation
 // iOS's ~4 concurrent H.264 hardware decoders since only the
 // active player decodes; others sit paused.
 //
-// Looping: AVPlayerItemDidPlayToEndTime + seek-to-zero. Earlier
-// version used AVPlayerLooper which queues a duplicate item — half
-// the memory savings come from dropping that.
+// Looping is via AVPlayerLooper. We briefly tried manual-loop via
+// AVPlayerItemDidPlayToEndTime notification observers — five
+// pool entries each firing their own seek-to-zero callback turned
+// out to be enough to push the iOS media-services XPC daemon into
+// AVErrorMediaServicesWereReset (-12860), which broke EVERY scene
+// in the reel, not just the one being looped. AVPlayerLooper
+// handles looping at the AVFoundation layer where it belongs.
 @MainActor
 final class PlayerPool {
     static let shared = PlayerPool(capacity: 5)
 
     private struct Entry {
-        let player: AVPlayer
-        let endObserver: NSObjectProtocol
+        let player: AVQueuePlayer
+        let looper: AVPlayerLooper
         var lastUsed: Date
     }
 
@@ -32,8 +36,8 @@ final class PlayerPool {
         self.capacity = capacity
     }
 
-    /// Get a player for this scene. Cache hit refreshes lastUsed +
-    /// returns the existing player. Cache miss creates a new
+    /// Get a player for this scene. Cache hit refreshes lastUsed
+    /// + returns the existing player. Cache miss creates a new
     /// player (and evicts the LRU entry if we'd exceed capacity).
     /// Returns nil only when the scene has no stream URL.
     func player(
@@ -56,48 +60,21 @@ final class PlayerPool {
             ]
         )
         let item = AVPlayerItem(asset: asset)
-        item.preferredForwardBufferDuration = 4.0
-        let player = AVPlayer(playerItem: item)
-        player.isMuted = muted
-        // Manual loop: seek to zero + resume when the current item
-        // finishes. The notification's `object` is the SPECIFIC
-        // item — so this observer only fires for this player's
-        // item, not any other player's. weak player so we don't
-        // leak the player via the observer block.
-        let observer = NotificationCenter.default.addObserver(
-            forName: .AVPlayerItemDidPlayToEndTime,
-            object: item,
-            queue: .main
-        ) { [weak player] _ in
-            player?.seek(to: .zero)
-            player?.play()
-        }
+        let q = AVQueuePlayer(playerItem: item)
+        q.isMuted = muted
+        // AVPlayerLooper queues a second item internally for
+        // seamless looping. Slightly more memory than manual seek
+        // but the media services overhead of N concurrent
+        // .AVPlayerItemDidPlayToEndTime observers (the alternative)
+        // is more disruptive than the duplicate item.
+        let looper = AVPlayerLooper(player: q, templateItem: item)
         entries[scene.id] = Entry(
-            player: player,
-            endObserver: observer,
+            player: q,
+            looper: looper,
             lastUsed: Date()
         )
         evictIfNeeded()
-        return player
-    }
-
-    /// Same as player(for:) but ignores the return value — used by
-    /// ReelView to proactively warm upcoming scenes when activeId
-    /// changes, so the next swipe is a cache hit instead of a
-    /// cold load. The pool retains the entry; the next caller
-    /// (the slide's onAppear) finds it warm.
-    func prewarm(
-        scene: BingeScene,
-        baseURL: String,
-        apiKey: String,
-        muted: Bool
-    ) {
-        _ = player(
-            for: scene,
-            baseURL: baseURL,
-            apiKey: apiKey,
-            muted: muted
-        )
+        return q
     }
 
     /// Refresh lastUsed for a scene without touching the player.
@@ -116,11 +93,11 @@ final class PlayerPool {
         for (_, entry) in entries { entry.player.pause() }
     }
 
-    /// Drain the pool, keeping only the listed scene ids. Used
-    /// when the user navigates away from the reel entirely.
+    /// Drain the pool, keeping only the listed scene ids.
     func evictExcept(keepers: Set<String>) {
         for (id, entry) in entries where !keepers.contains(id) {
-            tearDown(entry: entry)
+            entry.player.pause()
+            entry.player.replaceCurrentItem(with: nil)
             entries.removeValue(forKey: id)
         }
     }
@@ -135,14 +112,9 @@ final class PlayerPool {
                     $0.value.lastUsed < $1.value.lastUsed
                 })
             else { return }
-            tearDown(entry: oldest.value)
+            oldest.value.player.pause()
+            oldest.value.player.replaceCurrentItem(with: nil)
             entries.removeValue(forKey: oldest.key)
         }
-    }
-
-    private func tearDown(entry: Entry) {
-        NotificationCenter.default.removeObserver(entry.endObserver)
-        entry.player.pause()
-        entry.player.replaceCurrentItem(with: nil)
     }
 }

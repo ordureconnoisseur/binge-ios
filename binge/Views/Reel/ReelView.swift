@@ -55,22 +55,15 @@ struct ReelView: View {
             if idx >= scenes.count - 3 {
                 Task { await loadMoreIfNeeded() }
             }
-            // Predictive warming: ask the pool to start buffering
-            // the next 2 scenes so the swipe-to-N+1 / N+2 paths
-            // are cache hits instead of cold loads. Forward-bias
-            // only — most users scroll DOWN in a reel; backward
-            // re-visits are already covered by the LRU pool
-            // hanging onto recently-viewed scenes.
-            for offset in 1...2 {
-                let warmIdx = idx + offset
-                guard warmIdx < scenes.count else { break }
-                PlayerPool.shared.prewarm(
-                    scene: scenes[warmIdx],
-                    baseURL: stashUrl,
-                    apiKey: stashApiKey,
-                    muted: true
-                )
-            }
+            // Predictive prewarming was removed — combined with
+            // eager-mount + pool-keep-alive it was creating ~5
+            // simultaneous AVPlayers contending for media-services
+            // resources. The XPC layer (PlayerRemoteXPC) started
+            // returning -12860 AVErrorMediaServicesWereReset for
+            // every scene, not just the prewarmed ones. Relying
+            // on LazyVStack's mount-window prefetch alone for
+            // forward-scroll snappiness — it's the natural
+            // signal SwiftUI gives us and stays within budget.
         }
     }
 
