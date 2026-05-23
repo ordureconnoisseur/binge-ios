@@ -1,10 +1,11 @@
 import AVKit
 import SwiftUI
 
-// One reel slide. Owns its AVPlayer (created when the slide
-// becomes active, torn down on disappear). Plays the configured
-// stream URL on appear, loops via AVPlayerLooper, advances the
-// O-counter on double-tap with a brief heart-burst animation.
+// One reel slide. Used to own its AVPlayer — now checks one out
+// from PlayerPool. That means when LazyVStack unmounts this slide
+// (scrolls it out of its mount window), the player stays alive in
+// the pool. When the user scrolls back, the pool returns the same
+// warm player — no re-buffer.
 //
 // Mute state is shared across slides via @AppStorage so the user's
 // preference persists when scrolling forward/back.
@@ -17,8 +18,11 @@ struct SceneSlideView: View {
 
     @AppStorage("binge.muted") private var muted: Bool = true
 
-    @State private var player: AVPlayer?
-    @State private var looper: AVPlayerLooper?
+    // Holds a reference to the pool-owned player ONLY for the
+    // lifetime of this view. We never tear down the player from
+    // here — the pool decides when to evict. Re-fetched from the
+    // pool on every appear / scene-id change.
+    @State private var player: AVQueuePlayer?
     @State private var heartBursting: Bool = false
     @State private var localOCounter: Int = 0
     @State private var paused: Bool = false
@@ -120,9 +124,7 @@ struct SceneSlideView: View {
             }
         }
         .onChange(of: isActive) { _, nowActive in
-            // Don't recreate the player here — it was already
-            // created on .onAppear so the asset has been buffering
-            // since the slide became visible (even before activation).
+            // The player came from the pool — already buffering.
             // Just toggle playback.
             if nowActive {
                 player?.play()
@@ -132,55 +134,42 @@ struct SceneSlideView: View {
         }
         .onAppear {
             localOCounter = scene.oCounter ?? 0
-            // EAGER PREFETCH: create the player as soon as the slide
-            // mounts, regardless of whether it's active. LazyVStack
-            // mounts items near the viewport (a few above + below
-            // the active slide), so by the time the user swipes,
-            // the next slide's AVPlayer has already loaded its
-            // asset header and pre-buffered a few seconds. Playback
-            // starts effectively instantly on swipe-settle.
+            // Check out a player from the pool. On a cold start
+            // this allocates a new AVQueuePlayer + AVPlayerLooper
+            // and starts buffering. On a return visit (user scrolled
+            // back to this scene) the pool returns the warm cached
+            // player — instant playback with no re-buffer.
             //
-            // Non-active prefetched players are created paused —
-            // they only consume network for the initial buffer, not
-            // continuous decoding.
-            ensurePlayer()
+            // The player stays in the pool when this view unmounts;
+            // we don't tear anything down on .onDisappear. The pool
+            // handles LRU eviction.
+            player = PlayerPool.shared.player(
+                for: scene,
+                baseURL: baseURL,
+                apiKey: apiKey,
+                muted: muted
+            )
+            if isActive { player?.play() }
+        }
+        .onChange(of: scene.id) { _, _ in
+            // Defensive: if SwiftUI recycles this view across
+            // different scene ids (LazyVStack identity changes),
+            // re-fetch from the pool.
+            player = PlayerPool.shared.player(
+                for: scene,
+                baseURL: baseURL,
+                apiKey: apiKey,
+                muted: muted
+            )
             if isActive { player?.play() }
         }
         .onDisappear {
-            if let player {
-                player.pause()
-                PlayerRegistry.unregister(player)
-            }
+            // Pause the player but DON'T evict — pool retains it
+            // across slide remount cycles so scroll-back is warm.
+            // The pool decides when to actually tear down via LRU.
+            player?.pause()
             player = nil
-            looper = nil
         }
-    }
-
-    private func ensurePlayer() {
-        if player != nil { return }
-        guard let url = scene.streamURL(base: baseURL) else { return }
-        // Inject ApiKey via the AVAsset HTTP headers so the request
-        // authenticates the same way StashClient does.
-        let asset = AVURLAsset(
-            url: url,
-            options: [
-                "AVURLAssetHTTPHeaderFieldsKey": ["ApiKey": apiKey]
-            ]
-        )
-        let item = AVPlayerItem(asset: asset)
-        // Encourage AVPlayer to buffer a few seconds ahead. Default
-        // is "auto" which is conservative; for the reel's swipe-and-
-        // play pattern we want more headroom so the first frame is
-        // ready the moment a slide becomes active.
-        item.preferredForwardBufferDuration = 4.0
-        let q = AVQueuePlayer(playerItem: item)
-        q.isMuted = muted
-        // AVPlayerLooper handles seamless looping. Without it the
-        // video would stop at the end; with it we get TikTok-style
-        // continuous playback until the user swipes.
-        looper = AVPlayerLooper(player: q, templateItem: item)
-        player = q
-        PlayerRegistry.register(q)
     }
 
     private func triggerLike() {
