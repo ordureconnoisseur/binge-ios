@@ -120,8 +120,11 @@ struct SceneSlideView: View {
             }
         }
         .onChange(of: isActive) { _, nowActive in
+            // Don't recreate the player here — it was already
+            // created on .onAppear so the asset has been buffering
+            // since the slide became visible (even before activation).
+            // Just toggle playback.
             if nowActive {
-                ensurePlayer()
                 player?.play()
             } else {
                 player?.pause()
@@ -129,10 +132,25 @@ struct SceneSlideView: View {
         }
         .onAppear {
             localOCounter = scene.oCounter ?? 0
-            if isActive { ensurePlayer() }
+            // EAGER PREFETCH: create the player as soon as the slide
+            // mounts, regardless of whether it's active. LazyVStack
+            // mounts items near the viewport (a few above + below
+            // the active slide), so by the time the user swipes,
+            // the next slide's AVPlayer has already loaded its
+            // asset header and pre-buffered a few seconds. Playback
+            // starts effectively instantly on swipe-settle.
+            //
+            // Non-active prefetched players are created paused —
+            // they only consume network for the initial buffer, not
+            // continuous decoding.
+            ensurePlayer()
+            if isActive { player?.play() }
         }
         .onDisappear {
-            player?.pause()
+            if let player {
+                player.pause()
+                PlayerRegistry.unregister(player)
+            }
             player = nil
             looper = nil
         }
@@ -150,6 +168,11 @@ struct SceneSlideView: View {
             ]
         )
         let item = AVPlayerItem(asset: asset)
+        // Encourage AVPlayer to buffer a few seconds ahead. Default
+        // is "auto" which is conservative; for the reel's swipe-and-
+        // play pattern we want more headroom so the first frame is
+        // ready the moment a slide becomes active.
+        item.preferredForwardBufferDuration = 4.0
         let q = AVQueuePlayer(playerItem: item)
         q.isMuted = muted
         // AVPlayerLooper handles seamless looping. Without it the
@@ -157,6 +180,7 @@ struct SceneSlideView: View {
         // continuous playback until the user swipes.
         looper = AVPlayerLooper(player: q, templateItem: item)
         player = q
+        PlayerRegistry.register(q)
     }
 
     private func triggerLike() {
