@@ -94,20 +94,21 @@ struct ReelView: View {
                 .scrollTargetLayout()
             }
             // Force the ScrollView's outer frame to MATCH the slide
-            // frame size exactly. SwiftUI was inferring the
-            // ScrollView size from the parent and ending up slightly
-            // taller than each slide (probably grabbing some
-            // tab-bar-reserved space back), which made the next +
-            // previous slides peek into the viewport.
+            // frame size exactly. Without this, SwiftUI was sizing
+            // the ScrollView from its parent (sometimes including
+            // tab-bar-reserved space) and the viewport ended up
+            // taller than each slide — adjacent slides peeked in.
+            // Locking the frame here makes viewport == slide_height
+            // exactly, which means `.paging` (which snaps to
+            // viewport-bounds chunks) now coincides with slide
+            // boundaries.
             .frame(width: geo.size.width, height: geo.size.height)
-            // .viewAligned snaps to scrollTargetLayout item
-            // boundaries; .paging snaps to viewport-bounds-sized
-            // chunks. They're equivalent when slide_height ==
-            // viewport_height EXACTLY — but if there's any
-            // rounding/inset drift, .viewAligned still snaps to the
-            // slide whereas .paging drifts. .viewAligned is the
-            // safer primitive for item-paged scrolling.
-            .scrollTargetBehavior(.viewAligned)
+            // .paging gives the TikTok-style fast snap; .viewAligned
+            // decelerates more gently which feels sluggish for a
+            // reel. Now that the viewport size is locked to the
+            // slide size above, .paging snaps cleanly to each
+            // slide without bleed.
+            .scrollTargetBehavior(.paging)
             .scrollPosition(id: $activeId)
             .clipped()
         }
