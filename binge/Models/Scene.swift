@@ -85,31 +85,22 @@ struct BingeScene: Decodable, Identifiable, Hashable {
 
     // The URL the AVPlayer hits.
     //
-    // Default: pass paths.stream through unchanged. That's the URL
-    // Stash assembles + signs with the apikey query string; works
-    // for every H.264 scene tested.
-    //
-    // HEVC scenes: AVPlayer's hardware decoder rejects the raw
-    // file. Surgically append `.mp4` to the stream path to force
-    // Stash's MP4 transcode endpoint (`/scene/<id>/stream.mp4`).
-    // We touch ONLY the path component, leaving the query string
-    // (including `?apikey=...`) untouched — so auth keeps working
-    // exactly the way the default URL does. Avoids going through
-    // sceneStreams[] altogether (those entries had auth quirks we
-    // couldn't resolve).
-    //
-    // Diagnostic logging stays — when something fails, the Xcode
-    // console shows the picked URL + codec + advertised
-    // sceneStreams labels so we can iterate.
+    // Default: pass paths.stream through unchanged. That URL works
+    // for every H.264 scene tested. HEVC scenes get audio but
+    // black video (AVPlayer's decoder rejects them); the .mp4
+    // path-rewrite trial made HEVC scenes break entirely, so
+    // we've rolled that back too. Need to see the sceneStreams[]
+    // URLs to pick the right one — the log below now prints them
+    // in full.
     func streamURL(base: String) -> URL? {
         guard let stream = paths.stream else { return nil }
-        let chosen = isHEVC ? forceMP4Extension(stream) : stream
-        return logged(absoluteURL(chosen, base: base))
+        return logged(absoluteURL(stream, base: base))
     }
 
-    /// True when the source file's codec is HEVC / H.265. Matches
-    /// "hevc", "h265", "h.265" — different Stash + ffprobe
-    /// versions report it slightly differently.
+    /// True when the source file's codec is HEVC / H.265. Used to
+    /// flag scenes we'd ideally route to a transcode endpoint —
+    /// once we figure out which sceneStreams entry actually
+    /// works.
     var isHEVC: Bool {
         guard let codec = files.first?.videoCodec?.lowercased() else {
             return false
@@ -117,29 +108,6 @@ struct BingeScene: Decodable, Identifiable, Hashable {
         return codec.contains("hevc")
             || codec.contains("h265")
             || codec.contains("h.265")
-    }
-
-    /// Take a URL like `https://host/scene/123/stream?apikey=...`
-    /// and rewrite the path to `/scene/123/stream.mp4`, keeping
-    /// the query string intact. Stash treats `/stream.mp4` as an
-    /// explicit MP4 transcode request — which forces H.264 on the
-    /// wire and is universally decodable by AVPlayer.
-    ///
-    /// Idempotent: if the path already ends with `.mp4`, returns
-    /// the input unchanged.
-    private func forceMP4Extension(_ urlString: String) -> String {
-        let qIdx = urlString.firstIndex(of: "?")
-        let path: String
-        let query: String
-        if let qIdx {
-            path = String(urlString[..<qIdx])
-            query = String(urlString[qIdx...])
-        } else {
-            path = urlString
-            query = ""
-        }
-        if path.hasSuffix(".mp4") { return urlString }
-        return path + ".mp4" + query
     }
 
     private func absoluteURL(_ pathOrURL: String, base: String) -> URL? {
@@ -150,21 +118,28 @@ struct BingeScene: Decodable, Identifiable, Hashable {
         return URL(string: "\(trimmedBase)\(pathOrURL)")
     }
 
-    /// Console-log the picked URL so debugging "this scene plays
-    /// audio with a black frame" is just a matter of looking at
-    /// the Xcode console. Returns the URL untouched.
+    /// Console-log the picked URL plus full sceneStreams entries
+    /// so we can see exactly what URL patterns Stash advertises
+    /// for each transcode endpoint. Returns the URL untouched.
+    ///
+    /// Format: one line per sceneStreams entry, indented under
+    /// the streamURL line — easier to grep / copy-paste than the
+    /// previous summary form.
     private func logged(_ url: URL?) -> URL? {
         if let url {
-            let streamsSummary = sceneStreams
-                .prefix(5)
-                .map { "[\($0.label ?? "?")|\($0.mimeType ?? "?")]" }
-                .joined(separator: " ")
             print(
                 "[binge] streamURL[\(id)] "
                     + "codec=\(files.first?.videoCodec ?? "?") "
-                    + "url=\(url.absoluteString) "
-                    + "streams=\(streamsSummary)"
+                    + "picked=\(url.absoluteString)"
             )
+            for s in sceneStreams {
+                print(
+                    "[binge]   stream "
+                        + "label=\(s.label ?? "?") "
+                        + "mime=\(s.mimeType ?? "?") "
+                        + "url=\(s.url)"
+                )
+            }
         }
         return url
     }
