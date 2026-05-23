@@ -161,6 +161,12 @@ struct ReelView: View {
             )
             return resp.sceneIncrementO
         } catch {
+            // Surface the error so we can see in the Xcode console
+            // what's actually going wrong when likes fail. Common
+            // possibilities: mutation schema drift in newer Stash
+            // versions (sceneIncrementO returning a struct instead
+            // of Int), network timeout, auth issue.
+            print("[binge] handleLike[\(scene.id)] failed: \(error)")
             return nil
         }
     }

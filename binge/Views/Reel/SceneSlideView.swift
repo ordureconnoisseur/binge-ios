@@ -25,7 +25,6 @@ struct SceneSlideView: View {
     @State private var player: AVPlayer?
     @State private var heartBursting: Bool = false
     @State private var localOCounter: Int = 0
-    @State private var paused: Bool = false
     // Drives the screenshot poster overlay. Starts true on every
     // (re)mount; flips false once the player's currentTime crosses
     // ~50ms — the moment we know the video has decoded a frame.
@@ -54,33 +53,28 @@ struct SceneSlideView: View {
 
             if let player {
                 // Video is INSET from the slide's top + bottom edges
-                // by a fixed pad. The pad guarantees a visible black
-                // border above and below the video regardless of
-                // its native aspect ratio, so:
-                //   - Portrait 9:16 videos no longer abut the next
-                //     slide directly during a paging swipe.
-                //   - Landscape videos (letterboxed via the
-                //     .resizeAspect gravity in VideoPlayerView) get
-                //     even more black space, but it reads cleanly
-                //     since the inset is the same on every slide.
-                // The overlay chrome (mute, action stack, performer
-                // info) renders OUTSIDE the padded video, in the
-                // bordered area + above the video — same visual
-                // language as the web app.
+                // by a fixed pad. Black bands above + below regardless
+                // of source aspect ratio.
+                //
+                // Gestures: ONLY double-tap (for like). Removed the
+                // single-tap pause toggle — it was interfering with
+                // double-tap recognition (SwiftUI waits ~300ms
+                // post-single-tap to decide if a double-tap is
+                // incoming), and rapid hearting from the action
+                // stack button could race with the video taps in
+                // ways that triggered AVPlayer state churn.
+                // TikTok itself doesn't have a tap-to-pause gesture;
+                // matching that pattern.
                 VideoPlayerView(player: player)
                     .padding(.vertical, 22)
                     .onTapGesture(count: 2) { triggerLike() }
-                    .onTapGesture { togglePause() }
             }
 
-            // Pause overlay — visible only when explicitly paused
-            // (not while video buffers or loads).
-            if paused {
-                Image(systemName: "play.fill")
-                    .font(.system(size: 78, weight: .regular))
-                    .foregroundStyle(.white.opacity(0.85))
-                    .shadow(radius: 12)
-            }
+            // Pause overlay used to live here, driven by a
+            // single-tap gesture on the video. Removed alongside
+            // the gesture — playback is just on/off via isActive
+            // (active = play, inactive = pause). Re-add later as
+            // a long-press gesture if we want manual pause back.
 
             // Mute toggle — sits opposite the action stack so it
             // never collides with the heart.
@@ -232,14 +226,4 @@ struct SceneSlideView: View {
         }
     }
 
-    private func togglePause() {
-        guard let player else { return }
-        if paused {
-            player.play()
-            paused = false
-        } else {
-            player.pause()
-            paused = true
-        }
-    }
 }
