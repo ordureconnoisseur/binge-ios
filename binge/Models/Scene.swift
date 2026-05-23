@@ -85,24 +85,61 @@ struct BingeScene: Decodable, Identifiable, Hashable {
 
     // The URL the AVPlayer hits.
     //
-    // Reverted to the simple paths.stream default after a brief
-    // experiment with "always force MP4 transcode" broke playback
-    // for most scenes on the user's Stash install. The MP4
-    // transcode endpoints listed in sceneStreams must require auth
-    // handling we're not doing right (cookie vs ApiKey header, or
-    // query-string apikey, etc.) — and we don't have visibility
-    // into the failure mode from the iOS side.
+    // Default: pass paths.stream through unchanged. That's the URL
+    // Stash assembles + signs with the apikey query string; works
+    // for every H.264 scene tested.
     //
-    // Diagnostic logging stays. When a scene fails, the Xcode
-    // console shows exactly which URL was tried + the source
-    // codec, which makes future fixes targeted instead of guesses.
+    // HEVC scenes: AVPlayer's hardware decoder rejects the raw
+    // file. Surgically append `.mp4` to the stream path to force
+    // Stash's MP4 transcode endpoint (`/scene/<id>/stream.mp4`).
+    // We touch ONLY the path component, leaving the query string
+    // (including `?apikey=...`) untouched — so auth keeps working
+    // exactly the way the default URL does. Avoids going through
+    // sceneStreams[] altogether (those entries had auth quirks we
+    // couldn't resolve).
     //
-    // Future work: a Settings toggle (Auto / Direct / MP4 / HLS)
-    // like the web app — opt-in transcode override for users who
-    // know their Stash install supports a specific endpoint.
+    // Diagnostic logging stays — when something fails, the Xcode
+    // console shows the picked URL + codec + advertised
+    // sceneStreams labels so we can iterate.
     func streamURL(base: String) -> URL? {
         guard let stream = paths.stream else { return nil }
-        return logged(absoluteURL(stream, base: base))
+        let chosen = isHEVC ? forceMP4Extension(stream) : stream
+        return logged(absoluteURL(chosen, base: base))
+    }
+
+    /// True when the source file's codec is HEVC / H.265. Matches
+    /// "hevc", "h265", "h.265" — different Stash + ffprobe
+    /// versions report it slightly differently.
+    var isHEVC: Bool {
+        guard let codec = files.first?.videoCodec?.lowercased() else {
+            return false
+        }
+        return codec.contains("hevc")
+            || codec.contains("h265")
+            || codec.contains("h.265")
+    }
+
+    /// Take a URL like `https://host/scene/123/stream?apikey=...`
+    /// and rewrite the path to `/scene/123/stream.mp4`, keeping
+    /// the query string intact. Stash treats `/stream.mp4` as an
+    /// explicit MP4 transcode request — which forces H.264 on the
+    /// wire and is universally decodable by AVPlayer.
+    ///
+    /// Idempotent: if the path already ends with `.mp4`, returns
+    /// the input unchanged.
+    private func forceMP4Extension(_ urlString: String) -> String {
+        let qIdx = urlString.firstIndex(of: "?")
+        let path: String
+        let query: String
+        if let qIdx {
+            path = String(urlString[..<qIdx])
+            query = String(urlString[qIdx...])
+        } else {
+            path = urlString
+            query = ""
+        }
+        if path.hasSuffix(".mp4") { return urlString }
+        return path + ".mp4" + query
     }
 
     private func absoluteURL(_ pathOrURL: String, base: String) -> URL? {
