@@ -22,14 +22,35 @@ struct SceneSlideView: View {
     // lifetime of this view. We never tear down the player from
     // here — the pool decides when to evict. Re-fetched from the
     // pool on every appear / scene-id change.
-    @State private var player: AVQueuePlayer?
+    @State private var player: AVPlayer?
     @State private var heartBursting: Bool = false
     @State private var localOCounter: Int = 0
     @State private var paused: Bool = false
+    // Drives the screenshot poster overlay. Starts true on every
+    // (re)mount; flips false once the player's currentTime crosses
+    // ~50ms — the moment we know the video has decoded a frame.
+    @State private var posterVisible: Bool = true
+    // Periodic time observer token. Owned by this view so we can
+    // remove it on disappear (otherwise it'd keep firing for an
+    // off-screen slide whose player is still alive in the pool).
+    @State private var timeObserver: Any?
 
     var body: some View {
         ZStack {
             Color.black
+
+            // Screenshot poster — sits BEHIND the video and renders
+            // immediately on mount so cold-load doesn't show black.
+            // Pulled from scene.paths.screenshot via the scene's
+            // helper. Hidden as soon as the player decodes its
+            // first frame (posterVisible → false via the periodic
+            // time observer below). The same .padding(.vertical, 22)
+            // as the video so the poster occupies the same rect.
+            if posterVisible, let screenshotURL = scene.screenshotURL(base: baseURL) {
+                AuthImageView(url: screenshotURL, apiKey: apiKey)
+                    .padding(.vertical, 22)
+                    .transition(.opacity)
+            }
 
             if let player {
                 // Video is INSET from the slide's top + bottom edges
@@ -134,42 +155,65 @@ struct SceneSlideView: View {
         }
         .onAppear {
             localOCounter = scene.oCounter ?? 0
+            posterVisible = true
             // Check out a player from the pool. On a cold start
-            // this allocates a new AVQueuePlayer + AVPlayerLooper
-            // and starts buffering. On a return visit (user scrolled
-            // back to this scene) the pool returns the warm cached
-            // player — instant playback with no re-buffer.
-            //
-            // The player stays in the pool when this view unmounts;
-            // we don't tear anything down on .onDisappear. The pool
-            // handles LRU eviction.
-            player = PlayerPool.shared.player(
-                for: scene,
-                baseURL: baseURL,
-                apiKey: apiKey,
-                muted: muted
-            )
-            if isActive { player?.play() }
+            // this allocates a new AVPlayer and starts buffering.
+            // On a return visit (user scrolled back) the pool
+            // returns the warm cached player — instant playback,
+            // no re-buffer.
+            attachPlayer()
         }
         .onChange(of: scene.id) { _, _ in
-            // Defensive: if SwiftUI recycles this view across
-            // different scene ids (LazyVStack identity changes),
+            // Slide rebinds to a different scene (LazyVStack reuse).
+            // Detach the old observer, reset the poster flag, and
             // re-fetch from the pool.
-            player = PlayerPool.shared.player(
-                for: scene,
-                baseURL: baseURL,
-                apiKey: apiKey,
-                muted: muted
-            )
-            if isActive { player?.play() }
+            detachTimeObserver()
+            posterVisible = true
+            attachPlayer()
         }
         .onDisappear {
             // Pause the player but DON'T evict — pool retains it
             // across slide remount cycles so scroll-back is warm.
             // The pool decides when to actually tear down via LRU.
+            detachTimeObserver()
             player?.pause()
             player = nil
         }
+    }
+
+    private func attachPlayer() {
+        let p = PlayerPool.shared.player(
+            for: scene,
+            baseURL: baseURL,
+            apiKey: apiKey,
+            muted: muted
+        )
+        player = p
+        if isActive { p?.play() }
+        // Add a periodic time observer to detect first-frame
+        // decode. As soon as the player's currentTime advances
+        // past ~50ms we know a frame is on screen, so we can hide
+        // the poster. Coarse 1/30s interval is fine — we don't
+        // need sub-frame precision.
+        if let p {
+            timeObserver = p.addPeriodicTimeObserver(
+                forInterval: CMTime(value: 1, timescale: 30),
+                queue: .main
+            ) { time in
+                if posterVisible && time.seconds > 0.05 {
+                    withAnimation(.easeOut(duration: 0.15)) {
+                        posterVisible = false
+                    }
+                }
+            }
+        }
+    }
+
+    private func detachTimeObserver() {
+        if let token = timeObserver, let p = player {
+            p.removeTimeObserver(token)
+        }
+        timeObserver = nil
     }
 
     private func triggerLike() {

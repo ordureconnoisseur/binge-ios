@@ -1,29 +1,27 @@
 import AVFoundation
 import Foundation
 
-// LRU cache of AVQueuePlayer instances keyed by scene id. Solves
-// the LazyVStack churn problem: when a slide unmounts (scrolls out
-// of LazyVStack's window) its SceneSlideView's @State is lost, but
-// its player stays alive HERE. When the user scrolls back, the
-// pool returns the same warm player — instant playback, no
-// re-buffer.
+// LRU cache of AVPlayer instances keyed by scene id. Solves
+// LazyVStack churn: when a slide unmounts its SceneSlideView's
+// @State is lost, but its player stays alive HERE. When the user
+// scrolls back, the pool returns the same warm player — instant
+// playback, no re-buffer.
 //
-// Capacity is set to 5 — bigger than LazyVStack's typical mount
-// window (~3-5 slides) so any slide currently mounted always has
-// its player cached, plus a couple of extra slots for recently-
-// visited scenes. Below iOS's hardware H.264 decoder budget (~4
-// concurrent) since only the active player is actually decoding;
-// the others are paused-but-cached.
+// Capacity 5 — bigger than LazyVStack's typical mount window so a
+// currently-mounted slide always finds its cached player. Below
+// iOS's ~4 concurrent H.264 hardware decoders since only the
+// active player decodes; others sit paused.
 //
-// Replaces the earlier PlayerRegistry, which was a passive weak
-// set with no lifecycle management. The pool actively owns + evicts.
+// Looping: AVPlayerItemDidPlayToEndTime + seek-to-zero. Earlier
+// version used AVPlayerLooper which queues a duplicate item — half
+// the memory savings come from dropping that.
 @MainActor
 final class PlayerPool {
     static let shared = PlayerPool(capacity: 5)
 
     private struct Entry {
-        let player: AVQueuePlayer
-        let looper: AVPlayerLooper
+        let player: AVPlayer
+        let endObserver: NSObjectProtocol
         var lastUsed: Date
     }
 
@@ -43,7 +41,7 @@ final class PlayerPool {
         baseURL: String,
         apiKey: String,
         muted: Bool
-    ) -> AVQueuePlayer? {
+    ) -> AVPlayer? {
         if var entry = entries[scene.id] {
             entry.lastUsed = Date()
             entries[scene.id] = entry
@@ -59,16 +57,47 @@ final class PlayerPool {
         )
         let item = AVPlayerItem(asset: asset)
         item.preferredForwardBufferDuration = 4.0
-        let q = AVQueuePlayer(playerItem: item)
-        q.isMuted = muted
-        let looper = AVPlayerLooper(player: q, templateItem: item)
+        let player = AVPlayer(playerItem: item)
+        player.isMuted = muted
+        // Manual loop: seek to zero + resume when the current item
+        // finishes. The notification's `object` is the SPECIFIC
+        // item — so this observer only fires for this player's
+        // item, not any other player's. weak player so we don't
+        // leak the player via the observer block.
+        let observer = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemDidPlayToEndTime,
+            object: item,
+            queue: .main
+        ) { [weak player] _ in
+            player?.seek(to: .zero)
+            player?.play()
+        }
         entries[scene.id] = Entry(
-            player: q,
-            looper: looper,
+            player: player,
+            endObserver: observer,
             lastUsed: Date()
         )
         evictIfNeeded()
-        return q
+        return player
+    }
+
+    /// Same as player(for:) but ignores the return value — used by
+    /// ReelView to proactively warm upcoming scenes when activeId
+    /// changes, so the next swipe is a cache hit instead of a
+    /// cold load. The pool retains the entry; the next caller
+    /// (the slide's onAppear) finds it warm.
+    func prewarm(
+        scene: BingeScene,
+        baseURL: String,
+        apiKey: String,
+        muted: Bool
+    ) {
+        _ = player(
+            for: scene,
+            baseURL: baseURL,
+            apiKey: apiKey,
+            muted: muted
+        )
     }
 
     /// Refresh lastUsed for a scene without touching the player.
@@ -82,28 +111,21 @@ final class PlayerPool {
         }
     }
 
-    /// Pause every player in the pool. Used by a future
-    /// onScrollPhaseChange hook (iOS 18+) or when the reel tab
-    /// loses focus. The active slide can call .play() again when
-    /// it's ready — pause is non-destructive (no buffer flush).
+    /// Pause every player in the pool.
     func pauseAll() {
         for (_, entry) in entries { entry.player.pause() }
     }
 
     /// Drain the pool, keeping only the listed scene ids. Used
-    /// when the user navigates away from the reel entirely so we
-    /// don't keep evicted scene assets warm forever. Pass an
-    /// empty set to drain completely.
+    /// when the user navigates away from the reel entirely.
     func evictExcept(keepers: Set<String>) {
         for (id, entry) in entries where !keepers.contains(id) {
-            entry.player.pause()
-            entry.player.replaceCurrentItem(with: nil)
+            tearDown(entry: entry)
             entries.removeValue(forKey: id)
         }
     }
 
-    /// Diagnostic — current pool depth. Useful for spot-checking
-    /// in the debugger when investigating decoder pressure.
+    /// Diagnostic — current pool depth.
     var count: Int { entries.count }
 
     private func evictIfNeeded() {
@@ -113,9 +135,14 @@ final class PlayerPool {
                     $0.value.lastUsed < $1.value.lastUsed
                 })
             else { return }
-            oldest.value.player.pause()
-            oldest.value.player.replaceCurrentItem(with: nil)
+            tearDown(entry: oldest.value)
             entries.removeValue(forKey: oldest.key)
         }
+    }
+
+    private func tearDown(entry: Entry) {
+        NotificationCenter.default.removeObserver(entry.endObserver)
+        entry.player.pause()
+        entry.player.replaceCurrentItem(with: nil)
     }
 }

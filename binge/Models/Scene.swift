@@ -60,6 +60,15 @@ struct BingeScene: Decodable, Identifiable, Hashable {
         if stream.hasPrefix("http") { return URL(string: stream) }
         return URL(string: "\(base.trimmingCharacters(in: CharacterSet(charactersIn: "/")))\(stream)")
     }
+
+    // Screenshot — used by SceneSlideView as a poster image behind
+    // the AVPlayer during cold loads so the slide never shows
+    // black before the first decoded frame.
+    func screenshotURL(base: String) -> URL? {
+        guard let screenshot = paths.screenshot else { return nil }
+        if screenshot.hasPrefix("http") { return URL(string: screenshot) }
+        return URL(string: "\(base.trimmingCharacters(in: CharacterSet(charactersIn: "/")))\(screenshot)")
+    }
 }
 
 struct FindScenesResponse: Decodable {
