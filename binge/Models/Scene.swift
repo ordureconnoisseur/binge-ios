@@ -83,48 +83,51 @@ struct BingeScene: Decodable, Identifiable, Hashable {
         case tags
     }
 
-    // The URL the AVPlayer hits. By default, Stash's `paths.stream`
-    // serves whatever transcode Stash decided was appropriate. But
-    // AVPlayer has spotty support for HEVC profiles — we've seen
-    // scenes play audio with a black video frame when the file is
-    // HEVC-encoded with certain profiles or chroma sampling.
+    // The URL the AVPlayer hits.
     //
-    // Defence: when the file's video_codec is HEVC/H.265, look for
-    // an explicit "MP4" entry in sceneStreams and use that instead.
-    // Stash's MP4 transcode is H.264 — universally decodable by
-    // AVPlayer. Falls back to paths.stream if no MP4 entry exists
-    // (rare; means Stash has only Direct/HLS configured).
+    // AVPlayer is fussier than the browser <video> element about
+    // source variations — HEVC profiles, unusual chroma sampling,
+    // certain MPEG-4 variants, container quirks. The web reel rides
+    // on the browser's much wider compatibility envelope, so it can
+    // default to `paths.stream` (Stash's "auto" choice, often the
+    // raw file). iOS can't.
+    //
+    // Strategy on iOS: always prefer a transcoded endpoint over
+    // the raw file. Stash's MP4 transcode is universally H.264 —
+    // bulletproof on AVPlayer. HLS is the next-best — Stash
+    // transcodes the segments to MP4 fragments which AVPlayer
+    // handles natively. Only fall back to paths.stream when
+    // neither transcode is configured (rare Stash install).
+    //
+    // Trade-off: pays the Stash-side transcode cost even for
+    // files that would have played fine direct. Acceptable for
+    // the reliability gain. Future work: a user-facing toggle
+    // (Auto / Direct / MP4 / WebM / HLS) like the web app for
+    // power users who want manual control.
     func streamURL(base: String) -> URL? {
-        if isHEVC, let mp4 = preferredMP4Stream() {
-            return absoluteURL(mp4, base: base)
+        if let mp4 = preferredStream(matching: ["mp4"]) {
+            return logged("MP4 transcode", absoluteURL(mp4, base: base))
+        }
+        if let hls = preferredStream(matching: ["hls", "mpegurl", "x-mpegurl"]) {
+            return logged("HLS transcode", absoluteURL(hls, base: base))
         }
         guard let stream = paths.stream else { return nil }
-        return absoluteURL(stream, base: base)
+        return logged("paths.stream fallback", absoluteURL(stream, base: base))
     }
 
-    /// True when the source file is HEVC/H.265. Matches "hevc",
-    /// "h265", "h.265" forms (Stash version drift).
-    var isHEVC: Bool {
-        guard let codec = files.first?.videoCodec?.lowercased() else {
-            return false
-        }
-        return codec.contains("hevc")
-            || codec.contains("h265")
-            || codec.contains("h.265")
-    }
-
-    /// Find the MP4 transcode endpoint from sceneStreams. Matches
-    /// either the "MP4" label (excluding "Direct stream MP4" which
-    /// is the raw file even when it's HEVC — defeats the purpose)
-    /// or mime_type "video/mp4".
-    private func preferredMP4Stream() -> String? {
+    /// Pick a sceneStreams entry whose label or mime contains any
+    /// of the given needles. Excludes "Direct stream" variants
+    /// because those serve the raw file (with the label set to e.g.
+    /// "Direct stream MP4" even if the file is HEVC).
+    private func preferredStream(matching needles: [String]) -> String? {
         for s in sceneStreams {
             let label = (s.label ?? "").lowercased()
             let mime = (s.mimeType ?? "").lowercased()
-            let isMP4 = label.contains("mp4") || mime == "video/mp4"
-            let isDirect = label.contains("direct")
-            if isMP4 && !isDirect {
-                return s.url
+            if label.contains("direct") { continue }
+            for needle in needles {
+                if label.contains(needle) || mime.contains(needle) {
+                    return s.url
+                }
             }
         }
         return nil
@@ -136,6 +139,21 @@ struct BingeScene: Decodable, Identifiable, Hashable {
             in: CharacterSet(charactersIn: "/")
         )
         return URL(string: "\(trimmedBase)\(pathOrURL)")
+    }
+
+    /// Console-log the picked URL so debugging "this scene plays
+    /// audio with a black frame" is just a matter of looking at
+    /// the Xcode console. Returns the URL untouched so it can be
+    /// chained inline in the picker above.
+    private func logged(_ kind: String, _ url: URL?) -> URL? {
+        if let url {
+            print(
+                "[binge] streamURL[\(id)] kind=\(kind) "
+                    + "codec=\(files.first?.videoCodec ?? "?") "
+                    + "url=\(url.absoluteString)"
+            )
+        }
+        return url
     }
 
     // Screenshot — used by SceneSlideView as a poster image behind
