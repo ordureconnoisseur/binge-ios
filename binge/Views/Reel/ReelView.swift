@@ -87,24 +87,29 @@ struct ReelView: View {
                             apiKey: stashApiKey,
                             onLike: handleLike
                         )
-                        // Each slide claims the full GeometryReader
-                        // size so paging snaps one screen at a time.
                         .frame(width: geo.size.width, height: geo.size.height)
                         .id(scene.id)
                     }
                 }
                 .scrollTargetLayout()
             }
-            .scrollTargetBehavior(.paging)
+            // Force the ScrollView's outer frame to MATCH the slide
+            // frame size exactly. SwiftUI was inferring the
+            // ScrollView size from the parent and ending up slightly
+            // taller than each slide (probably grabbing some
+            // tab-bar-reserved space back), which made the next +
+            // previous slides peek into the viewport.
+            .frame(width: geo.size.width, height: geo.size.height)
+            // .viewAligned snaps to scrollTargetLayout item
+            // boundaries; .paging snaps to viewport-bounds-sized
+            // chunks. They're equivalent when slide_height ==
+            // viewport_height EXACTLY — but if there's any
+            // rounding/inset drift, .viewAligned still snaps to the
+            // slide whereas .paging drifts. .viewAligned is the
+            // safer primitive for item-paged scrolling.
+            .scrollTargetBehavior(.viewAligned)
             .scrollPosition(id: $activeId)
-            // NOTE: NO .ignoresSafeArea() here. The GeometryReader's
-            // `geo.size.height` already excludes the tab bar — slides
-            // are sized to fit within the safe area. If we extend
-            // the ScrollView past the safe area (i.e. behind the tab
-            // bar), the viewport becomes taller than each slide, so
-            // paging snaps mid-screen and you see two slides at once.
-            // Keeping the ScrollView within safe area is what makes
-            // slide-bottom align with screen-bottom-of-content.
+            .clipped()
         }
     }
 
