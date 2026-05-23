@@ -28,11 +28,22 @@ struct SceneSlideView: View {
             Color.black
 
             if let player {
-                // Video fills the slide. The slide itself is sized
-                // by ReelView's GeometryReader so we don't need to
-                // ignoresSafeArea here — the ScrollView container
-                // already does that.
+                // Video is INSET from the slide's top + bottom edges
+                // by a fixed pad. The pad guarantees a visible black
+                // border above and below the video regardless of
+                // its native aspect ratio, so:
+                //   - Portrait 9:16 videos no longer abut the next
+                //     slide directly during a paging swipe.
+                //   - Landscape videos (letterboxed via the
+                //     .resizeAspect gravity in VideoPlayerView) get
+                //     even more black space, but it reads cleanly
+                //     since the inset is the same on every slide.
+                // The overlay chrome (mute, action stack, performer
+                // info) renders OUTSIDE the padded video, in the
+                // bordered area + above the video — same visual
+                // language as the web app.
                 VideoPlayerView(player: player)
+                    .padding(.vertical, 22)
                     .onTapGesture(count: 2) { triggerLike() }
                     .onTapGesture { togglePause() }
             }
