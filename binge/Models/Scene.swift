@@ -85,22 +85,29 @@ struct BingeScene: Decodable, Identifiable, Hashable {
 
     // The URL the AVPlayer hits.
     //
-    // Default: pass paths.stream through unchanged. That URL works
-    // for every H.264 scene tested. HEVC scenes get audio but
-    // black video (AVPlayer's decoder rejects them); the .mp4
-    // path-rewrite trial made HEVC scenes break entirely, so
-    // we've rolled that back too. Need to see the sceneStreams[]
-    // URLs to pick the right one — the log below now prints them
-    // in full.
+    // Default: pass paths.stream through unchanged. Works for
+    // every H.264 scene tested.
+    //
+    // HEVC: use Stash's HLS endpoint instead. HLS is AVPlayer's
+    // native streaming format (`application/vnd.apple.mpegurl`);
+    // Stash chunks the H.264-transcoded output into MP4 fragments
+    // so playback can begin as soon as the first segment is ready
+    // — no waiting for full-file transcode like the `.mp4`
+    // endpoint required.
+    //
+    // We pick the FIRST HLS entry from sceneStreams (typically the
+    // "HLS Original" auto-resolution variant). The URL Stash
+    // returns already includes the `?apikey=...&resolution=...`
+    // query string — we just hand it to AVPlayer directly.
     func streamURL(base: String) -> URL? {
+        if isHEVC, let hls = firstHLSStreamURL() {
+            return logged(absoluteURL(hls, base: base))
+        }
         guard let stream = paths.stream else { return nil }
         return logged(absoluteURL(stream, base: base))
     }
 
-    /// True when the source file's codec is HEVC / H.265. Used to
-    /// flag scenes we'd ideally route to a transcode endpoint —
-    /// once we figure out which sceneStreams entry actually
-    /// works.
+    /// True when the source file's codec is HEVC / H.265.
     var isHEVC: Bool {
         guard let codec = files.first?.videoCodec?.lowercased() else {
             return false
@@ -108,6 +115,23 @@ struct BingeScene: Decodable, Identifiable, Hashable {
         return codec.contains("hevc")
             || codec.contains("h265")
             || codec.contains("h.265")
+    }
+
+    /// First HLS endpoint Stash advertises in sceneStreams,
+    /// matched by mime type (the official Apple HLS mime type is
+    /// `application/vnd.apple.mpegurl`). Stash also exposes DASH
+    /// (`application/dash+xml`) but AVPlayer's DASH support is
+    /// patchier than its HLS support — HLS is the safer bet.
+    /// Returns nil if no HLS endpoint is configured.
+    private func firstHLSStreamURL() -> String? {
+        for s in sceneStreams {
+            if (s.mimeType ?? "").lowercased()
+                == "application/vnd.apple.mpegurl"
+            {
+                return s.url
+            }
+        }
+        return nil
     }
 
     private func absoluteURL(_ pathOrURL: String, base: String) -> URL? {

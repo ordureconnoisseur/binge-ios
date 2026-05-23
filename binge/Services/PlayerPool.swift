@@ -21,7 +21,15 @@ import Foundation
 // handles looping at the AVFoundation layer where it belongs.
 @MainActor
 final class PlayerPool {
-    static let shared = PlayerPool(capacity: 5)
+    // Capacity 3 — dropped from 5 after observing recurring
+    // -12785 / -12860 media-services-reset errors over the user's
+    // remote Stash link. 5 concurrent players + their network
+    // connections were contending too aggressively for the
+    // PlayerRemoteXPC service's resources. 3 covers the active
+    // slide + one prefetched + one recently-visited cache slot,
+    // which is enough to feel snappy without overloading the
+    // network or decoder budget.
+    static let shared = PlayerPool(capacity: 3)
 
     private struct Entry {
         let player: AVQueuePlayer
