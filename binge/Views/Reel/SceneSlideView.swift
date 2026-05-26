@@ -77,6 +77,12 @@ struct SceneSlideView: View {
     // looping AVPlayerLooper would re-cross the end threshold on
     // every loop. Reset when the slide rebinds to a new scene.
     @State private var hasAutoAdvanced: Bool = false
+    /// One-shot guard for `kickIfStuck`'s evict+reattach fallback.
+    /// Holds the scene id we already retried for THIS mount so a
+    /// permanently broken player (media services reset) doesn't
+    /// trigger an endless eviction loop. Reset on remount + on
+    /// scene-id change.
+    @State private var didRebuildPlayer: String?
 
     var body: some View {
         ZStack {
@@ -282,6 +288,7 @@ struct SceneSlideView: View {
         .onAppear {
             localOCounter = scene.oCounter ?? 0
             posterVisible = true
+            didRebuildPlayer = nil
             attachPlayer()
             // First-mount of an active slide counts as "play" too.
             // onChange(of: isActive) only fires on transitions, so
@@ -293,6 +300,7 @@ struct SceneSlideView: View {
             detachTimeObserver()
             posterVisible = true
             hasAutoAdvanced = false
+            didRebuildPlayer = nil
             attachPlayer()
         }
         .onDisappear {
@@ -484,8 +492,18 @@ struct SceneSlideView: View {
     /// the user doesn't have to. Gated to HEVC because:
     ///   - H264 direct streams start cleanly on the first play().
     ///   - VP9 routes through the MP4 transcode (no manifest fetch).
+    ///
+    /// If the player is genuinely dead (PlayerRemoteXPC error
+    /// -12785 / -12860 — media services reset, seen in logs when
+    /// scrolling fast over Tailscale), the buffer never fills.
+    /// After polling exhausts, fall back to evicting + reattaching
+    /// once per mount — same fix as scrolling far enough to evict
+    /// the dead player from the LRU pool. The `didRebuildPlayer`
+    /// guard caps it at one retry so a permanently broken stream
+    /// doesn't loop.
     private func kickIfStuck(_ p: AVPlayer?) {
         guard let p, scene.isHEVC else { return }
+        let sceneId = scene.id
         Task { @MainActor in
             // Up to ~3s of polling at 200ms intervals.
             for _ in 0..<15 {
@@ -505,6 +523,17 @@ struct SceneSlideView: View {
                     return
                 }
             }
+            // Polling exhausted: playing-but-not-advancing-and-
+            // buffer-never-filled. Player is dead. Evict + rebuild
+            // once per mount.
+            guard didRebuildPlayer != sceneId else { return }
+            didRebuildPlayer = sceneId
+            print(
+                "[SceneSlide] REBUILD scene=\(sceneId) "
+                + "reason=stuck-buffer-never-ready"
+            )
+            PlayerPool.shared.evict(sceneId: sceneId)
+            attachPlayer()
         }
     }
 
