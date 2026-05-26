@@ -32,18 +32,8 @@ final class PlayerPool {
     static let shared = PlayerPool(capacity: 3)
 
     private struct Entry {
-        let player: AVPlayer
-        /// Observer token for AVPlayerItemDidPlayToEndTime —
-        /// drives the seek-to-zero manual loop. Removed on
-        /// eviction. We use manual loop instead of
-        /// AVPlayerLooper because the looper's two-item queue
-        /// stalls at loop-point on HLS / transcoded content
-        /// (the second item has to re-fetch playlist /
-        /// segments before playing). With cap 3 the observer
-        /// count is small enough not to blow the
-        /// PlayerRemoteXPC budget that broke this approach at
-        /// cap 5.
-        let endObserver: NSObjectProtocol
+        let player: AVQueuePlayer
+        let looper: AVPlayerLooper
         var lastUsed: Date
     }
 
@@ -88,38 +78,18 @@ final class PlayerPool {
             ]
         )
         let item = AVPlayerItem(asset: asset)
-        // Tune for first-frame speed over smooth-playback safety
-        // — TikTok-shape reels want IMMEDIATE start; a one-frame
-        // hiccup if the network can't keep up is more tolerable
-        // than a 1-2s wait before playback begins. Default
-        // AVPlayer asks for ~25s of buffered media before
-        // starting; 2s is enough to start a 9:16 phone video
-        // without the user noticing.
-        item.preferredForwardBufferDuration = 2
-        let p = AVPlayer(playerItem: item)
-        // Start playing as soon as ANY buffered data is
-        // available; default `true` makes AVPlayer wait for a
-        // stall-free runway, which on a slow/Tailscale-funnel
-        // link can take 1-2s. False = play now, tolerate
-        // one-off stalls.
-        p.automaticallyWaitsToMinimizeStalling = false
-        p.isMuted = muted
-        // Manual loop: seek the SAME item to zero on
-        // end-of-playback. AVPlayerLooper queues a second item
-        // that has to re-fetch (especially noticeable on HLS)
-        // so short videos stall at the loop point. Seeking the
-        // same item is instant because the start is still in
-        // the buffer.
-        let endObserver = NotificationCenter.default.addObserver(
-            forName: .AVPlayerItemDidPlayToEndTime,
-            object: item,
-            queue: .main
-        ) { [weak p] _ in
-            p?.seek(to: .zero) { _ in p?.play() }
-        }
+        let q = AVQueuePlayer(playerItem: item)
+        q.isMuted = muted
+        // AVPlayerLooper queues a second item internally for
+        // seamless looping. Slightly more memory than manual
+        // seek-to-zero but the media services overhead of N
+        // concurrent .AVPlayerItemDidPlayToEndTime observers
+        // (the alternative) is more disruptive than the
+        // duplicate item.
+        let looper = AVPlayerLooper(player: q, templateItem: item)
         entries[scene.id] = Entry(
-            player: p,
-            endObserver: endObserver,
+            player: q,
+            looper: looper,
             lastUsed: Date()
         )
         evictIfNeeded()
@@ -141,7 +111,7 @@ final class PlayerPool {
             // time the player has any buffered output.
             for _ in 0..<60 {
                 try? await Task.sleep(for: .milliseconds(50))
-                if p.currentItem?.isPlaybackLikelyToKeepUp == true {
+                if q.currentItem?.isPlaybackLikelyToKeepUp == true {
                     let pms = Int(
                         Date().timeIntervalSince(scheduledStart)
                             * 1000
@@ -158,7 +128,7 @@ final class PlayerPool {
                 + "still not ready after 3s"
             )
         }
-        return p
+        return q
     }
 
     /// Eagerly fetch the player for a scene without playing it.
@@ -191,7 +161,6 @@ final class PlayerPool {
     /// recovery path the user has.
     func evict(sceneId: String) {
         guard let entry = entries[sceneId] else { return }
-        NotificationCenter.default.removeObserver(entry.endObserver)
         entry.player.pause()
         entry.player.replaceCurrentItem(with: nil)
         entries.removeValue(forKey: sceneId)
@@ -220,9 +189,6 @@ final class PlayerPool {
     /// Drain the pool, keeping only the listed scene ids.
     func evictExcept(keepers: Set<String>) {
         for (id, entry) in entries where !keepers.contains(id) {
-            NotificationCenter.default.removeObserver(
-                entry.endObserver
-            )
             entry.player.pause()
             entry.player.replaceCurrentItem(with: nil)
             entries.removeValue(forKey: id)
@@ -239,9 +205,6 @@ final class PlayerPool {
                     $0.value.lastUsed < $1.value.lastUsed
                 })
             else { return }
-            NotificationCenter.default.removeObserver(
-                oldest.value.endObserver
-            )
             oldest.value.player.pause()
             oldest.value.player.replaceCurrentItem(with: nil)
             entries.removeValue(forKey: oldest.key)

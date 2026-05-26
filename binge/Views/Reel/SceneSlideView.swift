@@ -280,14 +280,6 @@ struct SceneSlideView: View {
                 )
                 player?.play()
                 onActivate?(scene)
-                // Watch for failure during the first few
-                // seconds — if AVPlayer transitions to .failed
-                // (most common cause on this codebase:
-                // PlayerRemoteXPC reset during transcode), kick
-                // the pool entry and re-attach so the user gets
-                // a working player without having to scroll
-                // away and back.
-                watchForPlaybackFailure()
             } else {
                 player?.pause()
             }
@@ -436,67 +428,6 @@ struct SceneSlideView: View {
         return "Scene \(scene.id)"
     }
 
-
-    /// Poll the active player for the first ~3s after
-    /// activation. Rebuild when the player is stuck.
-    ///
-    /// Three ways to detect "stuck":
-    ///   1. AVPlayer `.failed` status (loud failure — e.g.
-    ///      transcoder errored)
-    ///   2. currentTime not advancing — `isPlaybackLikelyToKeepUp`
-    ///      becoming true doesn't actually guarantee playback
-    ///      started, only that the BUFFER is sufficient.
-    ///      AVPlayer can sit at t=0 with a full buffer if it's
-    ///      in a weird internal state. We track the play-head
-    ///      and rebuild if it hasn't moved by the end of the
-    ///      window.
-    ///   3. Still not `isPlaybackLikelyToKeepUp` after 3s —
-    ///      catch-all for never-buffered playlists (HLS for
-    ///      VP9/HEVC where transcoder hangs).
-    private func watchForPlaybackFailure() {
-        let sceneId = scene.id
-        Task { @MainActor in
-            let startTime = player?.currentTime() ?? .zero
-            for _ in 0..<30 {
-                try? await Task.sleep(for: .milliseconds(100))
-                guard isActive, scene.id == sceneId else {
-                    return
-                }
-                let status = player?.currentItem?.status
-                if status == .failed {
-                    rebuildStuckPlayer(reason: "failed-status")
-                    return
-                }
-                // Time-advance check is the strongest signal:
-                // if the play-head has moved, we know real
-                // playback is happening regardless of what
-                // AVPlayer reports about buffer state.
-                let now = player?.currentTime() ?? .zero
-                if CMTimeCompare(now, startTime) != 0 {
-                    return
-                }
-            }
-            // 3s elapsed with no play-head movement. Either
-            // the player is in .unknown / .failed, or buffer
-            // is full but playback never started. Either way,
-            // a rebuild is the recovery.
-            guard isActive, scene.id == sceneId else { return }
-            let final = player?.currentTime() ?? .zero
-            if CMTimeCompare(final, startTime) == 0 {
-                rebuildStuckPlayer(reason: "no-time-progress")
-            }
-        }
-    }
-
-    private func rebuildStuckPlayer(reason: String) {
-        print(
-            "[SceneSlide] STUCK scene=\(scene.id) "
-            + "reason=\(reason) — rebuilding player"
-        )
-        detachTimeObserver()
-        PlayerPool.shared.evict(sceneId: scene.id)
-        attachPlayer()
-    }
 
     private func attachPlayer() {
         let p = PlayerPool.shared.player(
