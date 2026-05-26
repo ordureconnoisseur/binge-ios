@@ -58,9 +58,19 @@ final class PlayerPool {
             entry.lastUsed = Date()
             entries[scene.id] = entry
             entry.player.isMuted = muted
+            print(
+                "[PlayerPool] HIT  scene=\(scene.id) "
+                + "pool=\(entries.count)/\(capacity)"
+            )
             return entry.player
         }
-        guard let url = scene.streamURL(base: baseURL) else { return nil }
+        let createStart = Date()
+        guard let url = scene.streamURL(base: baseURL) else {
+            print(
+                "[PlayerPool] MISS scene=\(scene.id) -> no streamURL"
+            )
+            return nil
+        }
         let asset = AVURLAsset(
             url: url,
             options: [
@@ -82,6 +92,41 @@ final class PlayerPool {
             lastUsed: Date()
         )
         evictIfNeeded()
+        let ms = Int(Date().timeIntervalSince(createStart) * 1000)
+        print(
+            "[PlayerPool] MISS scene=\(scene.id) "
+            + "create=\(ms)ms pool=\(entries.count)/\(capacity) "
+            + "url=\(url.absoluteString.prefix(80))"
+        )
+        // Surface buffer-ready timing too — the actual "video
+        // appears" moment depends on the asset's first frame
+        // being decoded, which can be much later than the
+        // synchronous AVPlayer creation above.
+        let scheduledStart = Date()
+        let sceneId = scene.id
+        Task { @MainActor in
+            // Loose poll for buffer-likely-to-keep-up — cheap
+            // and avoids KVO complications. Reports the first
+            // time the player has any buffered output.
+            for _ in 0..<60 {
+                try? await Task.sleep(for: .milliseconds(50))
+                if q.currentItem?.isPlaybackLikelyToKeepUp == true {
+                    let pms = Int(
+                        Date().timeIntervalSince(scheduledStart)
+                            * 1000
+                    )
+                    print(
+                        "[PlayerPool] READY scene=\(sceneId) "
+                        + "after=\(pms)ms"
+                    )
+                    return
+                }
+            }
+            print(
+                "[PlayerPool] SLOW scene=\(sceneId) "
+                + "still not ready after 3s"
+            )
+        }
         return q
     }
 
@@ -123,6 +168,10 @@ final class PlayerPool {
             oldest.value.player.pause()
             oldest.value.player.replaceCurrentItem(with: nil)
             entries.removeValue(forKey: oldest.key)
+            print(
+                "[PlayerPool] EVICT scene=\(oldest.key) "
+                + "pool=\(entries.count)/\(capacity)"
+            )
         }
     }
 }

@@ -270,6 +270,14 @@ struct SceneSlideView: View {
         }
         .onChange(of: isActive) { _, nowActive in
             if nowActive {
+                let ready =
+                    player?.currentItem?.isPlaybackLikelyToKeepUp
+                    ?? false
+                let hasPlayer = player != nil
+                print(
+                    "[SceneSlide] ACTIVATE scene=\(scene.id) "
+                    + "hasPlayer=\(hasPlayer) ready=\(ready)"
+                )
                 player?.play()
                 onActivate?(scene)
             } else {
