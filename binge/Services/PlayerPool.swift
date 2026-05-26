@@ -78,7 +78,21 @@ final class PlayerPool {
             ]
         )
         let item = AVPlayerItem(asset: asset)
+        // Tune for first-frame speed over smooth-playback safety
+        // — TikTok-shape reels want IMMEDIATE start; a one-frame
+        // hiccup if the network can't keep up is more tolerable
+        // than a 1-2s wait before playback begins. Default
+        // AVPlayer asks for ~25s of buffered media before
+        // starting; 2s is enough to start a 9:16 phone video
+        // without the user noticing.
+        item.preferredForwardBufferDuration = 2
         let q = AVQueuePlayer(playerItem: item)
+        // Start playing as soon as ANY buffered data is
+        // available; default `true` makes AVPlayer wait for a
+        // stall-free runway, which on a slow/Tailscale-funnel
+        // link can take 1-2s. False = play now, tolerate
+        // one-off stalls.
+        q.automaticallyWaitsToMinimizeStalling = false
         q.isMuted = muted
         // AVPlayerLooper queues a second item internally for
         // seamless looping. Slightly more memory than manual seek
