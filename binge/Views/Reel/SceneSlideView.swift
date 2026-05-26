@@ -481,17 +481,21 @@ struct SceneSlideView: View {
         }
     }
 
-    /// HEVC over HLS sometimes flips to `.playing` but the playhead
-    /// stays frozen at t=0 while the manifest + first segment are
-    /// still being fetched and the HW decoder is warming up — the
-    /// player BELIEVES it's playing while no frames render. By the
-    /// time `isPlaybackLikelyToKeepUp` flips true, a pause+play
-    /// kicks the renderer awake. This is exactly what
-    /// scroll-away-and-back (cache-hit re-play()) and hold-to-pause
-    /// (manual pause+play) did to unstick it — automated here so
-    /// the user doesn't have to. Gated to HEVC because:
-    ///   - H264 direct streams start cleanly on the first play().
-    ///   - VP9 routes through the MP4 transcode (no manifest fetch).
+    /// A new AVPlayer sometimes flips to `.playing` but the
+    /// playhead stays frozen at t=0 while the manifest / first
+    /// segment fetch and the HW decoder warm up — the player
+    /// BELIEVES it's playing while no frames render. By the time
+    /// `isPlaybackLikelyToKeepUp` flips true, a pause+play kicks
+    /// the renderer awake. This is exactly what
+    /// scroll-away-and-back (cache-hit re-play()) and hold-to-
+    /// pause (manual pause+play) did to unstick it — automated
+    /// here so the user doesn't have to.
+    ///
+    /// Originally gated to HEVC since that's where the symptom
+    /// was reproduced first, but the user reported H264 scenes
+    /// stalling too — and the kick is safe on any stream
+    /// (advancing players satisfy `currentTime > 0.05` on the
+    /// first poll and return without doing anything).
     ///
     /// If the player is genuinely dead (PlayerRemoteXPC error
     /// -12785 / -12860 — media services reset, seen in logs when
@@ -502,7 +506,7 @@ struct SceneSlideView: View {
     /// guard caps it at one retry so a permanently broken stream
     /// doesn't loop.
     private func kickIfStuck(_ p: AVPlayer?) {
-        guard let p, scene.isHEVC else { return }
+        guard let p else { return }
         let sceneId = scene.id
         Task { @MainActor in
             // Up to ~3s of polling at 200ms intervals.
