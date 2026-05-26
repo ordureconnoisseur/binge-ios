@@ -487,6 +487,19 @@ struct StoryViewerSheet: View {
                             size: 11
                         )
                         .padding(.leading, 3)
+                        if let eff = currentScene?.effectiveAt,
+                            !eff.isEmpty
+                        {
+                            let ago = RelativeDate.relative(eff)
+                            if !ago.isEmpty {
+                                Text(ago)
+                                    .font(.system(size: 12, weight: .regular))
+                                    .foregroundStyle(
+                                        Color.white.opacity(0.7)
+                                    )
+                                    .padding(.leading, 8)
+                            }
+                        }
                     }
                 }
             }
