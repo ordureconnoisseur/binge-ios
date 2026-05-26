@@ -78,7 +78,16 @@ final class PlayerPool {
             ]
         )
         let item = AVPlayerItem(asset: asset)
+        // Tune for first-frame speed: AVPlayer defaults to ~25s
+        // forward buffer + wait-to-minimize-stalling which adds
+        // 1-2s of pre-roll over the user's Tailscale-funnel
+        // link. 2s buffer + don't-wait gets playback going
+        // ~5× faster. These knobs are independent of the
+        // loop / playback-stall recovery logic — reverting
+        // those didn't require touching buffer settings.
+        item.preferredForwardBufferDuration = 2
         let q = AVQueuePlayer(playerItem: item)
+        q.automaticallyWaitsToMinimizeStalling = false
         q.isMuted = muted
         // AVPlayerLooper queues a second item internally for
         // seamless looping. Slightly more memory than manual
