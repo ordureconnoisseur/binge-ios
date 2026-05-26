@@ -18,7 +18,6 @@ struct CollectionDetailPage: View {
     @State private var loading: Bool = false
     @State private var loadingMore: Bool = false
     @State private var error: String?
-    @State private var reelStartId: String?
     @State private var tagId: String?
 
     private let pageSize: Int = 24
@@ -57,19 +56,6 @@ struct CollectionDetailPage: View {
                 await load()
             }
         }
-        .fullScreenCover(
-            isPresented: Binding(
-                get: { reelStartId != nil },
-                set: { if !$0 { reelStartId = nil } }
-            )
-        ) {
-            if let id = reelStartId {
-                PerformerReelSheet(
-                    scenes: shuffledQueue(from: scenes, pinning: id),
-                    startSceneId: id
-                )
-            }
-        }
     }
 
     // MARK: - Grid
@@ -98,25 +84,44 @@ struct CollectionDetailPage: View {
 
     @ViewBuilder
     private func tile(_ scene: BingeScene) -> some View {
-        ZStack {
-            Color(white: 0.08)
-            if let url = scene.screenshotURL(base: stashUrl) {
-                AuthImageView(
-                    url: url,
-                    apiKey: stashApiKey,
-                    contentMode: .fill,
-                    maxPixel: 512
+        // NavigationLink(value:) pushes a timeline reel onto the
+        // ambient NavigationStack (MenuPage's), giving the drilled
+        // reel the native slide-from-right transition plus the
+        // interactive edge-swipe pop. Same pattern PerformerProfile
+        // uses for its scene grid.
+        NavigationLink(
+            value: BingeRoute.reel(
+                .timeline(
+                    scenes: shuffledQueue(
+                        from: scenes,
+                        pinning: scene.id
+                    ),
+                    startId: scene.id
                 )
+            )
+        ) {
+            ZStack {
+                Color(white: 0.08)
+                if let url = scene.screenshotURL(base: stashUrl) {
+                    AuthImageView(
+                        url: url,
+                        apiKey: stashApiKey,
+                        contentMode: .fill,
+                        maxPixel: 512
+                    )
+                }
             }
+            // 9:16 portrait tiles — grid sets the width, aspect-
+            // ratio derives the height.
+            .aspectRatio(9.0 / 16.0, contentMode: .fit)
+            .clipped()
+            // contentShape so the empty ZStack background counts
+            // as hit-test surface even before the screenshot loads.
+            // PerformerProfileSheet's libraryCell has the same
+            // note — left-column tiles were untappable without it.
+            .contentShape(RoundedRectangle(cornerRadius: 0))
         }
-        // 9:16 portrait tiles — grid sets the width, aspect-ratio
-        // derives the height.
-        .aspectRatio(9.0 / 16.0, contentMode: .fit)
-        .clipped()
-        .contentShape(Rectangle())
-        .onTapGesture {
-            reelStartId = scene.id
-        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Empty / Error

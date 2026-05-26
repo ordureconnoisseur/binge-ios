@@ -57,6 +57,12 @@ struct MenuPage: View {
                     SettingsView(mode: .normal)
                 }
             }
+            // Lets CollectionDetailPage (a few levels down) push
+            // `.reel(.timeline(...))` onto this stack via
+            // NavigationLink(value:), giving the drilled-in reel
+            // the same native swipe-to-pop behaviour Home/Explore/
+            // Following already use.
+            .bingeRouteDestinations()
         }
     }
 
