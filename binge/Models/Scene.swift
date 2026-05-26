@@ -8,10 +8,22 @@ struct BingeScene: Decodable, Identifiable, Hashable {
     let title: String?
     let details: String?
     let oCounter: Int?
+    // Home-tab sort keys. Both are optional so the existing
+    // findScenesRandom query — which doesn't select these fields —
+    // still decodes cleanly. findRecentScenes / findScenesByDate
+    // do select them.
+    //
+    // createdAt: ISO 8601 ("yyyy-MM-ddTHH:mm:ssZ") — when the scene
+    //   was IMPORTED into the library.
+    // date: bare "YYYY-MM-DD" — manual release date, may be nil for
+    //   scenes the user hasn't tagged.
+    let createdAt: String?
+    let date: String?
     let paths: Paths
     let files: [FileInfo]
     let sceneStreams: [SceneStream]
     let performers: [Performer]
+    let studio: Studio?
     let tags: [Tag]
 
     struct Paths: Decodable, Hashable {
@@ -29,12 +41,25 @@ struct BingeScene: Decodable, Identifiable, Hashable {
         // Used to detect HEVC content and force a H.264 transcode
         // (AVPlayer's HEVC support has profile-dependent gaps).
         let videoCodec: String?
+        let audioCodec: String?
+        let frameRate: Double?
+        // Stash returns size as Int64; Swift's `Int` is 64-bit on
+        // iOS so it decodes cleanly. Optional in case Stash hasn't
+        // indexed the file yet.
+        let size: Int?
+        let bitRate: Int?
+        let path: String?
 
         enum CodingKeys: String, CodingKey {
             case duration
             case width
             case height
             case videoCodec = "video_codec"
+            case audioCodec = "audio_codec"
+            case frameRate = "frame_rate"
+            case size
+            case bitRate = "bit_rate"
+            case path
         }
     }
 
@@ -71,15 +96,22 @@ struct BingeScene: Decodable, Identifiable, Hashable {
         let name: String
     }
 
+    struct Studio: Decodable, Hashable {
+        let name: String
+    }
+
     enum CodingKeys: String, CodingKey {
         case id
         case title
         case details
         case oCounter = "o_counter"
+        case createdAt = "created_at"
+        case date
         case paths
         case files
         case sceneStreams
         case performers
+        case studio
         case tags
     }
 
@@ -175,6 +207,22 @@ struct BingeScene: Decodable, Identifiable, Hashable {
         guard let screenshot = paths.screenshot else { return nil }
         if screenshot.hasPrefix("http") { return URL(string: screenshot) }
         return URL(string: "\(base.trimmingCharacters(in: CharacterSet(charactersIn: "/")))\(screenshot)")
+    }
+
+    // Preview clip — Stash's auto-generated short loop (~30s) for
+    // each scene. Used by the Home tab's story viewer and feed
+    // video sheets where we want fast playback start over full-
+    // fidelity content.
+    //
+    // Caveat: Stash defaults to MP4 previews in recent versions,
+    // but older installs may still produce WebM (VP9/Opus). AVPlayer
+    // has no built-in WebM decoder — if previews don't play, the
+    // user needs to set Stash's preview format to MP4 in Settings →
+    // Tasks → Preview Generation.
+    func previewURL(base: String) -> URL? {
+        guard let preview = paths.preview else { return nil }
+        if preview.hasPrefix("http") { return URL(string: preview) }
+        return URL(string: "\(base.trimmingCharacters(in: CharacterSet(charactersIn: "/")))\(preview)")
     }
 }
 

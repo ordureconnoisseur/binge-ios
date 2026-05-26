@@ -1,0 +1,138 @@
+import Foundation
+
+// JSON-on-disk cache for StashDB lookups. Mirrors the web's
+// localStorage `binge.stashdb.newScenes.v4` pattern but generalized
+// to every StashDB-side surface, since iOS re-fires `.task` on every
+// tab return — fetch-on-mount without a cache pays ~1–3s of StashDB
+// latency every time the user touches Home or Explore.
+//
+// Storage: UserDefaults, JSON-encoded, prefixed with
+// "binge.stashdb.cache.". Payloads are small enough that this fits
+// well under the 4MB defaults soft-limit (trending = 24 scenes,
+// new = up to ~5k scenes × ~500 bytes = ~2.5MB worst case).
+//
+// TTL is per-entry; callers pass it in. Defaults:
+//   - trending lists      : 12h   (matches web)
+//   - performer detail    : 24h   (bios change slowly)
+//   - linked / owned IDs  : 1h    (user follows / adds scenes)
+//   - stashBoxConfig      : 7d    (only changes when user edits Stash settings)
+//
+// Invalidation:
+//   - `invalidateAll()` — full clear, called on pull-to-refresh.
+//   - `invalidate(prefix:)` — wildcard clear (e.g. drop all
+//     linked/owned after a Follow so the next fetch sees the
+//     new performer).
+//
+// Thread-safety: UserDefaults is already thread-safe; this
+// wrapper is a thin shim, so plain class + Sendable closures
+// work fine. We expose async-flavored read/write helpers so
+// the rest of the codebase doesn't have to think about blocking.
+final class StashDBCache: @unchecked Sendable {
+    static let shared = StashDBCache()
+
+    private let defaults = UserDefaults.standard
+    /// Bumped to v2 when the "don't cache empty arrays" rule
+    /// landed — old entries from v1 may carry empty payloads
+    /// from transient StashDB failures, which would otherwise
+    /// silently lock out trending discovery for 12h.
+    private let keyPrefix = "binge.stashdb.cache.v2."
+
+    private init() {}
+
+    /// Default TTLs as cleanly-named statics so call-sites read
+    /// well — `ttl: .trending` beats `ttl: 43200`.
+    enum TTL {
+        static let trending: TimeInterval = 12 * 60 * 60
+        static let performerDetail: TimeInterval = 24 * 60 * 60
+        static let ownership: TimeInterval = 60 * 60
+        static let stashBox: TimeInterval = 7 * 24 * 60 * 60
+    }
+
+    /// Read an entry. Returns nil on any miss path:
+    ///   - key not present
+    ///   - decode failure (schema drift across app versions)
+    ///   - past TTL
+    func read<T: Codable>(
+        _ key: String, ttl: TimeInterval, as type: T.Type = T.self
+    ) -> T? {
+        guard let data = defaults.data(forKey: keyPrefix + key) else {
+            return nil
+        }
+        guard
+            let entry = try? JSONDecoder().decode(
+                CacheEntry<T>.self, from: data
+            )
+        else {
+            // Stale schema — clear so subsequent writes start clean.
+            defaults.removeObject(forKey: keyPrefix + key)
+            return nil
+        }
+        if Date().timeIntervalSince1970 - entry.fetchedAt > ttl {
+            return nil
+        }
+        return entry.value
+    }
+
+    func write<T: Codable>(_ key: String, value: T) {
+        let entry = CacheEntry(
+            fetchedAt: Date().timeIntervalSince1970,
+            value: value
+        )
+        guard let data = try? JSONEncoder().encode(entry) else { return }
+        defaults.set(data, forKey: keyPrefix + key)
+    }
+
+    /// Drop one entry. No-op if not present.
+    func invalidate(_ key: String) {
+        defaults.removeObject(forKey: keyPrefix + key)
+    }
+
+    /// Drop every entry whose key starts with the given suffix
+    /// (the keyPrefix is added automatically). Used to nuke a
+    /// family of entries — e.g. all `linked.*` after a Follow.
+    func invalidate(prefix: String) {
+        let full = keyPrefix + prefix
+        for k in defaults.dictionaryRepresentation().keys
+        where k.hasPrefix(full) {
+            defaults.removeObject(forKey: k)
+        }
+    }
+
+    /// Full clear of every cached StashDB lookup. Wired to
+    /// pull-to-refresh on Home + Explore.
+    func invalidateAll() {
+        for k in defaults.dictionaryRepresentation().keys
+        where k.hasPrefix(keyPrefix) {
+            defaults.removeObject(forKey: k)
+        }
+    }
+
+    /// In-memory hot path. Some workflows hit the cache multiple
+    /// times in the same tab session (e.g. discovery bar + home
+    /// both want linked performers); the disk round-trip + JSON
+    /// decode adds up. This map shadows the disk; cleared on
+    /// invalidate.
+    private var memo: [String: Any] = [:]
+    private let memoLock = NSLock()
+
+    func memoRead<T>(_ key: String) -> T? {
+        memoLock.lock()
+        defer { memoLock.unlock() }
+        return memo[key] as? T
+    }
+    func memoWrite<T>(_ key: String, value: T) {
+        memoLock.lock()
+        defer { memoLock.unlock() }
+        memo[key] = value
+    }
+    func memoClear() {
+        memoLock.lock()
+        defer { memoLock.unlock() }
+        memo.removeAll()
+    }
+
+    private struct CacheEntry<T: Codable>: Codable {
+        let fetchedAt: TimeInterval
+        let value: T
+    }
+}

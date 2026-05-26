@@ -2,7 +2,7 @@ name: binge
 options:
   bundleIdPrefix: com.ordureconnoisseur
   deploymentTarget:
-    iOS: "17.0"
+    iOS: "26.0"
   createIntermediateGroups: true
 
 settings:
@@ -20,6 +20,11 @@ targets:
     info:
       path: binge/Info.plist
       properties:
+        # Home screen + Settings list both read CFBundleDisplayName
+        # before falling back to CFBundleName. Setting the display
+        # name explicitly so the icon reads "Binge" (capital B)
+        # instead of the project's lowercase target name.
+        CFBundleDisplayName: Binge
         # iOS blocks plain http by default; the Stash GraphQL endpoint
         # is typically http://<lan-ip>:9999 on the user's home server,
         # so we need an ATS exception. Acceptable for a personal

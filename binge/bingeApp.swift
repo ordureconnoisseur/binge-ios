@@ -23,7 +23,7 @@ struct BingeApp: App {
         //                     while watching binge muted (the
         //                     default state) — and if they unmute,
         //                     both play simultaneously (same as
-        //                     TikTok, not iOS Music ducking).
+        //                     Instagram, not iOS Music ducking).
         do {
             try AVAudioSession.sharedInstance().setCategory(
                 .playback,

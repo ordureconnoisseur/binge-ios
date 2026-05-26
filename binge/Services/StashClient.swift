@@ -42,19 +42,31 @@ enum StashClientError: Error, LocalizedError {
 actor StashClient {
     private let baseURL: String
     private let apiKey: String
-    private let session: URLSession
+
+    /// One shared URLSession across every StashClient instance.
+    /// Constructing a session-per-instance kills keep-alive reuse
+    /// — every gql call would build a fresh TCP+TLS handshake.
+    /// The session itself is thread-safe (Foundation guarantees
+    /// it) so sharing across actors is fine. Lazy so initial app
+    /// boot doesn't pay this cost until the first GraphQL call.
+    private static let sharedSession: URLSession = {
+        // Ephemeral config — no disk cache for GraphQL responses;
+        // the app's own cache layer (StashDBCache etc.) decides
+        // what's worth keeping. Timeouts match the previous
+        // per-instance values.
+        let cfg = URLSessionConfiguration.ephemeral
+        cfg.timeoutIntervalForRequest = 15
+        cfg.timeoutIntervalForResource = 30
+        return URLSession(configuration: cfg)
+    }()
+
+    private var session: URLSession { Self.sharedSession }
 
     init(baseURL: String, apiKey: String) {
         // Strip trailing slashes so we can concatenate "/graphql"
         // predictably.
         self.baseURL = baseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/ \n\r\t"))
         self.apiKey = apiKey
-        // Default config — no caching of GraphQL responses on the
-        // URLSession layer; let the app decide what to cache.
-        let cfg = URLSessionConfiguration.ephemeral
-        cfg.timeoutIntervalForRequest = 15
-        cfg.timeoutIntervalForResource = 30
-        self.session = URLSession(configuration: cfg)
     }
 
     func gql<T: Decodable>(
