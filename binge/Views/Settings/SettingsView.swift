@@ -168,9 +168,12 @@ struct SettingsView: View {
             )
             requirementRow(
                 icon: "key.fill",
-                title: "A Stash API key",
-                detail: "In Stash: Settings → Security → "
-                    + "API Key. Copy the value and paste it below."
+                title: "A way to sign in",
+                detail: "Either a Stash API key "
+                    + "(Settings → Security in Stash), "
+                    + "or your username + password if "
+                    + "Stash has accounts enabled — "
+                    + "binge can fetch the key for you."
             )
         }
     }
@@ -409,16 +412,19 @@ struct SettingsView: View {
                 .textCase(.uppercase)
                 .tracking(0.5)
             optionalRow(
+                icon: "star.fill",
                 title: "Advanced Rating plugin",
                 detail: "Per-criterion 0–5 scoring. "
                     + "binge falls back to basic ratings if absent."
             )
             optionalRow(
+                icon: "text.bubble.fill",
                 title: "Stash Scribe plugin",
                 detail: "LLM-powered review writing. "
                     + "Scribe button hides if not installed."
             )
             optionalRow(
+                icon: "antenna.radiowaves.left.and.right",
                 title: "binge-server",
                 detail: "Self-hosted Go daemon that pulls "
                     + "Reddit posts into the stories row. "
@@ -429,15 +435,26 @@ struct SettingsView: View {
     }
 
     @ViewBuilder
-    private func optionalRow(title: String, detail: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(title)
+    private func optionalRow(
+        icon: String,
+        title: String,
+        detail: String
+    ) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: icon)
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.85))
-            Text(detail)
-                .font(.system(size: 12))
-                .foregroundStyle(.white.opacity(0.55))
-                .fixedSize(horizontal: false, vertical: true)
+                .foregroundStyle(.white.opacity(0.7))
+                .frame(width: 22, alignment: .center)
+                .padding(.top, 2)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.85))
+                Text(detail)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.white.opacity(0.55))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 
