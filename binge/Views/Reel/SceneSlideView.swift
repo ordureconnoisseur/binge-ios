@@ -430,6 +430,7 @@ struct SceneSlideView: View {
             p?.play()
             // Hold-to-pause is transient — release auto-resumes
             // — so no isHolding reset needed here.
+            kickIfStuck(p)
         }
         if let p {
             timeObserver = p.addPeriodicTimeObserver(
@@ -467,6 +468,41 @@ struct SceneSlideView: View {
                         hasAutoAdvanced = true
                         onAutoAdvance?(scene)
                     }
+                }
+            }
+        }
+    }
+
+    /// HEVC over HLS sometimes flips to `.playing` but the playhead
+    /// stays frozen at t=0 while the manifest + first segment are
+    /// still being fetched and the HW decoder is warming up — the
+    /// player BELIEVES it's playing while no frames render. By the
+    /// time `isPlaybackLikelyToKeepUp` flips true, a pause+play
+    /// kicks the renderer awake. This is exactly what
+    /// scroll-away-and-back (cache-hit re-play()) and hold-to-pause
+    /// (manual pause+play) did to unstick it — automated here so
+    /// the user doesn't have to. Gated to HEVC because:
+    ///   - H264 direct streams start cleanly on the first play().
+    ///   - VP9 routes through the MP4 transcode (no manifest fetch).
+    private func kickIfStuck(_ p: AVPlayer?) {
+        guard let p, scene.isHEVC else { return }
+        Task { @MainActor in
+            // Up to ~3s of polling at 200ms intervals.
+            for _ in 0..<15 {
+                try? await Task.sleep(for: .milliseconds(200))
+                // Any legitimate pause (scroll-away, hold, sheet,
+                // performer cover) flips status to .paused —
+                // don't fight the user's intent.
+                guard p.timeControlStatus == .playing else {
+                    return
+                }
+                // Already advancing → playback started cleanly.
+                if p.currentTime().seconds > 0.05 { return }
+                // Stuck at zero AND buffer ready → kick.
+                if p.currentItem?.isPlaybackLikelyToKeepUp == true {
+                    p.pause()
+                    p.play()
+                    return
                 }
             }
         }
