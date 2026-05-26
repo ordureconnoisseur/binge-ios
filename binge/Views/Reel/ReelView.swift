@@ -32,7 +32,7 @@ struct ReelView: View {
     var initialMode: ReelDrillMode? = nil
 
     @AppStorage("binge.stashUrl") private var stashUrl: String = ""
-    @AppStorage("binge.stashApiKey") private var stashApiKey: String = ""
+    private var stashApiKey: String { KeychainStore.shared.stashApiKey }
     @Environment(ReelNavigator.self) private var navigator
     @Environment(FilterNavigator.self) private var filterNav
     /// Pop the drilled-in reel back to the calling tab when the

@@ -19,7 +19,7 @@ struct BasicRatingModal: View {
 
     @Environment(\.dismiss) private var dismiss
     @AppStorage("binge.stashUrl") private var baseURL: String = ""
-    @AppStorage("binge.stashApiKey") private var apiKey: String = ""
+    private var apiKey: String { KeychainStore.shared.stashApiKey }
 
     @State private var rating100: Int?
     @State private var loading: Bool = true

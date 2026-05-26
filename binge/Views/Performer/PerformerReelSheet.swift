@@ -16,7 +16,7 @@ struct PerformerReelSheet: View {
     let startSceneId: String
 
     @AppStorage("binge.stashUrl") private var stashUrl: String = ""
-    @AppStorage("binge.stashApiKey") private var stashApiKey: String = ""
+    private var stashApiKey: String { KeychainStore.shared.stashApiKey }
 
     @State private var activeId: String?
 

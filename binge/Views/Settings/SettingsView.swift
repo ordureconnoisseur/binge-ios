@@ -18,7 +18,14 @@ struct SettingsView: View {
     let mode: Mode
 
     @AppStorage("binge.stashUrl") private var stashUrl: String = ""
-    @AppStorage("binge.stashApiKey") private var stashApiKey: String = ""
+    // Stash API key lives in Keychain, not UserDefaults — see
+    // KeychainStore. Computed get/set forwards to the singleton so
+    // existing read/write call sites (draftApiKey hydration on
+    // line 64, save on line 381) stay unchanged.
+    private var stashApiKey: String {
+        get { KeychainStore.shared.stashApiKey }
+        nonmutating set { KeychainStore.shared.stashApiKey = newValue }
+    }
 
     // Streaming / reel / home preferences. Defaults match the
     // hardcoded behavior the app shipped with before these became
@@ -511,7 +518,9 @@ private struct BingeServerHealthDot: View {
 private struct BingeServerConfigCard: View {
     @AppStorage("binge.bingeServerUrl") private var url: String = ""
     @AppStorage("binge.stashUrl") private var stashUrl: String = ""
-    @AppStorage("binge.stashApiKey") private var stashApiKey: String = ""
+    // Read-only on this card; full get/set lives in the main
+    // SettingsView struct above.
+    private var stashApiKey: String { KeychainStore.shared.stashApiKey }
 
     @State private var config: BingeServerConfigState?
     @State private var probing: Bool = true

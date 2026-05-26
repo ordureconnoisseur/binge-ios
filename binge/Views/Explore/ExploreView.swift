@@ -8,7 +8,7 @@ import SwiftUI
 // deferred — this push ships the core "browse scenes" surface.
 struct ExploreView: View {
     @AppStorage("binge.stashUrl") private var stashUrl: String = ""
-    @AppStorage("binge.stashApiKey") private var stashApiKey: String = ""
+    private var stashApiKey: String { KeychainStore.shared.stashApiKey }
 
     @State private var vm: ExploreViewModel?
     @FocusState private var searchFocused: Bool

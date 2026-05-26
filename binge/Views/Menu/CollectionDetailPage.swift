@@ -10,7 +10,7 @@ struct CollectionDetailPage: View {
     let service: CollectionsService?
 
     @AppStorage("binge.stashUrl") private var stashUrl: String = ""
-    @AppStorage("binge.stashApiKey") private var stashApiKey: String = ""
+    private var stashApiKey: String { KeychainStore.shared.stashApiKey }
 
     @State private var scenes: [BingeScene] = []
     @State private var page: Int = 1

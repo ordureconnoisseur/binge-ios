@@ -21,7 +21,7 @@ struct HomeView: View {
     let onOpenReelFiltered: (StashSavedFilter) -> Void
 
     @AppStorage("binge.stashUrl") private var stashUrl: String = ""
-    @AppStorage("binge.stashApiKey") private var stashApiKey: String = ""
+    private var stashApiKey: String { KeychainStore.shared.stashApiKey }
     @AppStorage("binge.includeStashDB") private var includeStashDB: Bool = true
     @AppStorage("binge.includeReddit") private var includeReddit: Bool = true
     @AppStorage("binge.showcaseMode") private var showcaseMode: Bool = true

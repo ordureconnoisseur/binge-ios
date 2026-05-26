@@ -17,7 +17,7 @@ struct PackDetailSheet: View {
     var onSceneTap: ((BingeScene) -> Void)? = nil
 
     @AppStorage("binge.stashUrl") private var baseURL: String = ""
-    @AppStorage("binge.stashApiKey") private var apiKey: String = ""
+    private var apiKey: String { KeychainStore.shared.stashApiKey }
 
     @Environment(\.dismiss) private var dismiss
 

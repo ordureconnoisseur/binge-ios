@@ -21,7 +21,7 @@ struct DiscoverPerformersBar: View {
     let onOpenStashDB: (StashDBTrendingPerformer) -> Void
 
     @AppStorage("binge.stashUrl") private var baseURL: String = ""
-    @AppStorage("binge.stashApiKey") private var apiKey: String = ""
+    private var apiKey: String { KeychainStore.shared.stashApiKey }
     // Bound to the same UserDefaults key AllowedGendersStore reads.
     // We don't need the parsed Set here — only a String to drive
     // the reload-on-change via .onChange below.

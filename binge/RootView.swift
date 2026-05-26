@@ -6,7 +6,7 @@ import SwiftUI
 // launch — see BingeStartupSplash for the dismissal logic.
 struct RootView: View {
     @AppStorage("binge.stashUrl") private var stashUrl: String = ""
-    @AppStorage("binge.stashApiKey") private var stashApiKey: String = ""
+    private var stashApiKey: String { KeychainStore.shared.stashApiKey }
 
     var body: some View {
         if stashUrl.isEmpty || stashApiKey.isEmpty {
@@ -41,7 +41,7 @@ private struct MainShell: View {
     @State private var filterNavigator = FilterNavigator()
 
     @AppStorage("binge.stashUrl") private var stashUrl: String = ""
-    @AppStorage("binge.stashApiKey") private var stashApiKey: String = ""
+    private var stashApiKey: String { KeychainStore.shared.stashApiKey }
     @AppStorage("binge.showcaseMode")
     private var showcaseMode: Bool = true
 

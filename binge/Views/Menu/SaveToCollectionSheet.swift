@@ -13,7 +13,7 @@ struct SaveToCollectionSheet: View {
 
     @Environment(\.dismiss) private var dismiss
     @AppStorage("binge.stashUrl") private var stashUrl: String = ""
-    @AppStorage("binge.stashApiKey") private var stashApiKey: String = ""
+    private var stashApiKey: String { KeychainStore.shared.stashApiKey }
 
     @State private var service: CollectionsService?
     /// Current per-collection membership for THIS scene. Keyed by

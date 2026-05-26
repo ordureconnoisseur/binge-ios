@@ -28,7 +28,7 @@ struct DiscoveryFeedCard: View {
     private var sceneAdded: Bool { addedLocalId != nil }
 
     @AppStorage("binge.stashUrl") private var baseURL: String = ""
-    @AppStorage("binge.stashApiKey") private var apiKey: String = ""
+    private var apiKey: String { KeychainStore.shared.stashApiKey }
 
     /// Error surface for the add flow. nil = idle. Local because
     /// the error is fleeting — once dismissed (by another tap or

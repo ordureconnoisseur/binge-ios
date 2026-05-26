@@ -12,7 +12,7 @@ struct StoryBubble: View {
     let story: Story
     let onTap: () -> Void
 
-    @AppStorage("binge.stashApiKey") private var apiKey: String = ""
+    private var apiKey: String { KeychainStore.shared.stashApiKey }
     @AppStorage("binge.stashUrl") private var baseURL: String = ""
 
     var body: some View {

@@ -28,7 +28,7 @@ struct StashDBPerformerProfile: View {
 
     @Environment(\.dismiss) private var dismiss
     @AppStorage("binge.stashUrl") private var baseURL: String = ""
-    @AppStorage("binge.stashApiKey") private var apiKey: String = ""
+    private var apiKey: String { KeychainStore.shared.stashApiKey }
 
     @State private var vm: StashDBPerformerProfileViewModel?
     /// Set after a successful Follow → triggers the cover-swap to

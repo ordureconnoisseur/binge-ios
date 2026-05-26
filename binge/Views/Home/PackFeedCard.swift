@@ -32,7 +32,7 @@ struct PackFeedCard: View {
     private static let mosaicTiles: Int = 9
 
     @AppStorage("binge.stashUrl") private var baseURL: String = ""
-    @AppStorage("binge.stashApiKey") private var apiKey: String = ""
+    private var apiKey: String { KeychainStore.shared.stashApiKey }
 
     @State private var sheetOpen: Bool = false
     @State private var presentedPerformerId: String?

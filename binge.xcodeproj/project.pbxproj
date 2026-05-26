@@ -78,6 +78,7 @@
 		AA5552AB3CB07B226476A203 /* SceneFeedCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 350EF737A25208A650424C00 /* SceneFeedCard.swift */; };
 		AAF7A096D9AE7CB9C8B38798 /* StashDBCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76C3357E5393BAAE8F3258ED /* StashDBCache.swift */; };
 		AC38D86768800ADBF8F336E7 /* Story.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B0AB9743E68EF0C457D5C51 /* Story.swift */; };
+		B064D90B1718CA846D620EF7 /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = CDAE2F9466D753C011B267D0 /* KeychainStore.swift */; };
 		B1DB2B87F110E592503FEBC3 /* ScribeTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20892F725B8C74B9C49D5E1 /* ScribeTypes.swift */; };
 		B62D0FA19CC4B912DEBDB1E2 /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0A94844345A862768C05C56 /* HomeView.swift */; };
 		B7F39C8F3A648CDD2E19890F /* StoriesRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABBC64D8F5825181F8583D4C /* StoriesRow.swift */; };
@@ -187,6 +188,7 @@
 		C5FAD1EA81743147CCCE61CF /* HomeViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeViewModel.swift; sourceTree = "<group>"; };
 		CB02C6FD61BA09BAF58E104F /* StashDBService+Cache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "StashDBService+Cache.swift"; sourceTree = "<group>"; };
 		CCB6A4CFE7641EE39BA470D0 /* CriterionRatingModal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CriterionRatingModal.swift; sourceTree = "<group>"; };
+		CDAE2F9466D753C011B267D0 /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
 		CE8EEE9B5D2F2F6D9F75D5A0 /* ExploreViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExploreViewModel.swift; sourceTree = "<group>"; };
 		CF1220101A0FE45FACE17BC7 /* ReelPerformerRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReelPerformerRow.swift; sourceTree = "<group>"; };
 		D301011B45CBA29466602321 /* RatingCompute.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RatingCompute.swift; sourceTree = "<group>"; };
@@ -327,6 +329,7 @@
 				E7C399790AACDDFC8430BF74 /* DiscoveryFeedBuilder.swift */,
 				D883BFB2C5B25A829B44E2D3 /* FollowService.swift */,
 				1BBB8FFC03593B369FCCFC05 /* InteractedTagsStore.swift */,
+				CDAE2F9466D753C011B267D0 /* KeychainStore.swift */,
 				EA215E4AC29226CC9D326430 /* PerformerSweep.swift */,
 				3AF399DC6000640DB516E802 /* PlayerPool.swift */,
 				1746DCB371C7C6F87AF75246 /* Queries.swift */,
@@ -557,6 +560,7 @@
 				2C09AEE54AFE70037DC16F53 /* HomeViewModel.swift in Sources */,
 				8E1D0AE2A46E64B24EAFAFBE /* InteractedTagsStore.swift in Sources */,
 				F28AC9CDDE9BCBD3D8591739 /* InteractivePopRecognizer.swift in Sources */,
+				B064D90B1718CA846D620EF7 /* KeychainStore.swift in Sources */,
 				8B6C36808887108C8F03BACD /* MenuPage.swift in Sources */,
 				907DD3866F60BAD7BCA9F4B2 /* MoreSheet.swift in Sources */,
 				EF97DB2051414C090F27F16F /* PackDetailSheet.swift in Sources */,

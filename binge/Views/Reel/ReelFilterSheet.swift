@@ -8,7 +8,7 @@ struct ReelFilterSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(FilterNavigator.self) private var nav
     @AppStorage("binge.stashUrl") private var stashUrl: String = ""
-    @AppStorage("binge.stashApiKey") private var stashApiKey: String = ""
+    private var stashApiKey: String { KeychainStore.shared.stashApiKey }
 
     @State private var loadState: LoadState = .idle
     @State private var filters: [StashSavedFilter] = []
