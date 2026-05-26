@@ -176,6 +176,23 @@ struct ReelView: View {
                 }
             }
             lastActiveIndex = idx
+
+            // Prewarm the next slide so the buffer is already
+            // building before the user swipes. Single-step
+            // forward only — pool cap 3 (active + recent +
+            // prewarmed) keeps within the PlayerRemoteXPC
+            // budget that the earlier 2-step+cap-5 setup blew
+            // through (-12860 media-services resets). Backward
+            // scrolls hit the LRU cache for free.
+            let warmIdx = idx + 1
+            if warmIdx < scenes.count {
+                PlayerPool.shared.prewarm(
+                    scene: scenes[warmIdx],
+                    baseURL: stashUrl,
+                    apiKey: stashApiKey,
+                    muted: true
+                )
+            }
         }
         .onChange(of: filterNav.active?.id) { _, _ in
             // Filter changed (applied or cleared) — reset state +

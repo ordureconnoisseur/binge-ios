@@ -130,6 +130,28 @@ final class PlayerPool {
         return q
     }
 
+    /// Eagerly fetch the player for a scene without playing it.
+    /// Called by ReelView when activeId advances, so the next
+    /// scene is already buffered when the user swipes to it.
+    /// Conservative — single step ahead only, to keep the pool
+    /// inside its capacity and avoid the PlayerRemoteXPC reset
+    /// storm that the earlier 2-step + cap-5 setup triggered.
+    func prewarm(
+        scene: BingeScene,
+        baseURL: String,
+        apiKey: String,
+        muted: Bool
+    ) {
+        // Same code path as `player(for:)` — the side effect of
+        // creating + caching the AVPlayer is what we want.
+        _ = player(
+            for: scene,
+            baseURL: baseURL,
+            apiKey: apiKey,
+            muted: muted
+        )
+    }
+
     /// Refresh lastUsed for a scene without touching the player.
     /// Used when a slide re-appears via LazyVStack remount — keeps
     /// the entry from being evicted just because the user is
