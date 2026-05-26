@@ -127,16 +127,47 @@ struct BingeScene: Decodable, Identifiable, Hashable {
     // — no waiting for full-file transcode like the `.mp4`
     // endpoint required.
     //
-    // We pick the FIRST HLS entry from sceneStreams (typically the
-    // "HLS Original" auto-resolution variant). The URL Stash
-    // returns already includes the `?apikey=...&resolution=...`
-    // query string — we just hand it to AVPlayer directly.
+    // Pick order (instrumented timings on user's remote-link
+    // Stash, 2026-05-26):
+    //   1. HEVC → HLS (only path AVPlayer can decode without
+    //      a transcode pass)
+    //   2. Otherwise MP4 720p (STANDARD_HD) — measured
+    //      READY ~300–500ms vs ~1.1–1.9s for full-quality
+    //      `paths.stream`. The MP4 moov atom is at the front
+    //      so AVPlayer can begin playback after a single short
+    //      range request.
+    //   3. Fallback to paths.stream when sceneStreams has no
+    //      720p MP4 entry (older Stash or unusual codecs).
     func streamURL(base: String) -> URL? {
         if isHEVC, let hls = firstHLSStreamURL() {
             return logged(absoluteURL(hls, base: base))
         }
+        if let mp4 = preferredMP4StreamURL() {
+            return logged(absoluteURL(mp4, base: base))
+        }
         guard let stream = paths.stream else { return nil }
         return logged(absoluteURL(stream, base: base))
+    }
+
+    /// MP4 transcode endpoint matching our preferred resolution
+    /// ladder: 720p first (best balance of startup + quality on
+    /// a 9:16 phone reel), then 480p, then full original. nil if
+    /// none of those labels are advertised.
+    private func preferredMP4StreamURL() -> String? {
+        let ladder = [
+            "MP4 HD (720p)",
+            "MP4 Standard (480p)",
+            "MP4",
+        ]
+        for wanted in ladder {
+            for s in sceneStreams
+            where (s.label ?? "") == wanted
+                && (s.mimeType ?? "").lowercased() == "video/mp4"
+            {
+                return s.url
+            }
+        }
+        return nil
     }
 
     /// True when the source file's codec is HEVC / H.265.
