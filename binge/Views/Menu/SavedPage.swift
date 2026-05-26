@@ -51,6 +51,17 @@ struct SavedPage: View {
         .toolbarBackground(Color.black, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
         .toolbarColorScheme(.dark, for: .navigationBar)
+        // Resolves the per-tile NavigationLink(value: coll) push.
+        // The destination lives here (not on MenuPage) so it has
+        // access to SavedPage's `service` — preserves the cached
+        // tagIds so CollectionDetailPage doesn't have to re-resolve
+        // them on every push.
+        .navigationDestination(for: CollectionDef.self) { coll in
+            CollectionDetailPage(
+                collection: coll,
+                service: service
+            )
+        }
         .task {
             if service == nil {
                 service = CollectionsService(
@@ -183,12 +194,15 @@ struct SavedPage: View {
 
     @ViewBuilder
     private func tile(coll: CollectionDef) -> some View {
-        NavigationLink {
-            CollectionDetailPage(
-                collection: coll,
-                service: service
-            )
-        } label: {
+        // Value-based push (resolved by MenuPage's
+        // .navigationDestination(for: CollectionDef.self)).
+        // Mixing this with NavigationLink {destination} on the
+        // same stack made tile taps inside CollectionDetailPage
+        // double-push the collection on top of the pushed reel —
+        // SwiftUI couldn't reconcile the inline destination with
+        // the path-based child push. Keeping every push on the
+        // path side is the working pattern.
+        NavigationLink(value: coll) {
             VStack(alignment: .leading, spacing: 6) {
                 cover(coll: coll)
                 HStack(spacing: 6) {
