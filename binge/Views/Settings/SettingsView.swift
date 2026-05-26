@@ -135,7 +135,18 @@ struct SettingsView: View {
     @ViewBuilder
     private var welcomeHero: some View {
         VStack(alignment: .leading, spacing: 14) {
-            BingeLogoMark(size: 44)
+            // Welcome-screen-only: gradient version of the brand
+            // mark (pink→purple→blue, same palette as the story
+            // ring used in the rest of the app + on the web).
+            // The monochrome BingeLogoMark stays in the toolbars
+            // where chrome is meant to be quiet.
+            Image("BingeLogo")
+                .renderingMode(.template)
+                .resizable()
+                .scaledToFit()
+                .frame(height: 56)
+                .foregroundStyle(LinearGradient.bingeStoryRing)
+                .accessibilityLabel("binge")
             Text("Welcome to binge")
                 .font(.system(size: 30, weight: .bold))
                 .foregroundStyle(.white)
