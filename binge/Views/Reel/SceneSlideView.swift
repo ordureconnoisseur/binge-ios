@@ -437,12 +437,18 @@ struct SceneSlideView: View {
     }
 
 
-    /// Poll the active player for AVPlayer `.failed` status for
-    /// the first ~3s after activation. On failure: evict the
-    /// pool entry, detach the time observer, attach a fresh
-    /// player. Recovery path for the "scene black-screens until
-    /// I scroll away and back" pattern caused by transient
-    /// PlayerRemoteXPC -12860 resets.
+    /// Poll the active player for the first ~3s after
+    /// activation. Rebuild on either:
+    ///   - AVPlayer `.failed` status (loud failure — e.g.
+    ///     transcoder errored)
+    ///   - Still not `isPlaybackLikelyToKeepUp` after 3s (quiet
+    ///     failure — common with HLS for VP9 / HEVC where the
+    ///     playlist never finishes parsing and the player sits
+    ///     in `.unknown` indefinitely)
+    /// "Rebuild" = evict the pool entry + re-attach a fresh
+    /// player. Recovery path for the "scene black-screens
+    /// until I scroll away and back" pattern that the previous
+    /// .failed-only check missed.
     private func watchForPlaybackFailure() {
         let sceneId = scene.id
         Task { @MainActor in
@@ -453,13 +459,7 @@ struct SceneSlideView: View {
                 }
                 let status = player?.currentItem?.status
                 if status == .failed {
-                    print(
-                        "[SceneSlide] FAILED scene=\(sceneId) "
-                        + "— rebuilding player"
-                    )
-                    detachTimeObserver()
-                    PlayerPool.shared.evict(sceneId: sceneId)
-                    attachPlayer()
+                    rebuildStuckPlayer(reason: "failed-status")
                     return
                 }
                 if player?.currentItem?.isPlaybackLikelyToKeepUp
@@ -468,7 +468,25 @@ struct SceneSlideView: View {
                     return
                 }
             }
+            // 3s elapsed, still not ready and not failed.
+            // Common case: HLS playlist parse hung in unknown.
+            guard isActive, scene.id == sceneId else { return }
+            if player?.currentItem?.isPlaybackLikelyToKeepUp
+                != true
+            {
+                rebuildStuckPlayer(reason: "stuck-3s")
+            }
         }
+    }
+
+    private func rebuildStuckPlayer(reason: String) {
+        print(
+            "[SceneSlide] STUCK scene=\(scene.id) "
+            + "reason=\(reason) — rebuilding player"
+        )
+        detachTimeObserver()
+        PlayerPool.shared.evict(sceneId: scene.id)
+        attachPlayer()
     }
 
     private func attachPlayer() {
