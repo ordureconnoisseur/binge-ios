@@ -42,12 +42,13 @@ struct SceneSlideView: View {
     @AppStorage("binge.autoScroll") private var autoScroll: Bool = false
 
     @State private var player: AVPlayer?
-    /// Per-cell counter — the only rendering source. Hydrated
-    /// from OCounterStore on appear (preserves the count when
-    /// the cell remounts after LazyVStack recycles it), then
-    /// written back to OCounterStore on every mutation so the
-    /// next remount sees the latest value. Avoids the parent-
-    /// dictionary re-render storm the previous lift caused.
+    /// Per-cell counter. Resets to scene.oCounter on remount.
+    /// We tried a process-wide singleton store to preserve the
+    /// value across LazyVStack recycle but it made the reel
+    /// feel laggier — keeping per-cell @State + accepting that
+    /// liking a scene, scrolling away, and scrolling back may
+    /// briefly show the pre-like count until the server confirm
+    /// settles.
     @State private var localOCounter: Int = 0
     @State private var posterVisible: Bool = true
     @State private var timeObserver: Any?
@@ -279,13 +280,7 @@ struct SceneSlideView: View {
             }
         }
         .onAppear {
-            // Hydrate the per-cell counter: prefer
-            // OCounterStore (set by an earlier like/unlike in
-            // this session — survives LazyVStack recycle), fall
-            // back to the scene's server-known value otherwise.
-            localOCounter =
-                OCounterStore.shared.get(scene.id)
-                ?? scene.oCounter ?? 0
+            localOCounter = scene.oCounter ?? 0
             posterVisible = true
             attachPlayer()
             // First-mount of an active slide counts as "play" too.
@@ -526,13 +521,8 @@ struct SceneSlideView: View {
     }
 
     private func triggerLike() {
-        // Optimistic local bump for instant feedback. Mirror it
-        // into OCounterStore so the next LazyVStack remount of
-        // this slide (after scroll-away-and-back) reads the
-        // already-incremented value instead of regressing to
-        // the stale scene.oCounter.
+        // Optimistic local bump for instant feedback.
         localOCounter += 1
-        OCounterStore.shared.set(scene.id, localOCounter)
         InteractedTagsStore.record(scene.tags)
         // Spawn a fresh heart-burst layer. Auto-removed after
         // the longest particle animation completes (max
@@ -547,7 +537,6 @@ struct SceneSlideView: View {
         Task {
             if let confirmed = await onLike(scene) {
                 localOCounter = confirmed
-                OCounterStore.shared.set(scene.id, confirmed)
             }
         }
     }
@@ -555,11 +544,9 @@ struct SceneSlideView: View {
     private func triggerUnlike() {
         // No burst — unlike isn't celebrated.
         localOCounter = max(0, localOCounter - 1)
-        OCounterStore.shared.set(scene.id, localOCounter)
         Task {
             if let confirmed = await onUnlike(scene) {
                 localOCounter = confirmed
-                OCounterStore.shared.set(scene.id, confirmed)
             }
         }
     }
