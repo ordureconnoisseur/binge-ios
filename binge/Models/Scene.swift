@@ -185,13 +185,36 @@ struct BingeScene: Decodable, Identifiable, Hashable {
             }
             return logged(directStreamURL(base: base))
         default:
-            // auto: HLS for any codec AVPlayer can't decode
-            // direct (HEVC + VP9 + AV1 most commonly). Plain
+            // auto: MP4 transcode ladder for any codec AVPlayer
+            // can't decode direct (HEVC + VP9 + AV1). Plain
             // H264 streams direct — no ffmpeg load on the host.
-            // VP9 in particular is common for Instagram/TikTok
-            // sourced clips, which would otherwise black-screen.
-            if needsTranscode, let hls = firstHLSStreamURL() {
-                return logged(absoluteURL(hls, base: base))
+            //
+            // HLS was the previous fallback but proved unreliable
+            // on VP9: ~10% of Instagram clips would black-screen
+            // even after rebuild because AVPlayer + Stash's
+            // VP9→HLS transcode have edge-cases that don't
+            // recover. Stash's VP9→H264 MP4 transcode goes
+            // through ffmpeg once, caches the result, and serves
+            // a vanilla progressive MP4 that AVPlayer handles
+            // unconditionally. Trade-off: slightly more CPU on
+            // the host the first time each scene loads, much
+            // higher playback success rate.
+            if needsTranscode {
+                if let url = preferredStream(
+                    ladder: [
+                        "MP4 HD (720p)",
+                        "MP4 Standard (480p)",
+                        "MP4",
+                    ],
+                    mime: "video/mp4"
+                ) {
+                    return logged(absoluteURL(url, base: base))
+                }
+                // Last-resort fallback: HLS if MP4 transcode
+                // isn't advertised for some reason.
+                if let hls = firstHLSStreamURL() {
+                    return logged(absoluteURL(hls, base: base))
+                }
             }
             return logged(directStreamURL(base: base))
         }
