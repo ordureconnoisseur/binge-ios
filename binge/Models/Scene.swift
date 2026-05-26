@@ -272,29 +272,22 @@ struct BingeScene: Decodable, Identifiable, Hashable {
         return !h264Aliases.contains { codec.contains($0) }
     }
 
-    /// HLS endpoint Stash advertises in sceneStreams, picked from
-    /// the resolution ladder rather than the bare first entry.
-    /// The first HLS entry in sceneStreams is the ORIGINAL
-    /// variant (Stash advertises it without a resolution
-    /// suffix) — for 4K HEVC sources that's a brutal real-time
-    /// transcode and was producing PlayerRemoteXPC -12860
-    /// resets + playback failures.
+    /// First HLS endpoint Stash advertises in sceneStreams,
+    /// matched by mime type (the official Apple HLS mime type is
+    /// `application/vnd.apple.mpegurl`). Stash also exposes DASH
+    /// (`application/dash+xml`) but AVPlayer's DASH support is
+    /// patchier than its HLS support — HLS is the safer bet.
+    /// Returns nil if no HLS endpoint is configured.
     ///
-    /// Prefer 720p, then 480p, then original. Caps the transcode
-    /// burden on the host side and the network bandwidth on the
-    /// client side. AVPlayer's DASH support is patchier than its
-    /// HLS support so we don't fall back to DASH.
+    /// History: briefly walked a 720p → 480p → original ladder
+    /// here to ease the transcode load on big HEVC sources, but
+    /// the user's library has at least some HEVC content where
+    /// Stash's 720p HLS variant fails to play while ORIGINAL
+    /// works. The first-entry behaviour is the proven path.
     private func firstHLSStreamURL() -> String? {
-        let ladder = [
-            "HLS HD (720p)",
-            "HLS Standard (480p)",
-            "HLS",
-        ]
-        let hlsMime = "application/vnd.apple.mpegurl"
-        for wanted in ladder {
-            for s in sceneStreams
-            where (s.label ?? "") == wanted
-                && (s.mimeType ?? "").lowercased() == hlsMime
+        for s in sceneStreams {
+            if (s.mimeType ?? "").lowercased()
+                == "application/vnd.apple.mpegurl"
             {
                 return s.url
             }
