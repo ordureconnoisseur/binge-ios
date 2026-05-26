@@ -53,33 +53,289 @@ struct SettingsView: View {
     }
 
     var body: some View {
-        let form = Form {
-            connectionSection
-            if mode == .normal {
-                showcaseModeSection
-                gendersSection
-                streamingSection
-                reelSection
-                homeSection
-                bingeServerSection
-                bingeServerConfigSection
-                debugSection
+        // .setup mode: custom welcome chrome. First impression for
+        // anyone who isn't the person who built the app, so it
+        // explains what binge is + what they need before dropping
+        // them into form fields. The connection probe / persist
+        // path is identical to .normal mode (`runProbe()`).
+        //
+        // .normal mode: pushed from MenuPage with full settings
+        // surface (preferences, debug, binge-server config).
+        if mode == .setup {
+            NavigationStack {
+                welcomeBody
             }
+        } else {
+            normalBody
+        }
+    }
+
+    // MARK: - .normal body (existing form)
+
+    @ViewBuilder
+    private var normalBody: some View {
+        Form {
+            connectionSection
+            showcaseModeSection
+            gendersSection
+            streamingSection
+            reelSection
+            homeSection
+            bingeServerSection
+            bingeServerConfigSection
+            debugSection
         }
         .onAppear {
             if draftUrl.isEmpty { draftUrl = stashUrl }
             if draftApiKey.isEmpty { draftApiKey = stashApiKey }
         }
-        .navigationTitle(mode == .setup ? "Set up binge" : "Settings")
+        .navigationTitle("Settings")
         .navigationBarTitleDisplayMode(.inline)
+    }
 
-        // .setup mode is presented before the main shell exists, so
-        // it needs its own NavigationStack wrapper. .normal mode is
-        // pushed onto MenuPage's stack and inherits its chrome.
-        if mode == .setup {
-            NavigationStack { form }
-        } else {
-            form
+    // MARK: - .setup body (welcome + inline connection)
+
+    @ViewBuilder
+    private var welcomeBody: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                welcomeHero
+                welcomeRequirements
+                welcomeConnectionForm
+                welcomeProbeFeedback
+                welcomeOptionalNotes
+            }
+            .padding(.horizontal, 22)
+            .padding(.top, 32)
+            .padding(.bottom, 40)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .background(Color.black.ignoresSafeArea())
+        .scrollDismissesKeyboard(.interactively)
+        .onAppear {
+            if draftUrl.isEmpty { draftUrl = stashUrl }
+            if draftApiKey.isEmpty { draftApiKey = stashApiKey }
+        }
+        .toolbar(.hidden, for: .navigationBar)
+    }
+
+    @ViewBuilder
+    private var welcomeHero: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            BingeLogoMark(size: 44)
+            Text("Welcome to binge")
+                .font(.system(size: 30, weight: .bold))
+                .foregroundStyle(.white)
+            Text(
+                "A native iOS client for your Stash library — "
+                + "reels, stories, performer profiles, ratings, "
+                + "and collections, all reading from the server "
+                + "you already run."
+            )
+            .font(.system(size: 15))
+            .foregroundStyle(.white.opacity(0.7))
+            .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    @ViewBuilder
+    private var welcomeRequirements: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("You'll need")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.55))
+                .textCase(.uppercase)
+                .tracking(0.5)
+            requirementRow(
+                icon: "server.rack",
+                title: "Your Stash server's address",
+                detail: "e.g. http://192.168.1.100:9999 — "
+                    + "or a Tailscale/VPN URL if you reach "
+                    + "Stash from outside your LAN."
+            )
+            requirementRow(
+                icon: "key.fill",
+                title: "A Stash API key",
+                detail: "In Stash: Settings → Security → "
+                    + "API Key. Copy the value and paste it below."
+            )
+        }
+    }
+
+    @ViewBuilder
+    private func requirementRow(
+        icon: String,
+        title: String,
+        detail: String
+    ) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.85))
+                .frame(width: 22, alignment: .center)
+                .padding(.top, 1)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.white)
+                Text(detail)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.white.opacity(0.6))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var welcomeConnectionForm: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Stash connection")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.55))
+                .textCase(.uppercase)
+                .tracking(0.5)
+
+            TextField(
+                "",
+                text: $draftUrl,
+                prompt: Text("http://192.168.1.100:9999")
+                    .foregroundStyle(.white.opacity(0.35))
+            )
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
+            .keyboardType(.URL)
+            .font(.system(size: 15))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(Color.white.opacity(0.08))
+            )
+
+            SecureField(
+                "",
+                text: $draftApiKey,
+                prompt: Text("API key")
+                    .foregroundStyle(.white.opacity(0.35))
+            )
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
+            .font(.system(size: 15))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(Color.white.opacity(0.08))
+            )
+
+            Button {
+                Task { await runProbe() }
+            } label: {
+                HStack(spacing: 8) {
+                    if probeState == .probing {
+                        ProgressView()
+                            .tint(.white)
+                    }
+                    Text(
+                        probeState == .probing
+                            ? "Connecting…"
+                            : "Test connection"
+                    )
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(.white)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+                .background(
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(canProbe ? Color.bingeLike : Color.white.opacity(0.12))
+                )
+            }
+            .buttonStyle(.plain)
+            .disabled(!canProbe)
+            .padding(.top, 4)
+        }
+    }
+
+    private var canProbe: Bool {
+        !draftUrl.isEmpty
+            && !draftApiKey.isEmpty
+            && probeState != .probing
+    }
+
+    @ViewBuilder
+    private var welcomeProbeFeedback: some View {
+        switch probeState {
+        case .idle, .probing:
+            EmptyView()
+        case .success(let v):
+            Label(
+                "Connected · Stash \(v)",
+                systemImage: "checkmark.circle.fill"
+            )
+            .font(.system(size: 14, weight: .semibold))
+            .foregroundStyle(.green)
+        case .failure(let msg):
+            VStack(alignment: .leading, spacing: 6) {
+                Label(
+                    "Couldn't connect",
+                    systemImage: "exclamationmark.triangle.fill"
+                )
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(.red)
+                Text(msg)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.white.opacity(0.7))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(12)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(Color.red.opacity(0.12))
+            )
+        }
+    }
+
+    @ViewBuilder
+    private var welcomeOptionalNotes: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Optional features")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.55))
+                .textCase(.uppercase)
+                .tracking(0.5)
+            optionalRow(
+                title: "Advanced Rating plugin",
+                detail: "Per-criterion 0–5 scoring. "
+                    + "binge falls back to basic ratings if absent."
+            )
+            optionalRow(
+                title: "Stash Scribe plugin",
+                detail: "LLM-powered review writing. "
+                    + "Scribe button hides if not installed."
+            )
+            optionalRow(
+                title: "binge-server",
+                detail: "Self-hosted Go daemon that pulls "
+                    + "Reddit posts into the stories row. "
+                    + "Configure later under Settings."
+            )
+        }
+        .padding(.top, 6)
+    }
+
+    @ViewBuilder
+    private func optionalRow(title: String, detail: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.85))
+            Text(detail)
+                .font(.system(size: 12))
+                .foregroundStyle(.white.opacity(0.55))
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
