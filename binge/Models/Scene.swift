@@ -227,16 +227,29 @@ struct BingeScene: Decodable, Identifiable, Hashable {
             || codec.contains("h.265")
     }
 
-    /// First HLS endpoint Stash advertises in sceneStreams,
-    /// matched by mime type (the official Apple HLS mime type is
-    /// `application/vnd.apple.mpegurl`). Stash also exposes DASH
-    /// (`application/dash+xml`) but AVPlayer's DASH support is
-    /// patchier than its HLS support — HLS is the safer bet.
-    /// Returns nil if no HLS endpoint is configured.
+    /// HLS endpoint Stash advertises in sceneStreams, picked from
+    /// the resolution ladder rather than the bare first entry.
+    /// The first HLS entry in sceneStreams is the ORIGINAL
+    /// variant (Stash advertises it without a resolution
+    /// suffix) — for 4K HEVC sources that's a brutal real-time
+    /// transcode and was producing PlayerRemoteXPC -12860
+    /// resets + playback failures.
+    ///
+    /// Prefer 720p, then 480p, then original. Caps the transcode
+    /// burden on the host side and the network bandwidth on the
+    /// client side. AVPlayer's DASH support is patchier than its
+    /// HLS support so we don't fall back to DASH.
     private func firstHLSStreamURL() -> String? {
-        for s in sceneStreams {
-            if (s.mimeType ?? "").lowercased()
-                == "application/vnd.apple.mpegurl"
+        let ladder = [
+            "HLS HD (720p)",
+            "HLS Standard (480p)",
+            "HLS",
+        ]
+        let hlsMime = "application/vnd.apple.mpegurl"
+        for wanted in ladder {
+            for s in sceneStreams
+            where (s.label ?? "") == wanted
+                && (s.mimeType ?? "").lowercased() == hlsMime
             {
                 return s.url
             }
