@@ -127,42 +127,89 @@ struct BingeScene: Decodable, Identifiable, Hashable {
     // — no waiting for full-file transcode like the `.mp4`
     // endpoint required.
     //
-    // Pick order (instrumented timings on user's remote-link
-    // Stash, 2026-05-26):
-    //   1. HEVC → HLS (only path AVPlayer can decode without
-    //      a transcode pass)
-    //   2. Otherwise MP4 720p (STANDARD_HD) — measured
-    //      READY ~300–500ms vs ~1.1–1.9s for full-quality
-    //      `paths.stream`. The MP4 moov atom is at the front
-    //      so AVPlayer can begin playback after a single short
-    //      range request.
-    //   3. Fallback to paths.stream when sceneStreams has no
-    //      720p MP4 entry (older Stash or unusual codecs).
+    // Pick order honours the user's `binge.transcodeType`
+    // preference from Settings (defaults to "auto"):
+    //   - auto:   HEVC → HLS, else paths.stream (direct).
+    //             Best for PC — no ffmpeg unless required.
+    //   - direct: always paths.stream. May black-screen for
+    //             HEVC on AVPlayer; user opt-in.
+    //   - mp4:    MP4 transcode ladder (720p / 480p / orig).
+    //             Faster first frame on iOS but each cold-miss
+    //             scene triggers a Stash ffmpeg job.
+    //   - hls:    HLS transcode ladder. Adaptive bitrate, good
+    //             for shaky networks; also ffmpeg cost.
+    //   - webm:   WebM transcode. AVPlayer can't play it on
+    //             iOS — exposed for parity with the web client.
     func streamURL(base: String) -> URL? {
-        if isHEVC, let hls = firstHLSStreamURL() {
-            return logged(absoluteURL(hls, base: base))
+        let preference = UserDefaults.standard.string(
+            forKey: "binge.transcodeType"
+        ) ?? "auto"
+
+        switch preference {
+        case "direct":
+            return logged(directStreamURL(base: base))
+        case "mp4":
+            if let url = preferredStream(
+                ladder: [
+                    "MP4 HD (720p)",
+                    "MP4 Standard (480p)",
+                    "MP4",
+                ],
+                mime: "video/mp4"
+            ) {
+                return logged(absoluteURL(url, base: base))
+            }
+            return logged(directStreamURL(base: base))
+        case "hls":
+            if let url = preferredStream(
+                ladder: [
+                    "HLS HD (720p)",
+                    "HLS Standard (480p)",
+                    "HLS",
+                ],
+                mime: "application/vnd.apple.mpegurl"
+            ) {
+                return logged(absoluteURL(url, base: base))
+            }
+            return logged(directStreamURL(base: base))
+        case "webm":
+            if let url = preferredStream(
+                ladder: [
+                    "WEBM HD (720p)",
+                    "WEBM Standard (480p)",
+                    "WEBM",
+                ],
+                mime: "video/webm"
+            ) {
+                return logged(absoluteURL(url, base: base))
+            }
+            return logged(directStreamURL(base: base))
+        default:
+            // auto: HLS for HEVC (AVPlayer can't decode raw
+            // HEVC streams reliably without it), direct for
+            // everything else (no ffmpeg load on the host).
+            if isHEVC, let hls = firstHLSStreamURL() {
+                return logged(absoluteURL(hls, base: base))
+            }
+            return logged(directStreamURL(base: base))
         }
-        if let mp4 = preferredMP4StreamURL() {
-            return logged(absoluteURL(mp4, base: base))
-        }
-        guard let stream = paths.stream else { return nil }
-        return logged(absoluteURL(stream, base: base))
     }
 
-    /// MP4 transcode endpoint matching our preferred resolution
-    /// ladder: 720p first (best balance of startup + quality on
-    /// a 9:16 phone reel), then 480p, then full original. nil if
-    /// none of those labels are advertised.
-    private func preferredMP4StreamURL() -> String? {
-        let ladder = [
-            "MP4 HD (720p)",
-            "MP4 Standard (480p)",
-            "MP4",
-        ]
+    private func directStreamURL(base: String) -> URL? {
+        guard let stream = paths.stream else { return nil }
+        return absoluteURL(stream, base: base)
+    }
+
+    /// First sceneStreams entry matching one of the requested
+    /// labels in order, filtered by mime type. nil if no match.
+    private func preferredStream(
+        ladder: [String],
+        mime: String
+    ) -> String? {
         for wanted in ladder {
             for s in sceneStreams
             where (s.label ?? "") == wanted
-                && (s.mimeType ?? "").lowercased() == "video/mp4"
+                && (s.mimeType ?? "").lowercased() == mime
             {
                 return s.url
             }
