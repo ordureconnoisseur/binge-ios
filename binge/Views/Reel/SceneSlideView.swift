@@ -280,6 +280,14 @@ struct SceneSlideView: View {
                 )
                 player?.play()
                 onActivate?(scene)
+                // Watch for failure during the first few
+                // seconds — if AVPlayer transitions to .failed
+                // (most common cause on this codebase:
+                // PlayerRemoteXPC reset during transcode), kick
+                // the pool entry and re-attach so the user gets
+                // a working player without having to scroll
+                // away and back.
+                watchForPlaybackFailure()
             } else {
                 player?.pause()
             }
@@ -428,6 +436,40 @@ struct SceneSlideView: View {
         return "Scene \(scene.id)"
     }
 
+
+    /// Poll the active player for AVPlayer `.failed` status for
+    /// the first ~3s after activation. On failure: evict the
+    /// pool entry, detach the time observer, attach a fresh
+    /// player. Recovery path for the "scene black-screens until
+    /// I scroll away and back" pattern caused by transient
+    /// PlayerRemoteXPC -12860 resets.
+    private func watchForPlaybackFailure() {
+        let sceneId = scene.id
+        Task { @MainActor in
+            for _ in 0..<30 {
+                try? await Task.sleep(for: .milliseconds(100))
+                guard isActive, scene.id == sceneId else {
+                    return
+                }
+                let status = player?.currentItem?.status
+                if status == .failed {
+                    print(
+                        "[SceneSlide] FAILED scene=\(sceneId) "
+                        + "— rebuilding player"
+                    )
+                    detachTimeObserver()
+                    PlayerPool.shared.evict(sceneId: sceneId)
+                    attachPlayer()
+                    return
+                }
+                if player?.currentItem?.isPlaybackLikelyToKeepUp
+                    == true
+                {
+                    return
+                }
+            }
+        }
+    }
 
     private func attachPlayer() {
         let p = PlayerPool.shared.player(

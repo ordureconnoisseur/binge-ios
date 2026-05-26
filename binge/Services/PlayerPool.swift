@@ -166,6 +166,23 @@ final class PlayerPool {
         )
     }
 
+    /// Drop a single scene's player entry — used by
+    /// SceneSlideView when AVPlayer reports `.failed`, so the
+    /// next attachPlayer() call gets a fresh player instead of
+    /// returning the failed one from cache. Without this, the
+    /// "forward-then-back makes it play" pattern is the only
+    /// recovery path the user has.
+    func evict(sceneId: String) {
+        guard let entry = entries[sceneId] else { return }
+        entry.player.pause()
+        entry.player.replaceCurrentItem(with: nil)
+        entries.removeValue(forKey: sceneId)
+        print(
+            "[PlayerPool] EVICT scene=\(sceneId) reason=manual "
+            + "pool=\(entries.count)/\(capacity)"
+        )
+    }
+
     /// Refresh lastUsed for a scene without touching the player.
     /// Used when a slide re-appears via LazyVStack remount — keeps
     /// the entry from being evicted just because the user is
