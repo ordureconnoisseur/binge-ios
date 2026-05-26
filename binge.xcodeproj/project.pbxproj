@@ -48,6 +48,7 @@
 		5653DAE8E15F6371C64F1E7D /* ReelActionStack.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2AB8B2FDEBD5F11DD264E6B /* ReelActionStack.swift */; };
 		56CE29465FBC504998368DFB /* VideoPlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C41BB9ADF8CA2FBD59A7A370 /* VideoPlayerView.swift */; };
 		5B3AC59F39F4DC5715E7F590 /* StoryProgressStrip.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D92CF8D9B973F2EAA90B9D6 /* StoryProgressStrip.swift */; };
+		61C3CC827706545B68718BCB /* StashLoginService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11FCD5EA361B3C1C0A787D4B /* StashLoginService.swift */; };
 		63C40D15A5888BC6AF8BAB01 /* ScribeContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F8FB6B37C800E5E55CA985E /* ScribeContext.swift */; };
 		642B71054AAFC4FCD6120EFB /* FollowingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99AEE181B390280D31C36C96 /* FollowingView.swift */; };
 		64A5E9DF20FFF6E7D634ECF7 /* BingeLoading.swift in Sources */ = {isa = PBXBuildFile; fileRef = 297D878A0DFC44AE584A008F /* BingeLoading.swift */; };
@@ -112,6 +113,7 @@
 		063C8C9616CEBB3F3AC6BA06 /* SaveToCollectionSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SaveToCollectionSheet.swift; sourceTree = "<group>"; };
 		0869A66F1D479AF4FB1FF424 /* AllowedGendersStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AllowedGendersStore.swift; sourceTree = "<group>"; };
 		0D758F21B5A55B7626C76B0B /* PluginContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PluginContext.swift; sourceTree = "<group>"; };
+		11FCD5EA361B3C1C0A787D4B /* StashLoginService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StashLoginService.swift; sourceTree = "<group>"; };
 		1291A399E234E5B1F7D9BCCE /* RelativeDate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelativeDate.swift; sourceTree = "<group>"; };
 		1746DCB371C7C6F87AF75246 /* Queries.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Queries.swift; sourceTree = "<group>"; };
 		1BBB8FFC03593B369FCCFC05 /* InteractedTagsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InteractedTagsStore.swift; sourceTree = "<group>"; };
@@ -338,6 +340,7 @@
 				76C3357E5393BAAE8F3258ED /* StashDBCache.swift */,
 				ED716F7B44925289EE9FEC3C /* StashDBService.swift */,
 				CB02C6FD61BA09BAF58E104F /* StashDBService+Cache.swift */,
+				11FCD5EA361B3C1C0A787D4B /* StashLoginService.swift */,
 				AA9C83E2E8485406B3B36F39 /* StoryBuilder.swift */,
 			);
 			path = Services;
@@ -614,6 +617,7 @@
 				DFC3BEAAE5029AF19F70757A /* StashDBPerformerProfile.swift in Sources */,
 				46420219927CFAE05E139702 /* StashDBService+Cache.swift in Sources */,
 				804C94DCB53301DAF5019339 /* StashDBService.swift in Sources */,
+				61C3CC827706545B68718BCB /* StashLoginService.swift in Sources */,
 				B7F39C8F3A648CDD2E19890F /* StoriesRow.swift in Sources */,
 				AC38D86768800ADBF8F336E7 /* Story.swift in Sources */,
 				09C4F2783C30275245EA41B6 /* StoryBubble.swift in Sources */,

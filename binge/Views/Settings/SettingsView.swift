@@ -46,6 +46,19 @@ struct SettingsView: View {
     @State private var draftApiKey: String = ""
     @State private var probeState: ProbeState = .idle
 
+    // Username+password sign-in path (welcome screen only). Fetches
+    // the API key automatically via StashLoginService, then hands
+    // off to the existing `runProbe()` for the final validate +
+    // persist step.
+    @State private var authMethod: AuthMethod = .apiKey
+    @State private var draftUsername: String = ""
+    @State private var draftPassword: String = ""
+
+    enum AuthMethod: Hashable {
+        case apiKey
+        case signIn
+    }
+
     enum ProbeState: Equatable {
         case idle, probing
         case success(String) // stash version
@@ -213,56 +226,145 @@ struct SettingsView: View {
                     .fill(Color.white.opacity(0.08))
             )
 
-            SecureField(
-                "",
-                text: $draftApiKey,
-                prompt: Text("API key")
-                    .foregroundStyle(.white.opacity(0.35))
-            )
-            .textInputAutocapitalization(.never)
-            .autocorrectionDisabled()
-            .font(.system(size: 15))
-            .foregroundStyle(.white)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
-            .background(
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(Color.white.opacity(0.08))
-            )
+            // Auth method picker. API-key path is the default
+            // (broadest compatibility). Sign-in path uses
+            // StashLoginService to fetch the key for the user.
+            Picker("", selection: $authMethod) {
+                Text("API key").tag(AuthMethod.apiKey)
+                Text("Sign in").tag(AuthMethod.signIn)
+            }
+            .pickerStyle(.segmented)
+
+            if authMethod == .apiKey {
+                SecureField(
+                    "",
+                    text: $draftApiKey,
+                    prompt: Text("API key")
+                        .foregroundStyle(.white.opacity(0.35))
+                )
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .font(.system(size: 15))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+                .background(
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Color.white.opacity(0.08))
+                )
+            } else {
+                TextField(
+                    "",
+                    text: $draftUsername,
+                    prompt: Text("Username")
+                        .foregroundStyle(.white.opacity(0.35))
+                )
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .font(.system(size: 15))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+                .background(
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Color.white.opacity(0.08))
+                )
+
+                SecureField(
+                    "",
+                    text: $draftPassword,
+                    prompt: Text("Password")
+                        .foregroundStyle(.white.opacity(0.35))
+                )
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .font(.system(size: 15))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+                .background(
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Color.white.opacity(0.08))
+                )
+            }
 
             Button {
-                Task { await runProbe() }
+                Task { await runWelcomeConnect() }
             } label: {
                 HStack(spacing: 8) {
                     if probeState == .probing {
                         ProgressView()
                             .tint(.white)
                     }
-                    Text(
-                        probeState == .probing
-                            ? "Connecting…"
-                            : "Test connection"
-                    )
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(.white)
+                    Text(connectButtonText)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(.white)
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 14)
                 .background(
                     RoundedRectangle(cornerRadius: 10)
-                        .fill(canProbe ? Color.bingeLike : Color.white.opacity(0.12))
+                        .fill(canConnect ? Color.bingeLike : Color.white.opacity(0.12))
                 )
             }
             .buttonStyle(.plain)
-            .disabled(!canProbe)
+            .disabled(!canConnect)
             .padding(.top, 4)
         }
     }
 
-    private var canProbe: Bool {
-        !draftUrl.isEmpty
-            && !draftApiKey.isEmpty
-            && probeState != .probing
+    private var canConnect: Bool {
+        guard probeState != .probing, !draftUrl.isEmpty else {
+            return false
+        }
+        switch authMethod {
+        case .apiKey:
+            return !draftApiKey.isEmpty
+        case .signIn:
+            return !draftUsername.isEmpty && !draftPassword.isEmpty
+        }
+    }
+
+    private var connectButtonText: String {
+        if probeState == .probing {
+            return authMethod == .signIn
+                ? "Signing in…"
+                : "Connecting…"
+        }
+        return authMethod == .signIn
+            ? "Sign in"
+            : "Test connection"
+    }
+
+    /// Welcome-screen entry point. For API-key auth, falls through
+    /// directly to `runProbe()`. For sign-in auth, fetches the API
+    /// key from Stash first via StashLoginService, populates
+    /// `draftApiKey`, then calls `runProbe()` so the final
+    /// validate-and-persist step is shared with the manual path.
+    @MainActor
+    private func runWelcomeConnect() async {
+        if authMethod == .signIn {
+            probeState = .probing
+            do {
+                let key = try await StashLoginService.fetchApiKey(
+                    baseURL: draftUrl,
+                    username: draftUsername,
+                    password: draftPassword
+                )
+                draftApiKey = key
+                // Fall through to runProbe — same validate-and-
+                // persist path the manual-paste flow uses.
+            } catch let err as StashLoginError {
+                probeState = .failure(
+                    err.errorDescription ?? "Sign-in failed."
+                )
+                return
+            } catch {
+                probeState = .failure(error.localizedDescription)
+                return
+            }
+        }
+        await runProbe()
     }
 
     @ViewBuilder
