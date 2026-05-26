@@ -280,6 +280,13 @@ struct SceneSlideView: View {
                     + "hasPlayer=\(hasPlayer) ready=\(ready)"
                 )
                 player?.play()
+                // Slides that mounted inactive (LazyVStack
+                // pre-loaded them off-screen) reach play via
+                // this handler, NOT via attachPlayer's isActive
+                // branch — so the kick task was being missed
+                // for the most common case (scroll into a
+                // pre-mounted slide). Wire it up here too.
+                kickIfStuck(player)
                 onActivate?(scene)
             } else {
                 player?.pause()
