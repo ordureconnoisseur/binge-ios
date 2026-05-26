@@ -185,10 +185,12 @@ struct BingeScene: Decodable, Identifiable, Hashable {
             }
             return logged(directStreamURL(base: base))
         default:
-            // auto: HLS for HEVC (AVPlayer can't decode raw
-            // HEVC streams reliably without it), direct for
-            // everything else (no ffmpeg load on the host).
-            if isHEVC, let hls = firstHLSStreamURL() {
+            // auto: HLS for any codec AVPlayer can't decode
+            // direct (HEVC + VP9 + AV1 most commonly). Plain
+            // H264 streams direct — no ffmpeg load on the host.
+            // VP9 in particular is common for Instagram/TikTok
+            // sourced clips, which would otherwise black-screen.
+            if needsTranscode, let hls = firstHLSStreamURL() {
                 return logged(absoluteURL(hls, base: base))
             }
             return logged(directStreamURL(base: base))
@@ -225,6 +227,26 @@ struct BingeScene: Decodable, Identifiable, Hashable {
         return codec.contains("hevc")
             || codec.contains("h265")
             || codec.contains("h.265")
+    }
+
+    /// True when AVPlayer can't reliably decode the source codec
+    /// directly and needs a transcoded stream (we prefer HLS).
+    /// Whitelist H264 (the broadly-supported codec that does
+    /// stream cleanly) and treat everything else as needing
+    /// transcode. Missing codec metadata also falls through to
+    /// transcode — safer to transcode than black-screen.
+    ///
+    /// Hits in practice on the user's library:
+    ///   - HEVC / H.265 (4K phone captures, recent encodes)
+    ///   - VP9 (Instagram / TikTok sourced clips — was
+    ///     black-screening because the previous isHEVC-only
+    ///     gate let them through to direct stream)
+    ///   - AV1 (rare today, future-proofing)
+    var needsTranscode: Bool {
+        guard let codec = files.first?.videoCodec?.lowercased()
+        else { return true }
+        let h264Aliases = ["h264", "h.264", "avc", "avc1"]
+        return !h264Aliases.contains { codec.contains($0) }
     }
 
     /// HLS endpoint Stash advertises in sceneStreams, picked from
