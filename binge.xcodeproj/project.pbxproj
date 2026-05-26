@@ -41,6 +41,7 @@
 		4C3BB337EA5F4BE930FA629C /* PerformerProfileSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48238D3373E695444FEF97E6 /* PerformerProfileSheet.swift */; };
 		4E1B0EAD11B084E51975DA17 /* SceneDetailsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EE49BD030B128D77A4EEFE0 /* SceneDetailsSheet.swift */; };
 		4EBB4DBEE116F1D8BA8B8692 /* PackFeedCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9636D92CFF64C625AA385434 /* PackFeedCard.swift */; };
+		521E0D5D8DF7850E1DA9A2BB /* OCounterStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F8D3D338187FA12CC388C7B /* OCounterStore.swift */; };
 		524D91FEB736400DC9CCDBE1 /* SceneProgressBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27D301D6976F3922182A9895 /* SceneProgressBar.swift */; };
 		543A91B3DF75C47C7E42082D /* SwipeRightToDismiss.swift in Sources */ = {isa = PBXBuildFile; fileRef = 575FE862FD876E5345323D40 /* SwipeRightToDismiss.swift */; };
 		55E0EF689F82AF5B8F4131DC /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 58205ADF82DD7AAE36B0A315 /* Assets.xcassets */; };
@@ -149,6 +150,7 @@
 		595681A8FD377FC835A3D71D /* BingeBottomNav.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BingeBottomNav.swift; sourceTree = "<group>"; };
 		5A08D62E3638326E295F79FC /* ReelNavigator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReelNavigator.swift; sourceTree = "<group>"; };
 		5A6B9DEF4EBE1BA4E2370947 /* PerformerProfileViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerformerProfileViewModel.swift; sourceTree = "<group>"; };
+		5F8D3D338187FA12CC388C7B /* OCounterStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OCounterStore.swift; sourceTree = "<group>"; };
 		64F3F2494486A96BD7F7CEA9 /* CollectionsService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollectionsService.swift; sourceTree = "<group>"; };
 		65461192B688D541546F5CE2 /* ExploreView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExploreView.swift; sourceTree = "<group>"; };
 		66CC0327E64688C8143C0439 /* PerformerPickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerformerPickerSheet.swift; sourceTree = "<group>"; };
@@ -190,7 +192,7 @@
 		CE8EEE9B5D2F2F6D9F75D5A0 /* ExploreViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExploreViewModel.swift; sourceTree = "<group>"; };
 		CF1220101A0FE45FACE17BC7 /* ReelPerformerRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReelPerformerRow.swift; sourceTree = "<group>"; };
 		D301011B45CBA29466602321 /* RatingCompute.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RatingCompute.swift; sourceTree = "<group>"; };
-		D6181D0A2320A33E0AC3852E /* binge.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = binge.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		D6181D0A2320A33E0AC3852E /* binge.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = binge.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		D883BFB2C5B25A829B44E2D3 /* FollowService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FollowService.swift; sourceTree = "<group>"; };
 		D8A5ACFCAA4FF922145DA290 /* ScribeAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScribeAPI.swift; sourceTree = "<group>"; };
 		D9E6204A9EA4A757ECEAFCE6 /* HeartBurst.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeartBurst.swift; sourceTree = "<group>"; };
@@ -327,6 +329,7 @@
 				E7C399790AACDDFC8430BF74 /* DiscoveryFeedBuilder.swift */,
 				D883BFB2C5B25A829B44E2D3 /* FollowService.swift */,
 				1BBB8FFC03593B369FCCFC05 /* InteractedTagsStore.swift */,
+				5F8D3D338187FA12CC388C7B /* OCounterStore.swift */,
 				EA215E4AC29226CC9D326430 /* PerformerSweep.swift */,
 				3AF399DC6000640DB516E802 /* PlayerPool.swift */,
 				1746DCB371C7C6F87AF75246 /* Queries.swift */,
@@ -559,6 +562,7 @@
 				F28AC9CDDE9BCBD3D8591739 /* InteractivePopRecognizer.swift in Sources */,
 				8B6C36808887108C8F03BACD /* MenuPage.swift in Sources */,
 				907DD3866F60BAD7BCA9F4B2 /* MoreSheet.swift in Sources */,
+				521E0D5D8DF7850E1DA9A2BB /* OCounterStore.swift in Sources */,
 				EF97DB2051414C090F27F16F /* PackDetailSheet.swift in Sources */,
 				4EBB4DBEE116F1D8BA8B8692 /* PackFeedCard.swift in Sources */,
 				EB598A15E7AA3A4C2CA0EC95 /* PerformerDetail.swift in Sources */,
@@ -688,7 +692,6 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = PRM329646X;
 				INFOPLIST_FILE = binge/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -769,7 +772,6 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = PRM329646X;
 				INFOPLIST_FILE = binge/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

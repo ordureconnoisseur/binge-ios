@@ -303,13 +303,12 @@ struct BingeScene: Decodable, Identifiable, Hashable {
         return URL(string: "\(trimmedBase)\(pathOrURL)")
     }
 
-    /// Console-log the picked URL plus full sceneStreams entries
-    /// so we can see exactly what URL patterns Stash advertises
-    /// for each transcode endpoint. Returns the URL untouched.
-    ///
-    /// Format: one line per sceneStreams entry, indented under
-    /// the streamURL line — easier to grep / copy-paste than the
-    /// previous summary form.
+    /// One-line console log of the picked URL — useful enough as
+    /// an "I see this codec, I picked this URL" check while the
+    /// transcode routing was changing, retained as a low-noise
+    /// signal. The full sceneStreams dump that lived here too was
+    /// removed once the picker settled (per-scene ~20 lines of
+    /// noise outweighed the diagnostic value).
     private func logged(_ url: URL?) -> URL? {
         if let url {
             print(
@@ -317,14 +316,6 @@ struct BingeScene: Decodable, Identifiable, Hashable {
                     + "codec=\(files.first?.videoCodec ?? "?") "
                     + "picked=\(url.absoluteString)"
             )
-            for s in sceneStreams {
-                print(
-                    "[binge]   stream "
-                        + "label=\(s.label ?? "?") "
-                        + "mime=\(s.mimeType ?? "?") "
-                        + "url=\(s.url)"
-                )
-            }
         }
         return url
     }

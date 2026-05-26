@@ -19,9 +19,6 @@ struct PerformerReelSheet: View {
     @AppStorage("binge.stashApiKey") private var stashApiKey: String = ""
 
     @State private var activeId: String?
-    /// Parent-owned O-counter map so the count survives
-    /// LazyVStack recycling — see ReelView for the same pattern.
-    @State private var oCounterOverrides: [String: Int] = [:]
 
     init(scenes: [BingeScene], startSceneId: String) {
         self.scenes = scenes
@@ -56,8 +53,6 @@ struct PerformerReelSheet: View {
                         isActive: scene.id == activeId,
                         baseURL: stashUrl,
                         apiKey: stashApiKey,
-                        oCounterOverride:
-                            currentOCounter(for: scene),
                         onLike: handleLike,
                         onUnlike: handleUnlike
                     )
@@ -73,23 +68,15 @@ struct PerformerReelSheet: View {
         .clipped()
     }
 
-    private func currentOCounter(for scene: BingeScene) -> Int {
-        oCounterOverrides[scene.id] ?? (scene.oCounter ?? 0)
-    }
-
     @MainActor
     private func handleLike(_ scene: BingeScene) async -> Int? {
-        let base = currentOCounter(for: scene)
-        oCounterOverrides[scene.id] = base + 1
         do {
             let resp: IncrementOResponse = try await client.gql(
                 Mutations.sceneIncrementO,
                 variables: ["id": scene.id]
             )
-            oCounterOverrides[scene.id] = resp.sceneIncrementO
             return resp.sceneIncrementO
         } catch {
-            oCounterOverrides[scene.id] = base
             print(
                 "[binge] performerReel handleLike[\(scene.id)] failed: \(error)"
             )
@@ -99,17 +86,13 @@ struct PerformerReelSheet: View {
 
     @MainActor
     private func handleUnlike(_ scene: BingeScene) async -> Int? {
-        let base = currentOCounter(for: scene)
-        oCounterOverrides[scene.id] = max(0, base - 1)
         do {
             let resp: DecrementOResponse = try await client.gql(
                 Mutations.sceneDecrementO,
                 variables: ["id": scene.id]
             )
-            oCounterOverrides[scene.id] = resp.sceneDecrementO
             return resp.sceneDecrementO
         } catch {
-            oCounterOverrides[scene.id] = base
             print(
                 "[binge] performerReel handleUnlike[\(scene.id)] failed: \(error)"
             )

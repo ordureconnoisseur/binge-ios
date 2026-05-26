@@ -77,14 +77,6 @@ struct ReelView: View {
     /// diff against to detect direction.
     @State private var chromeVisible: Bool = true
     @State private var lastActiveIndex: Int?
-    /// Per-scene O-counter overrides. SceneSlideView is rebuilt
-    /// every time LazyVStack scrolls a slide off-screen and back,
-    /// so its `@State` resets — the count would vanish after the
-    /// user liked, scrolled away, and came back. Keeping the
-    /// counts here in a parent-owned dict survives the recycle,
-    /// and the optimistic / confirmed updates happen in
-    /// handleLike/handleUnlike below.
-    @State private var oCounterOverrides: [String: Int] = [:]
 
     private let perPage = 12
 
@@ -304,11 +296,6 @@ struct ReelView: View {
                 BingeLoading()
             }
         } else {
-            // Hoisted: avoid recomputing the drill-mode flag
-            // (and the dictionary lookup it gates) per-scene
-            // inside the ForEach closure. Captured by the
-            // closure so it's read once per body eval.
-            let isDrilled = initialMode != nil
             ScrollView(.vertical, showsIndicators: false) {
                 LazyVStack(spacing: 0) {
                     ForEach(scenes, id: \.id) { scene in
@@ -317,12 +304,6 @@ struct ReelView: View {
                             isActive: scene.id == activeId,
                             baseURL: stashUrl,
                             apiKey: stashApiKey,
-                            // Override only set on drilled
-                            // reels — For You uses the
-                            // cheaper per-cell @State path.
-                            oCounterOverride: isDrilled
-                                ? currentOCounter(for: scene)
-                                : nil,
                             onLike: handleLike,
                             onUnlike: handleUnlike,
                             onActivate: { played in
@@ -507,27 +488,15 @@ struct ReelView: View {
         }
     }
 
-    /// Resolved O-counter for a scene. Override wins (it's the
-    /// "current" count after any local interaction); falls back
-    /// to whatever the original query returned.
-    private func currentOCounter(for scene: BingeScene) -> Int {
-        oCounterOverrides[scene.id] ?? (scene.oCounter ?? 0)
-    }
-
     @MainActor
     private func handleLike(_ scene: BingeScene) async -> Int? {
-        let base = currentOCounter(for: scene)
-        oCounterOverrides[scene.id] = base + 1
         do {
             let resp: IncrementOResponse = try await client.gql(
                 Mutations.sceneIncrementO,
                 variables: ["id": scene.id]
             )
-            oCounterOverrides[scene.id] = resp.sceneIncrementO
             return resp.sceneIncrementO
         } catch {
-            // Roll back the optimistic bump so the UI doesn't lie.
-            oCounterOverrides[scene.id] = base
             print("[binge] handleLike[\(scene.id)] failed: \(error)")
             return nil
         }
@@ -535,17 +504,13 @@ struct ReelView: View {
 
     @MainActor
     private func handleUnlike(_ scene: BingeScene) async -> Int? {
-        let base = currentOCounter(for: scene)
-        oCounterOverrides[scene.id] = max(0, base - 1)
         do {
             let resp: DecrementOResponse = try await client.gql(
                 Mutations.sceneDecrementO,
                 variables: ["id": scene.id]
             )
-            oCounterOverrides[scene.id] = resp.sceneDecrementO
             return resp.sceneDecrementO
         } catch {
-            oCounterOverrides[scene.id] = base
             print("[binge] handleUnlike[\(scene.id)] failed: \(error)")
             return nil
         }

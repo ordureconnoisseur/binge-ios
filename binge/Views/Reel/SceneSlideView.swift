@@ -23,14 +23,6 @@ struct SceneSlideView: View {
     let isActive: Bool
     let baseURL: String
     let apiKey: String
-    /// Optional O-counter value owned by the parent reel. Set by
-    /// drilled-in reels (timeline/chain) so the count survives
-    /// LazyVStack recycling when the user scrolls forward then
-    /// back. Nil for the For You tab, where we keep the cheaper
-    /// per-cell `@State localOCounter` to avoid re-rendering
-    /// every slide on every like (the parent-dictionary path
-    /// forces a body recompute across all slides).
-    let oCounterOverride: Int?
     let onLike: (BingeScene) async -> Int?
     let onUnlike: (BingeScene) async -> Int?
     // Fired when this slide transitions from inactive to active.
@@ -50,10 +42,12 @@ struct SceneSlideView: View {
     @AppStorage("binge.autoScroll") private var autoScroll: Bool = false
 
     @State private var player: AVPlayer?
-    /// Per-cell counter — primary source when no parent
-    /// override is provided (For You tab). Drilled-in reels
-    /// pass `oCounterOverride` which takes precedence so the
-    /// count survives recycling.
+    /// Per-cell counter — the only rendering source. Hydrated
+    /// from OCounterStore on appear (preserves the count when
+    /// the cell remounts after LazyVStack recycles it), then
+    /// written back to OCounterStore on every mutation so the
+    /// next remount sees the latest value. Avoids the parent-
+    /// dictionary re-render storm the previous lift caused.
     @State private var localOCounter: Int = 0
     @State private var posterVisible: Bool = true
     @State private var timeObserver: Any?
@@ -213,7 +207,7 @@ struct SceneSlideView: View {
                 HStack {
                     Spacer(minLength: 0)
                     ReelActionStack(
-                        oCounter: displayOCounter,
+                        oCounter: localOCounter,
                         onLike: triggerLike,
                         onUnlike: triggerUnlike,
                         // ⋯ opens the MoreSheet (auto-scroll
@@ -285,13 +279,13 @@ struct SceneSlideView: View {
             }
         }
         .onAppear {
-            // Initialise the per-cell counter from the scene's
-            // server-known value. No-op when a parent override
-            // is in effect — `displayOCounter` ignores
-            // localOCounter in that case.
-            if oCounterOverride == nil {
-                localOCounter = scene.oCounter ?? 0
-            }
+            // Hydrate the per-cell counter: prefer
+            // OCounterStore (set by an earlier like/unlike in
+            // this session — survives LazyVStack recycle), fall
+            // back to the scene's server-known value otherwise.
+            localOCounter =
+                OCounterStore.shared.get(scene.id)
+                ?? scene.oCounter ?? 0
             posterVisible = true
             attachPlayer()
             // First-mount of an active slide counts as "play" too.
@@ -531,19 +525,14 @@ struct SceneSlideView: View {
         }
     }
 
-    /// What the action stack renders. Override wins when the
-    /// host is tracking (drilled reels), otherwise local @State.
-    private var displayOCounter: Int {
-        oCounterOverride ?? localOCounter
-    }
-
     private func triggerLike() {
-        // Optimistic local bump so the count flips immediately.
-        // For drilled reels the parent override gets updated by
-        // ReelView.handleLike and takes precedence as soon as
-        // the next render happens; the optimistic local stays
-        // in sync if onLike returns the same value.
+        // Optimistic local bump for instant feedback. Mirror it
+        // into OCounterStore so the next LazyVStack remount of
+        // this slide (after scroll-away-and-back) reads the
+        // already-incremented value instead of regressing to
+        // the stale scene.oCounter.
         localOCounter += 1
+        OCounterStore.shared.set(scene.id, localOCounter)
         InteractedTagsStore.record(scene.tags)
         // Spawn a fresh heart-burst layer. Auto-removed after
         // the longest particle animation completes (max
@@ -558,6 +547,7 @@ struct SceneSlideView: View {
         Task {
             if let confirmed = await onLike(scene) {
                 localOCounter = confirmed
+                OCounterStore.shared.set(scene.id, confirmed)
             }
         }
     }
@@ -565,9 +555,11 @@ struct SceneSlideView: View {
     private func triggerUnlike() {
         // No burst — unlike isn't celebrated.
         localOCounter = max(0, localOCounter - 1)
+        OCounterStore.shared.set(scene.id, localOCounter)
         Task {
             if let confirmed = await onUnlike(scene) {
                 localOCounter = confirmed
+                OCounterStore.shared.set(scene.id, confirmed)
             }
         }
     }
