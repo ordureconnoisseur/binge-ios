@@ -187,20 +187,25 @@ struct BingeScene: Decodable, Identifiable, Hashable {
         default:
             // auto: per-codec routing.
             //   - H264 → direct stream (no ffmpeg load).
-            //   - HEVC → HLS (the original conditional-transcode
-            //     fix; battle-tested, the user's HEVC library
-            //     plays reliably on this path).
-            //   - VP9 / AV1 / unknown → MP4 transcode ladder.
-            //     HLS was unreliable for VP9 specifically (~10%
-            //     of Instagram clips would black-screen even
-            //     after rebuild, edge-case in Stash's VP9→HLS
-            //     transcode that doesn't recover). Stash's
-            //     VP9→H264 MP4 path goes through ffmpeg once,
-            //     caches, and serves vanilla progressive MP4
-            //     that AVPlayer handles unconditionally.
-            if isHEVC, let hls = firstHLSStreamURL() {
-                return logged(absoluteURL(hls, base: base))
-            }
+            //   - everything else (HEVC / VP9 / AV1 / unknown)
+            //     → MP4 transcode ladder.
+            //
+            // HEVC originally routed through HLS, which worked
+            // but proved unreliable in practice over the user's
+            // Tailscale link — concurrent HEVC HLS players would
+            // hit PlayerRemoteXPC errors (-12785 / -12860) that
+            // left the player flipped to .playing but frozen at
+            // t=0. The pause+play kick + evict+rebuild recoveries
+            // in SceneSlideView reduced the manual-restart rate
+            // but didn't eliminate it.
+            //
+            // Routing HEVC through Stash's MP4 ladder mirrors
+            // what VP9 already did for the same reason: ffmpeg
+            // transcodes HEVC→H264 once, caches the result, and
+            // serves vanilla progressive MP4 that AVPlayer
+            // handles unconditionally. Cost: server CPU on first
+            // play of each HEVC scene + a one-time transcode
+            // delay; benefit: reliable auto-start.
             if needsTranscode {
                 if let url = preferredStream(
                     ladder: [
@@ -212,6 +217,10 @@ struct BingeScene: Decodable, Identifiable, Hashable {
                 ) {
                     return logged(absoluteURL(url, base: base))
                 }
+                // Fallback: if MP4 ladder isn't configured for
+                // this scene, try HLS as last resort. Direct
+                // stream of HEVC bytes can black-screen on
+                // AVPlayer for unsupported profiles.
                 if let hls = firstHLSStreamURL() {
                     return logged(absoluteURL(hls, base: base))
                 }
