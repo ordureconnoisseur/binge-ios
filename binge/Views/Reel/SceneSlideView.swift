@@ -518,7 +518,7 @@ struct SceneSlideView: View {
         Task { @MainActor in
             var kicked = false
             // Up to ~3s of polling at 200ms intervals.
-            for iter in 0..<15 {
+            for _ in 0..<15 {
                 try? await Task.sleep(for: .milliseconds(200))
                 // Only bail on explicit pause (scroll-away, hold,
                 // sheet, performer cover). DON'T bail on
@@ -528,35 +528,32 @@ struct SceneSlideView: View {
                 guard p.timeControlStatus != .paused else { return }
                 // Already advancing → playback started cleanly.
                 if p.currentTime().seconds > 0.05 { return }
-                // Stuck at zero. Try a pause+play kick. The
-                // earlier version gated this on
-                // isPlaybackLikelyToKeepUp == true so the kick only
-                // fired when the buffer reported ready, but for
-                // truly stuck HEVC the flag never flips. The user's
-                // manual workaround (hold to pause + release) does
-                // pause+play unconditionally — mirror that. One
-                // attempt at the 600ms mark gives the asset enough
-                // time to start parsing without interrupting a
-                // legitimate slow start.
-                if iter == 3 && !kicked {
+                // Stuck at zero AND buffer reports ready → kick.
+                // Gated on likely-to-keep-up so we don't interrupt
+                // legitimately slow loads (a clean H264 that takes
+                // 1s to start would otherwise be torn down 600ms
+                // in, adding latency to perfectly fine scenes).
+                // For truly dead players the flag never flips and
+                // the loop falls through to evict+rebuild below.
+                if !kicked,
+                   p.currentItem?.isPlaybackLikelyToKeepUp == true
+                {
                     print(
                         "[SceneSlide] KICK scene=\(sceneId) "
-                        + "status=\(p.timeControlStatus.rawValue) "
-                        + "ready="
-                        + "\(p.currentItem?.isPlaybackLikelyToKeepUp ?? false)"
+                        + "status=\(p.timeControlStatus.rawValue)"
                     )
                     p.pause()
                     p.play()
                     kicked = true
                 }
             }
-            // Polling exhausted: still stuck after 3s and a kick.
-            // Evict + rebuild once per mount.
+            // Polling exhausted: still stuck after 3s with no
+            // recoverable buffer state. Evict + rebuild once.
             guard didRebuildPlayer != sceneId else { return }
             didRebuildPlayer = sceneId
             print(
                 "[SceneSlide] REBUILD scene=\(sceneId) "
-                + "reason=stuck-after-kick"
+                + "reason=stuck-buffer-never-ready"
             )
             PlayerPool.shared.evict(sceneId: sceneId)
             attachPlayer()
