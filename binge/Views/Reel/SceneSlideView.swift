@@ -438,20 +438,25 @@ struct SceneSlideView: View {
 
 
     /// Poll the active player for the first ~3s after
-    /// activation. Rebuild on either:
-    ///   - AVPlayer `.failed` status (loud failure — e.g.
-    ///     transcoder errored)
-    ///   - Still not `isPlaybackLikelyToKeepUp` after 3s (quiet
-    ///     failure — common with HLS for VP9 / HEVC where the
-    ///     playlist never finishes parsing and the player sits
-    ///     in `.unknown` indefinitely)
-    /// "Rebuild" = evict the pool entry + re-attach a fresh
-    /// player. Recovery path for the "scene black-screens
-    /// until I scroll away and back" pattern that the previous
-    /// .failed-only check missed.
+    /// activation. Rebuild when the player is stuck.
+    ///
+    /// Three ways to detect "stuck":
+    ///   1. AVPlayer `.failed` status (loud failure — e.g.
+    ///      transcoder errored)
+    ///   2. currentTime not advancing — `isPlaybackLikelyToKeepUp`
+    ///      becoming true doesn't actually guarantee playback
+    ///      started, only that the BUFFER is sufficient.
+    ///      AVPlayer can sit at t=0 with a full buffer if it's
+    ///      in a weird internal state. We track the play-head
+    ///      and rebuild if it hasn't moved by the end of the
+    ///      window.
+    ///   3. Still not `isPlaybackLikelyToKeepUp` after 3s —
+    ///      catch-all for never-buffered playlists (HLS for
+    ///      VP9/HEVC where transcoder hangs).
     private func watchForPlaybackFailure() {
         let sceneId = scene.id
         Task { @MainActor in
+            let startTime = player?.currentTime() ?? .zero
             for _ in 0..<30 {
                 try? await Task.sleep(for: .milliseconds(100))
                 guard isActive, scene.id == sceneId else {
@@ -462,19 +467,23 @@ struct SceneSlideView: View {
                     rebuildStuckPlayer(reason: "failed-status")
                     return
                 }
-                if player?.currentItem?.isPlaybackLikelyToKeepUp
-                    == true
-                {
+                // Time-advance check is the strongest signal:
+                // if the play-head has moved, we know real
+                // playback is happening regardless of what
+                // AVPlayer reports about buffer state.
+                let now = player?.currentTime() ?? .zero
+                if CMTimeCompare(now, startTime) != 0 {
                     return
                 }
             }
-            // 3s elapsed, still not ready and not failed.
-            // Common case: HLS playlist parse hung in unknown.
+            // 3s elapsed with no play-head movement. Either
+            // the player is in .unknown / .failed, or buffer
+            // is full but playback never started. Either way,
+            // a rebuild is the recovery.
             guard isActive, scene.id == sceneId else { return }
-            if player?.currentItem?.isPlaybackLikelyToKeepUp
-                != true
-            {
-                rebuildStuckPlayer(reason: "stuck-3s")
+            let final = player?.currentTime() ?? .zero
+            if CMTimeCompare(final, startTime) == 0 {
+                rebuildStuckPlayer(reason: "no-time-progress")
             }
         }
     }
