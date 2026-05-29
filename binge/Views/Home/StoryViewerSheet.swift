@@ -39,6 +39,13 @@ struct StoryViewerSheet: View {
     /// Timer-driven advance for stashdb scenes (image-only, no
     /// AVPlayer end event). Cancelled on scene change / teardown.
     @State private var stashDBTimer: Task<Void, Never>?
+    /// Wall-clock watchdog for video stories (and the no-media
+    /// fallback) so a dead / slow / stalled stream can't hang the
+    /// viewer on the spinner forever. Cancelled on teardown.
+    @State private var capTimer: Task<Void, Never>?
+    /// Guards a scene from auto-advancing twice (a video's
+    /// didPlayToEndTime racing its watchdog cap). Reset per scene.
+    @State private var didAutoAdvance: Bool = false
     /// Performer profile cover — set when the user taps the
     /// header avatar/name to drill into that profile. Pauses
     /// the underlying player while presented.
@@ -51,6 +58,15 @@ struct StoryViewerSheet: View {
     /// Video kind uses AVPlayer didPlayToEndTime like library
     /// scenes (no timer).
     private static let redditTimedDuration: Double = 5.0
+    /// Wall-clock cap for a video story (library preview / reddit
+    /// video). Matches web's PREVIEW_CAP_MS — guarantees auto-
+    /// advance even if the video never starts, stalls, or runs
+    /// longer than this.
+    private static let videoCapDuration: Double = 15.0
+    /// Fallback for a library scene with no playable media (no
+    /// preview + no stream): clear the spinner and advance after a
+    /// brief beat instead of hanging forever.
+    private static let noMediaCapDuration: Double = 4.0
 
     init(
         stories: [Story],
@@ -135,17 +151,21 @@ struct StoryViewerSheet: View {
             if newId != nil {
                 player?.pause()
                 stashDBTimer?.cancel()
+                capTimer?.cancel()
             } else {
                 player?.play()
                 // Re-arm timer-driven kinds on dismiss so the
                 // user can continue browsing where they left off.
-                // Video kinds resume via the player.play() above.
                 if case .stashDB(let sb) = currentScene {
                     loadStashDB(sb)
                 } else if case .reddit(let post) = currentScene,
                     post.kind != .video
                 {
                     loadReddit(post)
+                } else {
+                    // library / reddit-video: player resumed above;
+                    // re-arm the preview watchdog.
+                    armCap(after: Self.videoCapDuration)
                 }
             }
         }
@@ -556,11 +576,33 @@ struct StoryViewerSheet: View {
         }
     }
 
+    /// Single-fire auto-advance. Every non-user advance (video end,
+    /// the video watchdog cap, the image / stashdb timers) routes
+    /// through here so a scene can't be skipped by two sources
+    /// firing at once. Reset per scene in loadScene().
+    private func autoAdvance() {
+        guard !didAutoAdvance else { return }
+        didAutoAdvance = true
+        goNext()
+    }
+
+    /// Arm a wall-clock watchdog that auto-advances after `secs` —
+    /// the video preview cap and the no-media fallback. Replaces any
+    /// existing cap task; cleared in teardown().
+    private func armCap(after secs: Double) {
+        capTimer?.cancel()
+        capTimer = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(secs))
+            if !Task.isCancelled { autoAdvance() }
+        }
+    }
+
     // MARK: - Load (multi-source)
 
     private func loadScene() {
         teardown()
         progress = 0
+        didAutoAdvance = false
         switch currentScene {
         case .library(let scene):
             loadLibrary(scene)
@@ -580,7 +622,14 @@ struct StoryViewerSheet: View {
         guard
             let url = scene.previewURL(base: baseURL)
                 ?? scene.streamURL(base: baseURL)
-        else { return }
+        else {
+            // No preview and no stream — nothing to play. Clear the
+            // spinner and advance after a brief beat rather than
+            // hanging on the spinner forever.
+            loading = false
+            armCap(after: Self.noMediaCapDuration)
+            return
+        }
         let asset = AVURLAsset(
             url: url,
             options: [
@@ -598,7 +647,7 @@ struct StoryViewerSheet: View {
             object: item,
             queue: .main
         ) { _ in
-            Task { @MainActor in goNext() }
+            Task { @MainActor in autoAdvance() }
         }
         timeObserver = p.addPeriodicTimeObserver(
             forInterval: CMTime(value: 1, timescale: 15),
@@ -610,6 +659,9 @@ struct StoryViewerSheet: View {
             progress = min(1, time.seconds / dur)
         }
         p.play()
+        // Watchdog: cap the preview and guarantee auto-advance even
+        // if playback never begins (dead/slow stream) or runs long.
+        armCap(after: Self.videoCapDuration)
     }
 
     /// Reddit: kind drives the loader.
@@ -632,7 +684,7 @@ struct StoryViewerSheet: View {
                 object: item,
                 queue: .main
             ) { _ in
-                Task { @MainActor in goNext() }
+                Task { @MainActor in autoAdvance() }
             }
             timeObserver = p.addPeriodicTimeObserver(
                 forInterval: CMTime(value: 1, timescale: 15),
@@ -644,6 +696,8 @@ struct StoryViewerSheet: View {
                 progress = min(1, time.seconds / dur)
             }
             p.play()
+            // Watchdog cap — same as the library preview path.
+            armCap(after: Self.videoCapDuration)
             return
         }
         // image / text / link → fixed-duration timer.
@@ -655,7 +709,7 @@ struct StoryViewerSheet: View {
                 let elapsed = Date().timeIntervalSince(start)
                 progress = min(1, elapsed / total)
                 if elapsed >= total {
-                    goNext()
+                    autoAdvance()
                     return
                 }
                 try? await Task.sleep(for: .milliseconds(67))
@@ -677,7 +731,7 @@ struct StoryViewerSheet: View {
                 let elapsed = Date().timeIntervalSince(start)
                 progress = min(1, elapsed / total)
                 if elapsed >= total {
-                    goNext()
+                    autoAdvance()
                     return
                 }
                 try? await Task.sleep(for: .milliseconds(67))
@@ -699,6 +753,8 @@ struct StoryViewerSheet: View {
         player = nil
         stashDBTimer?.cancel()
         stashDBTimer = nil
+        capTimer?.cancel()
+        capTimer = nil
     }
 
     private func absolute(_ path: String) -> String {

@@ -149,6 +149,17 @@ struct ReelView: View {
                 await loadMoreIfNeeded()
             }
         }
+        .onDisappear {
+            // A drilled-in reel (chain / timeline, or one the user
+            // converted to a tag feed by tapping a #hashtag in the
+            // caption sheet) shares the single FilterNavigator with
+            // the For You tab. Clear it on the way out so an in-reel
+            // tag tap doesn't leak onto For You. The For You reel
+            // isn't drilled, so its own filter is left untouched.
+            if isDrilled, filterNav.active != nil {
+                filterNav.active = nil
+            }
+        }
         .onChange(of: activeId) { _, newId in
             guard let newId else { return }
             guard let idx = scenes.firstIndex(where: { $0.id == newId })

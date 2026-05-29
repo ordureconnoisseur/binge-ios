@@ -345,25 +345,30 @@ struct SceneSlideView: View {
                 PerformerProfileSheet(performerId: id)
             }
         }
-        // Pause the underlying video whenever a sheet covers this
-        // slide — SwiftUI's .fullScreenCover / .sheet do NOT unmount
-        // the underlying view, so without this the AVPlayer keeps
-        // decoding behind the cover. Wakes back up on dismiss if
-        // the slide is still active.
-        .onChange(of: presentedPerformerId) { _, newId in
-            if newId != nil {
-                player?.pause()
-            } else if isActive && !detailsOpen {
-                player?.play()
-            }
-        }
-        .onChange(of: detailsOpen) { _, open in
+        // Pause the underlying video whenever ANY sheet / cover is
+        // open over this slide — SwiftUI's .sheet / .fullScreenCover
+        // do NOT unmount the underlying view, so without this the
+        // AVPlayer keeps decoding (and playing audio) behind the
+        // overlay. Resume only once every overlay is dismissed and
+        // the slide is still active (and not held to pause).
+        .onChange(of: anyOverlayOpen) { _, open in
             if open {
                 player?.pause()
-            } else if isActive && presentedPerformerId == nil {
+            } else if isActive && !isHolding {
                 player?.play()
             }
         }
+    }
+
+    /// True while any sheet / fullscreen cover is presented over this
+    /// slide (details, more, save, rate, or the performer profile).
+    /// Drives the pause-behind-overlay logic so the AVPlayer doesn't
+    /// keep decoding audio under a modal — previously only the
+    /// details sheet + performer cover paused; More / Save / Rate
+    /// left the video playing underneath.
+    private var anyOverlayOpen: Bool {
+        detailsOpen || moreOpen || saveOpen || rateOpen
+            || presentedPerformerId != nil
     }
 
     // Caption — single line of "Title — details", tappable. Tap
@@ -434,6 +439,14 @@ struct SceneSlideView: View {
 
 
     private func attachPlayer() {
+        // Remove any observer still bound to the OLD player before
+        // swapping in the new one. Without this, the kickIfStuck
+        // REBUILD path (evict + reattach) leaves a periodic time
+        // observer registered on the evicted player, which then
+        // deallocates with an observer attached → hard crash. No-op
+        // on first attach (timeObserver is nil); the scene.id-change
+        // path already detaches, so this is just defensive there.
+        detachTimeObserver()
         let p = PlayerPool.shared.player(
             for: scene,
             baseURL: baseURL,

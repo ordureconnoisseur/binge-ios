@@ -145,6 +145,14 @@ final class FollowService {
         // returns the same global rankings).
         StashDBCache.shared.invalidate("linked")
         StashDBCache.shared.invalidate("owned")
+        // The co-star "new scenes" set is derived from the linked-
+        // performer list, but its disk key is "newScenes:<date>"
+        // (no "linked" prefix), so the two invalidations above miss
+        // it — without this, a just-followed performer's releases
+        // stay absent from discovery until the 12h TTL expires. Drop
+        // every newScenes window so the next fetch rebuilds against
+        // the expanded linked set.
+        StashDBCache.shared.invalidate(prefix: "newScenes")
         StashDBCache.shared.memoClear()
         // Tell observers (HomeViewModel today; others later) that
         // a new local performer now backs this stash_id. They
