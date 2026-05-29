@@ -63,7 +63,7 @@ final class HomeViewModel {
     private(set) var storiesByPerformerId: [String: Story] = [:]
     var feed: [BingeScene] = []
     /// Detected bulk-import packs surfaced as collapsed feed
-    /// cards. See `assemblePacksAndCap` for the detection
+    /// cards. See `assemblePacks` for the detection
     /// heuristic. HomeView merges these with `feed` + `discovery`
     /// into FeedEntry rows.
     var packs: [SceneFeedPack] = []
@@ -112,12 +112,6 @@ final class HomeViewModel {
     // the window is capped at 90 days, so this is bounded by the user's
     // import rate over that span.
     private let perPage = -1
-    /// Maximum feed cards from a single primary performer that
-    /// ISN'T already collapsed into a Pack. Without this a
-    /// prolific performer can still take over the feed even
-    /// without a recognisable batch import. Mirrors web's
-    /// MAX_FEED_CARDS_PER_PERFORMER.
-    private static let maxFeedCardsPerPerformer = 3
     /// Pack-detection thresholds — match web. A cluster of
     /// scenes from the same primary performer whose created_at
     /// values are within `packWindow` of the most recent one,
@@ -169,12 +163,12 @@ final class HomeViewModel {
     /// Walks the already-sorted scene list and:
     ///   - Detects "batch import" clusters and emits one
     ///     `SceneFeedPack` per cluster
-    ///   - Applies the per-performer cap to the remaining
-    ///     non-pack scenes
+    ///   - Drops the loose scenes of any performer who formed a
+    ///     pack (they're represented by the pack card)
     /// Returns the kept individual scenes (in their original
     /// order) plus the detected packs. The caller merges these
     /// into the FeedEntry list and re-sorts by effectiveAt.
-    static func assemblePacksAndCap(
+    static func assemblePacks(
         _ scenes: [BingeScene],
         recentWindowDays: Int
     ) -> (scenes: [BingeScene], packs: [SceneFeedPack]) {
@@ -243,9 +237,11 @@ final class HomeViewModel {
             packPerformers.insert(pid)
         }
 
-        // For non-pack performers, walk in effectiveAt order
-        // (caller already sorted) and apply per-performer cap.
-        var counts: [String: Int] = [:]
+        // A performer who formed a pack is represented by that pack
+        // card, so we don't also surface their loose individual
+        // scenes — otherwise a bulk-import performer would flood the
+        // feed with a pack AND dozens of cards. Everyone else shows
+        // all their scenes in the window (no per-performer cap).
         var out: [BingeScene] = []
         for s in scenes {
             guard let pid = s.performers.first?.id else {
@@ -253,9 +249,6 @@ final class HomeViewModel {
                 continue
             }
             if packPerformers.contains(pid) { continue }
-            let c = counts[pid] ?? 0
-            if c >= maxFeedCardsPerPerformer { continue }
-            counts[pid] = c + 1
             out.append(s)
         }
         return (out, packs)
@@ -454,7 +447,7 @@ final class HomeViewModel {
             stashDBByLocalId = [:]
             redditByLocalId = [:]
             rebuildStories()
-            let assembled = Self.assemblePacksAndCap(
+            let assembled = Self.assemblePacks(
                 merged.sorted {
                     Story.effectiveAt(for: $0)
                         > Story.effectiveAt(for: $1)
