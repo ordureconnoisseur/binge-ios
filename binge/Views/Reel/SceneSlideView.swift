@@ -292,6 +292,25 @@ struct SceneSlideView: View {
                 player?.pause()
             }
         }
+        // Auto-scroll advance — decided HERE, not inside the periodic
+        // time observer: that closure captures `isActive` by value at
+        // attach time and goes stale, so a slide that mounted
+        // off-screen (inactive) then got scrolled into would never
+        // advance. `progress` is @State, so this reads the live
+        // isActive on each tick; hasAutoAdvanced guards repeat fires
+        // (incl. the looper restarting from 0).
+        .onChange(of: progress) { _, p in
+            guard autoScroll, !hasAutoAdvanced, isActive else { return }
+            let stashDur = scene.files.first?.duration
+            let avDur = player?.currentItem?.duration.seconds
+            let dur =
+                (stashDur != nil && stashDur! > 0)
+                ? stashDur!
+                : (avDur?.isFinite == true ? avDur! : 0)
+            guard dur > 0, p >= 1 - (0.3 / dur) else { return }
+            hasAutoAdvanced = true
+            onAutoAdvance?(scene)
+        }
         .onAppear {
             localOCounter = scene.oCounter ?? 0
             posterVisible = true
@@ -482,20 +501,9 @@ struct SceneSlideView: View {
                     : (avDur?.isFinite == true ? avDur! : 0)
                 if dur > 0 {
                     progress = min(1, time.seconds / dur)
-                    // Auto-scroll: when the playhead reaches the
-                    // last 0.3s of the scene AND the toggle's on,
-                    // fire onAutoAdvance once. The looper would
-                    // otherwise restart from 0 and re-trigger
-                    // this on every loop — the hasAutoAdvanced
-                    // flag guards against that.
-                    if autoScroll
-                        && !hasAutoAdvanced
-                        && isActive
-                        && time.seconds >= dur - 0.3
-                    {
-                        hasAutoAdvanced = true
-                        onAutoAdvance?(scene)
-                    }
+                    // Auto-advance is decided in .onChange(of: progress)
+                    // below, NOT here — this closure captures isActive
+                    // by value at attach time and goes stale.
                 }
             }
         }

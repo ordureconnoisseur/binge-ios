@@ -277,7 +277,10 @@ struct StashDBSceneDetail: Decodable, Identifiable, Hashable {
         studioStashId = studio?.id
         let perfWraps =
             (try? c.decode([PerformerWrap].self, forKey: .performers)) ?? []
-        performerStashIds = perfWraps.map(\.performer.id)
+        // performer can be null on a StashDB scene (deleted / merged
+        // upstream); decode it optional + compactMap so one null entry
+        // doesn't throw and drop EVERY performer for the scene.
+        performerStashIds = perfWraps.compactMap(\.performer?.id)
         let imgs = (try? c.decode([ImageURL].self, forKey: .images)) ?? []
         images = imgs.map(\.url)
     }
@@ -292,7 +295,7 @@ struct StashDBSceneDetail: Decodable, Identifiable, Hashable {
         let name: String?
     }
     private struct PerformerWrap: Decodable {
-        let performer: P
+        let performer: P?
         struct P: Decodable {
             let id: String
             let name: String?

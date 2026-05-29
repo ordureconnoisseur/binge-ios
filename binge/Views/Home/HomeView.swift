@@ -450,13 +450,11 @@ struct HomeView: View {
             .toolbarColorScheme(.dark, for: .navigationBar)
             .bingeRouteDestinations()
         }
-        .task(id: lookbackDays) {
+        .task(id: "\(includeStashDB):\(includeReddit):\(lookbackDays)") {
             if vm == nil {
                 vm = HomeViewModel(
                     baseURL: stashUrl,
-                    apiKey: stashApiKey,
-                    includeDiscovery: includeStashDB,
-                    includeReddit: includeReddit
+                    apiKey: stashApiKey
                 )
                 await vm?.load()
             } else {

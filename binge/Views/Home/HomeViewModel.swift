@@ -266,8 +266,20 @@ final class HomeViewModel {
 
     private let baseURL: String
     private let apiKey: String
-    private let includeDiscovery: Bool
-    private let includeReddit: Bool
+    /// Read fresh from UserDefaults each fetch (not captured at
+    /// init) so toggling "Discover from StashDB / Reddit" in Settings
+    /// takes effect on the next refresh — the VM isn't recreated when
+    /// those flip. Defaults match the @AppStorage defaults. fetch()
+    /// resets both story tails before re-fetching, so turning one off
+    /// also clears its existing bubbles.
+    private var includeDiscovery: Bool {
+        UserDefaults.standard.object(forKey: "binge.includeStashDB")
+            as? Bool ?? true
+    }
+    private var includeReddit: Bool {
+        UserDefaults.standard.object(forKey: "binge.includeReddit")
+            as? Bool ?? true
+    }
 
     /// Tokens for the NotificationCenter observers added in init.
     /// Stored so `deinit` can remove them — without this the
@@ -288,14 +300,10 @@ final class HomeViewModel {
 
     init(
         baseURL: String,
-        apiKey: String,
-        includeDiscovery: Bool,
-        includeReddit: Bool
+        apiKey: String
     ) {
         self.baseURL = baseURL
         self.apiKey = apiKey
-        self.includeDiscovery = includeDiscovery
-        self.includeReddit = includeReddit
         // Listen for follow events posted by FollowService so we
         // can patch the in-memory discovery list (chrome updates
         // without a refresh). NotificationCenter callbacks don't

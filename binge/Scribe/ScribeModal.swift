@@ -493,6 +493,31 @@ struct ScribeModal: View {
             }
             Spacer()
             HStack(spacing: 4) {
+                // Explicit 0 — a 0-star row is indistinguishable from
+                // "unrated", so this pill makes a zero score settable
+                // AND visible, matching web's 0-5 slider. Tap toggles
+                // between 0 and unrated.
+                Button {
+                    scores[c.id] = (current == 0) ? nil : 0
+                } label: {
+                    Text("0")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(
+                            current == 0
+                                ? Color.yellow
+                                : Color.white.opacity(0.4)
+                        )
+                        .frame(width: 20, height: 20)
+                        .overlay(
+                            Circle().stroke(
+                                current == 0
+                                    ? Color.yellow
+                                    : Color.white.opacity(0.3),
+                                lineWidth: 1.5
+                            )
+                        )
+                }
+                .buttonStyle(.plain)
                 ForEach(1...5, id: \.self) { star in
                     Button {
                         let newScore: Int? =

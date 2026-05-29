@@ -239,6 +239,16 @@ struct PerformerProfileSheet: View {
                                     apiKey: apiKey
                                 )
                                 await vm?.load()
+                                // Recreating the VM dropped the
+                                // StashDB mix-in; re-fetch it so the
+                                // tiles don't vanish on refresh when
+                                // the toggle is on (matches the
+                                // initial .task gating).
+                                if showStashDB,
+                                    vm?.performer?.stashDBId != nil
+                                {
+                                    await vm?.loadStashDBScenes()
+                                }
                             }
                         } label: {
                             Label(

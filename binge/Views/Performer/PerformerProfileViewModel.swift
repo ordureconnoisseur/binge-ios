@@ -24,6 +24,10 @@ final class PerformerProfileViewModel {
     /// otherwise. Interleaved by date with `scenes` in the UI.
     var stashDBScenes: [StashDBScene] = []
     var stashDBLoading: Bool = false
+    /// True once a StashDB fetch has completed (even if it yielded
+    /// zero unowned scenes), so toggling the section off/on doesn't
+    /// re-hit the network when the result was legitimately empty.
+    private var stashDBLoaded: Bool = false
     var loading: Bool = false
     var error: String?
     // Mirrors performer.favorite but flips immediately on tap so
@@ -177,8 +181,7 @@ final class PerformerProfileViewModel {
     /// Quietly degrades when the performer isn't linked, the
     /// stashbox isn't configured, or any call fails.
     func loadStashDBScenes() async {
-        if !stashDBScenes.isEmpty { return }
-        if stashDBLoading { return }
+        if stashDBLoaded || stashDBLoading { return }
         guard let stashId = performer?.stashDBId else { return }
         stashDBLoading = true
         defer { stashDBLoading = false }
@@ -194,6 +197,7 @@ final class PerformerProfileViewModel {
         // entry; surfacing them again on stashdb tiles would
         // just be noise.
         stashDBScenes = raw.filter { !owned.contains($0.id) }
+        stashDBLoaded = true
     }
 
     /// Drop the stashdb scenes when the user flips the toggle
@@ -201,6 +205,7 @@ final class PerformerProfileViewModel {
     /// `stashDBScenes.isEmpty`).
     func clearStashDBScenes() {
         stashDBScenes = []
+        stashDBLoaded = false
     }
 
     func toggleFavourite() {
