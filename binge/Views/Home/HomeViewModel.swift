@@ -87,6 +87,12 @@ final class HomeViewModel {
     /// its slice so order doesn't matter.
     private var stashDBByLocalId: [String: [StashDBStoryScene]] = [:]
     private var redditByLocalId: [String: StoryBuilder.RedditEntry] = [:]
+    /// Monotonic token bumped at the start of each fetch(). The
+    /// detached discovery / Reddit tasks capture it and bail before
+    /// assigning if a newer fetch has begun — otherwise a slow
+    /// stale-window fetch could clobber fresh results (last-write-wins,
+    /// e.g. when the lookback setting changes in quick succession).
+    @ObservationIgnored private var fetchGeneration = 0
     // Live override map for O-counters. The card asks the VM for
     // the displayed value via currentOCounter(for:); on tap, the
     // card calls vm.like(sceneId:) which seeds an optimistic
@@ -128,20 +134,24 @@ final class HomeViewModel {
     /// the feed via the recent-`created_at` path, so it's back-catalog
     /// you just re-added. Computed from the configured recent window.
     static func repostCutoffDate(recentWindowDays: Int) -> String {
-        String(
-            ISO8601DateFormatter()
-                .string(
-                    from: Date().addingTimeInterval(
-                        -Double(recentWindowDays) * 86_400
-                    )
-                )
-                .prefix(10)
-        )
+        // Same basis as the feed-fetch window (isoSince): calendar-day
+        // subtraction in the local zone, formatted UTC, truncated to
+        // YYYY-MM-DD. Raw `86_400 * days` arithmetic here instead would
+        // drift a day from the fetch window across a DST boundary and
+        // misclassify scenes dated exactly on the edge.
+        let date =
+            Calendar.current.date(
+                byAdding: .day, value: -recentWindowDays, to: Date()
+            ) ?? Date()
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        return String(f.string(from: date).prefix(10))
     }
-    /// View-layer accessor — uses the configured recent window.
-    var repostCutoff: String {
-        Self.repostCutoffDate(recentWindowDays: lookbackDays)
-    }
+    /// YYYY-MM-DD repost cutoff for the active window. Stored (not
+    /// recomputed) so the per-card isRepost check + the feed sort
+    /// don't each allocate an ISO8601DateFormatter on every access;
+    /// refreshed once per fetch() from the current lookback.
+    private(set) var repostCutoff: String = ""
     static func isRepost(
         _ s: BingeScene, repostCutoff: String
     ) -> Bool {
@@ -414,6 +424,9 @@ final class HomeViewModel {
 
     private func fetch() async {
         loadState = .loading
+        fetchGeneration &+= 1
+        let gen = fetchGeneration
+        repostCutoff = Self.repostCutoffDate(recentWindowDays: lookbackDays)
         let client = StashClient(baseURL: baseURL, apiKey: apiKey)
         let sinceIso = isoSince(daysAgo: lookbackDays)
         let sinceDate = String(sinceIso.prefix(10))
@@ -428,6 +441,10 @@ final class HomeViewModel {
                 variables: ["since": sinceDate, "perPage": perPage]
             )
             let (a, b) = try await (recent, byDate)
+            // A newer fetch started while we awaited (e.g. the lookback
+            // setting changed) — bail so we don't clobber its fresher
+            // results with this stale window.
+            guard gen == fetchGeneration else { return }
 
             // Drop scenes with no performers — matches the web
             // client's home filter. Untagged scenes don't belong in
@@ -463,10 +480,14 @@ final class HomeViewModel {
             // their library scenes. Either failing silently
             // degrades to no augmentation.
             if includeDiscovery {
-                Task { await fetchDiscovery(sinceDate: sinceDate) }
+                Task {
+                    await fetchDiscovery(
+                        sinceDate: sinceDate, generation: gen
+                    )
+                }
             }
             if includeReddit {
-                Task { await fetchReddit() }
+                Task { await fetchReddit(generation: gen) }
             }
         } catch {
             let msg = (error as? LocalizedError)?.errorDescription
@@ -545,7 +566,7 @@ final class HomeViewModel {
     ///
     /// Silently degrades when the user has no stashbox configured,
     /// no linked performers, or any StashDB call fails.
-    private func fetchDiscovery(sinceDate: String) async {
+    private func fetchDiscovery(sinceDate: String, generation: Int) async {
         let svc = StashDBService(baseURL: baseURL, apiKey: apiKey)
         guard let box = await svc.cachedBoxConfig() else { return }
         async let linkedTask = svc.cachedLinkedPerformers()
@@ -571,6 +592,9 @@ final class HomeViewModel {
                 + "costar=\(costar.count) linked=\(linked.count) "
                 + "owned=\(owned.count)"
         )
+        // Bail if a newer fetch superseded this one while we awaited
+        // StashDB — don't overwrite the fresh window's discovery set.
+        guard generation == fetchGeneration else { return }
         discovery = DiscoveryFeedBuilder.build(
             costarScenes: costar,
             trendingScenes: trending,
@@ -624,7 +648,7 @@ final class HomeViewModel {
     /// path (daemon offline, timeout, malformed JSON, empty
     /// digest). Triggers a `rebuildStories()` so the row picks
     /// up the new content without forcing a full reload.
-    private func fetchReddit() async {
+    private func fetchReddit(generation: Int) async {
         let sinceUtc = Int(
             Date().addingTimeInterval(
                 -Double(lookbackDays) * 86_400
@@ -703,6 +727,7 @@ final class HomeViewModel {
                 fallbackPerformer: fallback
             )
         }
+        guard generation == fetchGeneration else { return }
         redditByLocalId = bucket
         print(
             "[binge] reddit digests=\(digests.count) "

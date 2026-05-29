@@ -166,14 +166,20 @@ struct HomeView: View {
             return e.effectiveAt
         }
         let hidden = hiddenCategories
-        return
-            entries
-            .sorted { key($0) > key($1) }
-            .filter {
-                !hidden.contains(
-                    category(of: $0, repostCutoff: repostCutoff)
+        // Decorate-sort-undecorate: compute each entry's sort key and
+        // category ONCE, rather than recomputing feedEffectiveAt for
+        // both operands on every comparison (O(n log n) key calls → O(n)).
+        return entries
+            .map {
+                (
+                    key: key($0),
+                    cat: category(of: $0, repostCutoff: repostCutoff),
+                    entry: $0
                 )
             }
+            .filter { !hidden.contains($0.cat) }
+            .sorted { $0.key > $1.key }
+            .map(\.entry)
     }
 
     /// Route a discovery-card performer tap. The performer's

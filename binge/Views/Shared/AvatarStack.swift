@@ -79,7 +79,7 @@ struct AvatarStack<Item: Identifiable & Hashable>: View {
                 .buttonStyle(.plain)
                 .overlay(alignment: .bottomTrailing) {
                     if repostBadgeOnPrimary && idx == 0 {
-                        repostBadge
+                        RepostBadge()
                     }
                 }
                 .zIndex(Double(visible.count - idx))
@@ -144,10 +144,14 @@ struct AvatarStack<Item: Identifiable & Hashable>: View {
         )
     }
 
-    /// Loop-arrows badge tucked into the primary avatar's
-    /// bottom-right — back-catalog re-add signal. Card-coloured
-    /// border so it reads as a cut-out. Decorative; never eats taps.
-    private var repostBadge: some View {
+}
+
+/// Loop-arrows badge tucked into a primary avatar's bottom-right —
+/// the back-catalog "reposted" signal. Card-coloured border so it
+/// reads as a cut-out; decorative, never eats taps. Shared by the
+/// scene-card avatar stack and the pack card.
+struct RepostBadge: View {
+    var body: some View {
         Image(systemName: "arrow.2.squarepath")
             .font(.system(size: 8, weight: .bold))
             .foregroundStyle(.white)

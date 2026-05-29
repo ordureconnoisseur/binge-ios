@@ -667,6 +667,14 @@ struct SettingsView: View {
                 Text("60 days").tag(60)
                 Text("90 days").tag(90)
             }
+            .onAppear {
+                // Migrate legacy stored values (180/365 were removed
+                // when the window was capped at 90) so the Picker shows
+                // a selected row rather than blank.
+                if ![7, 14, 30, 60, 90].contains(lookbackDays) {
+                    lookbackDays = 90
+                }
+            }
             Toggle("Discover from StashDB", isOn: $includeStashDB)
             Toggle("Discover from Reddit", isOn: $includeReddit)
         } header: {

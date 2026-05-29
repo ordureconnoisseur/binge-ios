@@ -161,24 +161,9 @@ struct PackFeedCard: View {
         )
         .overlay(alignment: .bottomTrailing) {
             if pack.isRepost {
-                repostBadge
+                RepostBadge()
             }
         }
-    }
-
-    /// Loop-arrows badge tucked into the avatar's bottom-right —
-    /// signals this pack is back-catalog re-added, not fresh
-    /// content. Card-coloured border so it cuts out cleanly.
-    private var repostBadge: some View {
-        Image(systemName: "arrow.2.squarepath")
-            .font(.system(size: 8, weight: .bold))
-            .foregroundStyle(.white)
-            .frame(width: 16, height: 16)
-            .background(LinearGradient.bingeStoryRing, in: Circle())
-            .overlay(
-                Circle().stroke(Color(white: 0.07), lineWidth: 2)
-            )
-            .offset(x: 3, y: 3)
     }
 
     @ViewBuilder
