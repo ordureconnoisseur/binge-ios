@@ -677,14 +677,14 @@ struct SettingsView: View {
     @ViewBuilder
     private var homeSection: some View {
         Section {
+            // Capped at 90: the Home feed fetches the whole window at
+            // once, so the window size bounds the fetch.
             Picker("Lookback", selection: $lookbackDays) {
                 Text("7 days").tag(7)
                 Text("14 days").tag(14)
                 Text("30 days").tag(30)
                 Text("60 days").tag(60)
                 Text("90 days").tag(90)
-                Text("180 days").tag(180)
-                Text("365 days").tag(365)
             }
             Toggle("Discover from StashDB", isOn: $includeStashDB)
             Toggle("Discover from Reddit", isOn: $includeReddit)

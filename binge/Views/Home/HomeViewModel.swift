@@ -104,9 +104,14 @@ final class HomeViewModel {
     // (Infinite-scroll widening like web's 30→365 is still deferred.)
     private var lookbackDays: Int {
         let v = UserDefaults.standard.integer(forKey: "binge.lookbackDays")
-        return v > 0 ? v : 30
+        // Clamp to the 90-day max (the whole window is fetched at once,
+        // so the window bounds the fetch). Default 30 when unset.
+        return min(v > 0 ? v : 30, 90)
     }
-    private let perPage = 500
+    // per_page: -1 = no clip. The whole window is fetched at once and
+    // the window is capped at 90 days, so this is bounded by the user's
+    // import rate over that span.
+    private let perPage = -1
     /// Maximum feed cards from a single primary performer that
     /// ISN'T already collapsed into a Pack. Without this a
     /// prolific performer can still take over the feed even
