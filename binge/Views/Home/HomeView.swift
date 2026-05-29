@@ -24,7 +24,6 @@ struct HomeView: View {
     private var stashApiKey: String { KeychainStore.shared.stashApiKey }
     @AppStorage("binge.includeStashDB") private var includeStashDB: Bool = true
     @AppStorage("binge.includeReddit") private var includeReddit: Bool = true
-    @AppStorage("binge.showcaseMode") private var showcaseMode: Bool = true
     /// Recent window (days). Mirrored here only so a change in Settings
     /// re-runs the fetch task below; the VM reads the value itself.
     @AppStorage("binge.lookbackDays") private var lookbackDays: Int = 30
@@ -445,7 +444,7 @@ struct HomeView: View {
             .toolbarColorScheme(.dark, for: .navigationBar)
             .bingeRouteDestinations()
         }
-        .task(id: "\(showcaseMode):\(lookbackDays)") {
+        .task(id: lookbackDays) {
             if vm == nil {
                 vm = HomeViewModel(
                     baseURL: stashUrl,
@@ -455,11 +454,11 @@ struct HomeView: View {
                 )
                 await vm?.load()
             } else {
-                // VM already up — Showcase toggle or the recent-window
-                // (lookbackDays) setting changed mid-session. The VM
-                // reads both fresh from UserDefaults at fetch time, so a
-                // refresh() picks up the new values and re-runs the
-                // feed/pack/discovery assembly with the new window.
+                // VM already up — the recent-window (lookbackDays)
+                // setting changed mid-session. The VM reads it fresh
+                // from UserDefaults at fetch time, so refresh() picks
+                // up the new value and re-runs the feed/pack/discovery
+                // assembly with the new window.
                 await vm?.refresh()
             }
             // Prime activeFeedEntryId on first load. SwiftUI's

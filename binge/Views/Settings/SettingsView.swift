@@ -37,7 +37,6 @@ struct SettingsView: View {
     @AppStorage("binge.includeReddit") private var includeReddit: Bool = true
     @AppStorage("binge.bingeServerUrl") private var bingeServerUrl: String = ""
     @AppStorage("binge.showDebug") private var showDebug: Bool = false
-    @AppStorage("binge.showcaseMode") private var showcaseMode: Bool = true
 
     // Local draft state for the connection fields — we only write
     // the @AppStorage values when a probe succeeds, so a half-typed
@@ -89,7 +88,6 @@ struct SettingsView: View {
     private var normalBody: some View {
         Form {
             connectionSection
-            showcaseModeSection
             gendersSection
             streamingSection
             reelSection
@@ -535,23 +533,6 @@ struct SettingsView: View {
     @AppStorage(AllowedGendersStore.storageKey)
     private var allowedGendersRaw: String = "FEMALE,TRANSGENDER_FEMALE"
 
-    @ViewBuilder
-    private var showcaseModeSection: some View {
-        Section {
-            Toggle("Showcase mode", isOn: $showcaseMode)
-        } header: {
-            Text("Showcase")
-        } footer: {
-            Text(
-                "Silently apply your Stash 'Showcase' saved "
-                    + "filter to For You so demos and screenshots "
-                    + "start on curated content. No chip appears "
-                    + "— the filter is invisible from the UI. "
-                    + "Requires a saved filter named 'Showcase' "
-                    + "in Stash; otherwise this is a no-op."
-            )
-        }
-    }
 
     @ViewBuilder
     private var gendersSection: some View {

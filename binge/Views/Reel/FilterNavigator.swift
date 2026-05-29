@@ -14,34 +14,6 @@ import SwiftUI
 final class FilterNavigator {
     var active: StashSavedFilter?
 
-    /// SHOWCASE-FILTER-HACK — find the user's "Showcase" saved
-    /// filter on Stash and apply it as the For You default, but
-    /// only if no filter is currently active (so we never stomp
-    /// on a chip the user added manually). Lets screenshot
-    /// recordings start with curated content out of the gate.
-    /// Revert by removing this method + the call site in
-    /// MainShell once captures are done.
-    func autoApplyShowcase(baseURL: String, apiKey: String) async {
-        if active != nil { return }
-        let client = StashClient(baseURL: baseURL, apiKey: apiKey)
-        do {
-            let resp: FindSavedFiltersResponse = try await client.gql(
-                Queries.findSavedFilters
-            )
-            if let showcase = resp.findSavedFilters.first(where: {
-                $0.name == "Showcase"
-            }) {
-                if active == nil {
-                    active = showcase
-                }
-            }
-        } catch {
-            print(
-                "[binge] auto-apply Showcase filter failed: \(error)"
-            )
-        }
-    }
-
     /// Synthetic single-tag filter for caption / hashtag taps.
     /// Mirrors the web's "tap #tag → reel filtered by that tag"
     /// behaviour without needing a real saved filter to exist on

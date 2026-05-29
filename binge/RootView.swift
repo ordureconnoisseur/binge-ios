@@ -42,8 +42,6 @@ private struct MainShell: View {
 
     @AppStorage("binge.stashUrl") private var stashUrl: String = ""
     private var stashApiKey: String { KeychainStore.shared.stashApiKey }
-    @AppStorage("binge.showcaseMode")
-    private var showcaseMode: Bool = true
 
     var body: some View {
         // .safeAreaInset hands SwiftUI the nav as a participant in
@@ -83,22 +81,6 @@ private struct MainShell: View {
                 await PluginContext.shared.load(
                     baseURL: stashUrl, apiKey: stashApiKey
                 )
-            }
-            // Showcase mode — silently auto-applies the user's
-            // "Showcase" saved filter on the reel so demos /
-            // screenshots start with curated content. Gated on
-            // the Settings toggle so the user can flip it off
-            // mid-session. The chip is hidden from the reel
-            // (see ReelView's topBar) so the filter never
-            // surfaces as a UI element.
-            .task(id: showcaseMode) {
-                if showcaseMode {
-                    await filterNavigator.autoApplyShowcase(
-                        baseURL: stashUrl, apiKey: stashApiKey
-                    )
-                } else if filterNavigator.active?.name == "Showcase" {
-                    filterNavigator.active = nil
-                }
             }
             // Global Scribe modal — mounted here so any view
             // (home cards, reel rail, performer menu) can open

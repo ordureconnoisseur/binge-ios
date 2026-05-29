@@ -389,21 +389,6 @@ enum Queries {
         }
         """
 
-    /// Tag-ID exclusion list applied client-side when Showcase
-    /// mode is ON. Mirrors the user's Stash saved "Showcase"
-    /// filter (id 9) so the Home feed shows the same curated set
-    /// as the For You reel during demos / screenshots. iOS
-    /// filters in the VM (rather than baking the clause into the
-    /// GraphQL query like web) so the stories row keeps seeing
-    /// the unfiltered set — Zoey-style fully-excluded performers
-    /// still surface in the bubble row, just not as feed cards.
-    static let showcaseExcludeTagIds: Set<String> = [
-        "1985", "646", "647", "350", "1994", "645", "1611", "5",
-        "648", "657", "1984", "660", "667", "2404", "1250", "1094",
-        "1610", "1514", "644", "2259", "1933", "1961", "1942",
-        "1956", "1927", "2073",
-    ]
-
     /// Library scenes added recently — filter `created_at > $since`.
     /// Drives the Home tab's stories row + feed alongside
     /// `findScenesByDate`. Selection set is a superset of

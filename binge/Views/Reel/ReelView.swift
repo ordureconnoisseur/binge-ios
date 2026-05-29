@@ -225,12 +225,7 @@ struct ReelView: View {
         // icon button last. When no filter is active, the row
         // collapses to just the icon.
         HStack(spacing: 10) {
-            // Showcase is silently applied via Settings — don't
-            // surface it as a removable chip. Any other active
-            // filter still renders normally.
-            if let active = filterNav.active,
-                active.name != "Showcase"
-            {
+            if let active = filterNav.active {
                 activeFilterChip(active)
             }
             Button {

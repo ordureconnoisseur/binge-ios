@@ -266,15 +266,6 @@ final class HomeViewModel {
     private let includeDiscovery: Bool
     private let includeReddit: Bool
 
-    /// Current Showcase mode preference. Read fresh from
-    /// UserDefaults on every fetch so a toggle flip + manual
-    /// refresh (or HomeView's `.task(id: showcaseMode)` re-run)
-    /// picks up the new value without recreating the VM.
-    /// Default true to match @AppStorage's default.
-    private var showcaseModeEnabled: Bool {
-        UserDefaults.standard.object(forKey: "binge.showcaseMode")
-            as? Bool ?? true
-    }
     /// Tokens for the NotificationCenter observers added in init.
     /// Stored so `deinit` can remove them — without this the
     /// observer's strong reference to its closure (which captures
@@ -451,24 +442,11 @@ final class HomeViewModel {
             // performers; they'd also produce zero story buckets
             // and just bloat the feed.
             let raw = mergeById(a.findScenes.scenes, b.findScenes.scenes)
-            // Drop empty-performers, then if Showcase mode is ON
-            // also drop scenes carrying any excluded tag. Filter
-            // upstream so stories + feed + packs all see the
-            // SAME curated set — a performer whose whole library
-            // is excluded (trans / scat / etc.) shouldn't surface
-            // as a bubble OR a card when the user has opted in
-            // to the curated view.
-            let withPerformers = raw.filter { !$0.performers.isEmpty }
-            let merged: [BingeScene]
-            if showcaseModeEnabled {
-                merged = withPerformers.filter { scene in
-                    !scene.tags.contains { tag in
-                        Queries.showcaseExcludeTagIds.contains(tag.id)
-                    }
-                }
-            } else {
-                merged = withPerformers
-            }
+            // Drop scenes with no performers — untagged scenes don't
+            // belong in a performer-organized "what's new" surface
+            // (they'd also produce zero story buckets and just bloat
+            // the feed).
+            let merged = raw.filter { !$0.performers.isEmpty }
             libraryStorySource = merged
             // Reset tails on a fresh load so refreshing drops
             // stale StashDB / Reddit entries before the new
