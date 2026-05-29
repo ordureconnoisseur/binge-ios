@@ -54,7 +54,10 @@ struct PerformerReelSheet: View {
                         baseURL: stashUrl,
                         apiKey: stashApiKey,
                         onLike: handleLike,
-                        onUnlike: handleUnlike
+                        onUnlike: handleUnlike,
+                        onAutoAdvance: { ended in
+                            advance(after: ended.id)
+                        }
                     )
                     .frame(width: geo.size.width, height: geo.size.height)
                     .id(scene.id)
@@ -66,6 +69,20 @@ struct PerformerReelSheet: View {
         .scrollTargetBehavior(.paging)
         .scrollPosition(id: $activeId)
         .clipped()
+    }
+
+    /// Auto-scroll advance — animated so it reads as a swipe rather
+    /// than a hard cut to the next video. Fixed scene array, so we
+    /// just stop at the tail.
+    private func advance(after sceneId: String) {
+        guard
+            let idx = scenes.firstIndex(where: { $0.id == sceneId })
+        else { return }
+        let nextIdx = idx + 1
+        guard nextIdx < scenes.count else { return }
+        withAnimation(.easeInOut(duration: 0.35)) {
+            activeId = scenes[nextIdx].id
+        }
     }
 
     @MainActor

@@ -476,13 +476,18 @@ struct ReelView: View {
         else { return }
         let nextIdx = idx + 1
         if nextIdx < scenes.count {
-            activeId = scenes[nextIdx].id
+            // Animated so auto-scroll reads as a swipe, not a hard cut.
+            withAnimation(.easeInOut(duration: 0.35)) {
+                activeId = scenes[nextIdx].id
+            }
         } else {
             // At the tail — pull another page first, then advance.
-            Task {
+            Task { @MainActor in
                 await loadMoreIfNeeded()
                 if let next = scenes[safe: nextIdx] {
-                    activeId = next.id
+                    withAnimation(.easeInOut(duration: 0.35)) {
+                        activeId = next.id
+                    }
                 }
             }
         }
