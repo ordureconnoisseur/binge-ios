@@ -25,6 +25,13 @@ struct HomeView: View {
     @AppStorage("binge.includeStashDB") private var includeStashDB: Bool = true
     @AppStorage("binge.includeReddit") private var includeReddit: Bool = true
     @AppStorage("binge.showcaseMode") private var showcaseMode: Bool = true
+    /// Recent window (days). Mirrored here only so a change in Settings
+    /// re-runs the fetch task below; the VM reads the value itself.
+    @AppStorage("binge.lookbackDays") private var lookbackDays: Int = 30
+    /// Hidden Home-feed categories — comma-separated raw values of
+    /// `FeedCategory`. Empty = show everything (default). Mirrors web's
+    /// `binge.feedHidden` localStorage key.
+    @AppStorage("binge.feedHidden") private var feedHiddenRaw: String = ""
 
     @State private var vm: HomeViewModel?
     @State private var presented: PresentedSheet?
@@ -90,17 +97,84 @@ struct HomeView: View {
         }
     }
 
-    /// Merge library + packs + discovery by effectiveAt DESC.
+    /// Filterable Home-feed categories, toggled from the nav-bar
+    /// funnel menu. Mirrors web's FeedCategory. (iOS feed has no
+    /// gallery cards, so every entry maps to one of these.)
+    enum FeedCategory: String, CaseIterable, Hashable {
+        case discover, trending, posts, reposts
+        var label: String {
+            switch self {
+            case .discover: return "Discover"
+            case .trending: return "Trending"
+            case .posts: return "Posts"
+            case .reposts: return "Reposts"
+            }
+        }
+    }
+
+    private var hiddenCategories: Set<FeedCategory> {
+        Set(
+            feedHiddenRaw
+                .split(separator: ",")
+                .compactMap { FeedCategory(rawValue: String($0)) }
+        )
+    }
+
+    private func setHidden(_ cat: FeedCategory, hidden: Bool) {
+        var s = hiddenCategories
+        if hidden { s.insert(cat) } else { s.remove(cat) }
+        // Canonical order so the stored string is stable.
+        feedHiddenRaw = FeedCategory.allCases
+            .filter { s.contains($0) }
+            .map(\.rawValue)
+            .joined(separator: ",")
+    }
+
+    private func category(
+        of entry: FeedEntry, repostCutoff: String
+    ) -> FeedCategory {
+        switch entry {
+        case .library(let s):
+            return HomeViewModel.isRepost(s, repostCutoff: repostCutoff)
+                ? .reposts : .posts
+        case .pack(let p):
+            return p.isRepost ? .reposts : .posts
+        case .discovery(let d):
+            return d.source == .trending ? .trending : .discover
+        }
+    }
+
+    /// Merge library + packs + discovery by effectiveAt DESC, then
+    /// drop any categories hidden via the filter menu. Library entries
+    /// sort by a repost-aware key so back-catalog you just re-added
+    /// surfaces by import time instead of its old date.
     private func merged(
         library: [BingeScene],
         packs: [SceneFeedPack],
-        discovery: [DiscoveryItem]
+        discovery: [DiscoveryItem],
+        repostCutoff: String
     ) -> [FeedEntry] {
         let entries =
             library.map(FeedEntry.library)
             + packs.map(FeedEntry.pack)
             + discovery.map(FeedEntry.discovery)
-        return entries.sorted { $0.effectiveAt > $1.effectiveAt }
+        func key(_ e: FeedEntry) -> String {
+            if case .library(let s) = e {
+                return HomeViewModel.feedEffectiveAt(
+                    s, repostCutoff: repostCutoff
+                )
+            }
+            return e.effectiveAt
+        }
+        let hidden = hiddenCategories
+        return
+            entries
+            .sorted { key($0) > key($1) }
+            .filter {
+                !hidden.contains(
+                    category(of: $0, repostCutoff: repostCutoff)
+                )
+            }
     }
 
     /// Route a discovery-card performer tap. The performer's
@@ -136,6 +210,32 @@ struct HomeView: View {
         }
     }
 
+    /// Nav-bar funnel menu — per-category visibility toggles for the
+    /// Home feed. Native Menu + Toggle rows render checkmarks for the
+    /// shown categories. Filled icon when any category is hidden.
+    private var feedFilterMenu: some View {
+        Menu {
+            ForEach(FeedCategory.allCases, id: \.self) { cat in
+                Toggle(
+                    cat.label,
+                    isOn: Binding(
+                        get: { !hiddenCategories.contains(cat) },
+                        set: { shown in
+                            setHidden(cat, hidden: !shown)
+                        }
+                    )
+                )
+            }
+        } label: {
+            Image(
+                systemName: hiddenCategories.isEmpty
+                    ? "line.3.horizontal.decrease.circle"
+                    : "line.3.horizontal.decrease.circle.fill"
+            )
+            .foregroundStyle(.white)
+        }
+    }
+
     /// SceneFeedCard call site moved out of body — Swift's
     /// type-checker chokes on the all-inline closure soup when
     /// the card carries this many props.
@@ -149,6 +249,9 @@ struct HomeView: View {
             scene: scene,
             baseURL: stashUrl,
             apiKey: stashApiKey,
+            isRepost: HomeViewModel.isRepost(
+                scene, repostCutoff: vm.repostCutoff
+            ),
             oCounter: vm.currentOCounter(for: scene),
             onLike: { vm.like(sceneId: scene.id) },
             onUnlike: { vm.unlike(sceneId: scene.id) },
@@ -244,7 +347,8 @@ struct HomeView: View {
                             merged(
                                 library: vm.feed,
                                 packs: vm.packs,
-                                discovery: vm.discovery
+                                discovery: vm.discovery,
+                                repostCutoff: vm.repostCutoff
                             ),
                             id: \.id
                         ) { entry in
@@ -332,13 +436,16 @@ struct HomeView: View {
                     BingeLogoMark()
                 }
                 .sharedBackgroundVisibility(.hidden)
+                ToolbarItem(placement: .topBarTrailing) {
+                    feedFilterMenu
+                }
             }
             .toolbarBackground(Color.black, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbarColorScheme(.dark, for: .navigationBar)
             .bingeRouteDestinations()
         }
-        .task(id: showcaseMode) {
+        .task(id: "\(showcaseMode):\(lookbackDays)") {
             if vm == nil {
                 vm = HomeViewModel(
                     baseURL: stashUrl,
@@ -348,11 +455,11 @@ struct HomeView: View {
                 )
                 await vm?.load()
             } else {
-                // VM already up — Showcase toggle changed mid-
-                // session. The VM reads the flag fresh from
-                // UserDefaults at fetch time, so a refresh()
-                // call picks up the new value and re-runs the
-                // feed/pack assembly with the new filter.
+                // VM already up — Showcase toggle or the recent-window
+                // (lookbackDays) setting changed mid-session. The VM
+                // reads both fresh from UserDefaults at fetch time, so a
+                // refresh() picks up the new values and re-runs the
+                // feed/pack/discovery assembly with the new window.
                 await vm?.refresh()
             }
             // Prime activeFeedEntryId on first load. SwiftUI's
@@ -365,7 +472,8 @@ struct HomeView: View {
                 activeFeedEntryId = merged(
                     library: vm.feed,
                     packs: vm.packs,
-                    discovery: vm.discovery
+                    discovery: vm.discovery,
+                    repostCutoff: vm.repostCutoff
                 ).first?.id
             }
         }

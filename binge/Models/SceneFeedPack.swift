@@ -17,4 +17,10 @@ struct SceneFeedPack: Identifiable, Hashable {
     /// Drives the merged Home-feed sort. Matches the newest
     /// scene in the pack so a fresh batch surfaces at the top.
     let effectiveAt: String
+    /// True when this is back-catalog you just re-added rather than
+    /// genuinely new content — even the newest scene's scraped
+    /// release date is older than the configured recent window. The
+    /// card swaps "added N new scenes" for "reposted" and shows a
+    /// repost glyph on the avatar.
+    let isRepost: Bool
 }

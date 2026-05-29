@@ -96,10 +96,16 @@ final class HomeViewModel {
     // LazyVStack remounts when cards scroll offscreen and back.
     var oCounterOverrides: [String: Int] = [:]
 
-    // Fixed at 30 days for v0.2. The web plugin widens the window
-    // (30 → 90 → 365) as the user scrolls past the end of the feed;
-    // we defer that until pagination is needed.
-    private let lookbackDays = 30
+    // The "recent window" — read fresh from the same setting the
+    // Settings lookback picker writes (binge.lookbackDays). Drives the
+    // feed/story fetch window, the repost cutoff, AND the discovery
+    // (discover + trending) window. Read at fetch time so a settings
+    // change + refresh picks up the new value. Defaults to 30.
+    // (Infinite-scroll widening like web's 30→365 is still deferred.)
+    private var lookbackDays: Int {
+        let v = UserDefaults.standard.integer(forKey: "binge.lookbackDays")
+        return v > 0 ? v : 30
+    }
     private let perPage = 500
     /// Maximum feed cards from a single primary performer that
     /// ISN'T already collapsed into a Pack. Without this a
@@ -111,9 +117,49 @@ final class HomeViewModel {
     /// scenes from the same primary performer whose created_at
     /// values are within `packWindow` of the most recent one,
     /// and whose count is >= `packMinSize`, collapses into one
-    /// PackFeedItem. 8 / 60min matches web.
+    /// PackFeedItem. A full day rather than an hour because a
+    /// large scan (hundreds of files, hashing + preview gen) can
+    /// spread scene-record creation across hours; an hour-tight
+    /// window would fragment one import into several sub-packs.
     private static let packMinSize: Int = 8
-    private static let packWindow: TimeInterval = 60 * 60
+    private static let packWindow: TimeInterval = 24 * 60 * 60
+
+    /// YYYY-MM-DD cutoff for "repost" classification. A scene whose
+    /// scraped release date is older than this could only have reached
+    /// the feed via the recent-`created_at` path, so it's back-catalog
+    /// you just re-added. Computed from the configured recent window.
+    static func repostCutoffDate(recentWindowDays: Int) -> String {
+        String(
+            ISO8601DateFormatter()
+                .string(
+                    from: Date().addingTimeInterval(
+                        -Double(recentWindowDays) * 86_400
+                    )
+                )
+                .prefix(10)
+        )
+    }
+    /// View-layer accessor — uses the configured recent window.
+    var repostCutoff: String {
+        Self.repostCutoffDate(recentWindowDays: lookbackDays)
+    }
+    static func isRepost(
+        _ s: BingeScene, repostCutoff: String
+    ) -> Bool {
+        guard let d = s.date, !d.isEmpty else { return false }
+        return d < repostCutoff
+    }
+    /// Feed sort key — import time for reposts (so back-catalog
+    /// surfaces instead of sinking to its old release date),
+    /// otherwise the usual `date ?? createdAt`.
+    static func feedEffectiveAt(
+        _ s: BingeScene, repostCutoff: String
+    ) -> String {
+        if isRepost(s, repostCutoff: repostCutoff) {
+            return s.createdAt ?? Story.effectiveAt(for: s)
+        }
+        return Story.effectiveAt(for: s)
+    }
 
     /// Walks the already-sorted scene list and:
     ///   - Detects "batch import" clusters and emits one
@@ -124,8 +170,17 @@ final class HomeViewModel {
     /// order) plus the detected packs. The caller merges these
     /// into the FeedEntry list and re-sorts by effectiveAt.
     static func assemblePacksAndCap(
-        _ scenes: [BingeScene]
+        _ scenes: [BingeScene],
+        recentWindowDays: Int
     ) -> (scenes: [BingeScene], packs: [SceneFeedPack]) {
+        // A pack is a "repost" (back-catalog re-added) when even its
+        // newest scene's scraped release date is older than the
+        // configured recent window. Bare "YYYY-MM-DD" so a string
+        // compare against the scenes' date field is correct.
+        let repostCutoff = repostCutoffDate(
+            recentWindowDays: recentWindowDays
+        )
+
         // Group by primary performer.
         var byPrimary: [String: [BingeScene]] = [:]
         for s in scenes {
@@ -155,15 +210,29 @@ final class HomeViewModel {
             if inWindow.count < Self.packMinSize { continue }
             guard let primary = sortedByCreated.first?.performers.first
             else { continue }
+            // Newest scraped release date across the batch. If even
+            // that is older than the cutoff, the pack is back-catalog
+            // → "reposted". Scenes with no date aren't evidence.
+            var newestDate: String? = nil
+            for s in inWindow {
+                guard let d = s.date, !d.isEmpty else { continue }
+                if newestDate == nil || d > newestDate! { newestDate = d }
+            }
+            let isRepost = newestDate != nil && newestDate! < repostCutoff
             packs.append(
                 SceneFeedPack(
                     id: "pack:\(pid):\(newestStr)",
                     primaryPerformer: primary,
                     scenes: inWindow,
                     sceneCount: inWindow.count,
-                    effectiveAt: Story.effectiveAt(
-                        for: sortedByCreated.first!
-                    )
+                    // Sort by IMPORT time (newest created_at), NOT the
+                    // scraped release date. A pack is "a batch you just
+                    // added," so back-catalog with old scraped dates
+                    // must still surface at the top of the feed (and the
+                    // card's "X ago" label must read the add time, not
+                    // the years-old release date).
+                    effectiveAt: newestStr,
+                    isRepost: isRepost
                 )
             )
             packPerformers.insert(pid)
@@ -406,7 +475,8 @@ final class HomeViewModel {
                 merged.sorted {
                     Story.effectiveAt(for: $0)
                         > Story.effectiveAt(for: $1)
-                }
+                },
+                recentWindowDays: lookbackDays
             )
             feed = assembled.scenes
             packs = assembled.packs
@@ -529,7 +599,8 @@ final class HomeViewModel {
             costarScenes: costar,
             trendingScenes: trending,
             linkedPerformers: linked,
-            ownedSceneStashIds: owned
+            ownedSceneStashIds: owned,
+            sinceIsoDate: sinceDate
         )
 
         // Build per-performer stashdb tail map (keyed by Stash

@@ -21,6 +21,10 @@ struct SceneFeedCard: View {
     let scene: BingeScene
     let baseURL: String
     let apiKey: String
+    /// True when this scene is back-catalog you just re-added (old
+    /// scraped date, recent created_at). Shows a "reposted" glyph and
+    /// reads the relative time off the import date, not the old one.
+    var isRepost: Bool = false
     // Counter value to display. Owned by HomeViewModel so the
     // increment survives LazyVStack remount when the card scrolls
     // offscreen and back.
@@ -195,8 +199,14 @@ struct SceneFeedCard: View {
             } label: {
                 VStack(alignment: .leading, spacing: 2) {
                     nameRow
+                    // Reposts read their relative time off the import
+                    // date (createdAt), not the old scraped date —
+                    // the repost badge now lives on the avatar.
                     Text(RelativeDate.relative(
-                        Story.effectiveAt(for: scene)
+                        isRepost
+                            ? (scene.createdAt
+                                ?? Story.effectiveAt(for: scene))
+                            : Story.effectiveAt(for: scene)
                     ))
                     .font(.system(size: 11))
                     .foregroundStyle(.white.opacity(0.55))
@@ -318,7 +328,8 @@ struct SceneFeedCard: View {
             },
             hasStory: { perf in
                 storiesByPerformerId[perf.id] != nil
-            }
+            },
+            repostBadgeOnPrimary: isRepost
         )
     }
 

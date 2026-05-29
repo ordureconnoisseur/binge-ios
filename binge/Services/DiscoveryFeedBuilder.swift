@@ -30,6 +30,7 @@ enum DiscoveryFeedBuilder {
         trendingScenes: [StashDBScene],
         linkedPerformers: [LinkedPerformer],
         ownedSceneStashIds: Set<String>,
+        sinceIsoDate: String,
         allowedGenders: Set<String> = AllowedGendersStore.currentStrings()
     ) -> [DiscoveryItem] {
         // Index library performers by their stash_id for O(1)
@@ -66,6 +67,13 @@ enum DiscoveryFeedBuilder {
 
         for (_, entry) in pool {
             let scene = entry.scene
+            // Obey the recent window. The co-star fetch already filters
+            // server-side by date, but trending (sort: TRENDING) returns
+            // globally-hot scenes of ANY age — drop undated or older-
+            // than-window scenes so trending cards stay within lookback.
+            guard let rd = scene.releaseDate, rd >= sinceIsoDate else {
+                continue
+            }
             let female = scene.performers.filter { perf in
                 guard let g = perf.gender else { return false }
                 return allowedGenders.contains(g)

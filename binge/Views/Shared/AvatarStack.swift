@@ -39,6 +39,10 @@ struct AvatarStack<Item: Identifiable & Hashable>: View {
     /// to "no story for any item" so existing call sites that
     /// don't need this stay zero-config.
     let hasStory: (Item) -> Bool
+    /// When true, the PRIMARY (first) avatar gets a repost badge —
+    /// the loop-arrows glyph signalling back-catalog you just
+    /// re-added. Mirrors the pack card's avatar treatment.
+    let repostBadgeOnPrimary: Bool
 
     init(
         items: [Item],
@@ -48,7 +52,8 @@ struct AvatarStack<Item: Identifiable & Hashable>: View {
         resolveImage: @escaping (Item) -> (url: URL?, apiKey: String),
         initial: @escaping (Item) -> String,
         onTap: @escaping (Item) -> Void,
-        hasStory: @escaping (Item) -> Bool = { _ in false }
+        hasStory: @escaping (Item) -> Bool = { _ in false },
+        repostBadgeOnPrimary: Bool = false
     ) {
         self.items = items
         self.size = size
@@ -58,6 +63,7 @@ struct AvatarStack<Item: Identifiable & Hashable>: View {
         self.initial = initial
         self.onTap = onTap
         self.hasStory = hasStory
+        self.repostBadgeOnPrimary = repostBadgeOnPrimary
     }
 
     var body: some View {
@@ -71,6 +77,11 @@ struct AvatarStack<Item: Identifiable & Hashable>: View {
                     bubble(item)
                 }
                 .buttonStyle(.plain)
+                .overlay(alignment: .bottomTrailing) {
+                    if repostBadgeOnPrimary && idx == 0 {
+                        repostBadge
+                    }
+                }
                 .zIndex(Double(visible.count - idx))
             }
             if overflow > 0 {
@@ -123,9 +134,29 @@ struct AvatarStack<Item: Identifiable & Hashable>: View {
                         lineWidth: 2
                     )
                 } else {
-                    Circle().stroke(Color.black, lineWidth: 2)
+                    // strokeBorder (inset), NOT stroke — keeps the
+                    // separator within the avatar's frame so ringed
+                    // and ringless bubbles share the exact same
+                    // outer diameter (matches web's border-box).
+                    Circle().strokeBorder(Color.black, lineWidth: 2)
                 }
             }
         )
+    }
+
+    /// Loop-arrows badge tucked into the primary avatar's
+    /// bottom-right — back-catalog re-add signal. Card-coloured
+    /// border so it reads as a cut-out. Decorative; never eats taps.
+    private var repostBadge: some View {
+        Image(systemName: "arrow.2.squarepath")
+            .font(.system(size: 8, weight: .bold))
+            .foregroundStyle(.white)
+            .frame(width: 16, height: 16)
+            .background(LinearGradient.bingeStoryRing, in: Circle())
+            .overlay(
+                Circle().stroke(Color(white: 0.07), lineWidth: 2)
+            )
+            .offset(x: 3, y: 3)
+            .allowsHitTesting(false)
     }
 }
