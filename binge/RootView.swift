@@ -33,6 +33,10 @@ struct RootView: View {
 // HomeView and ReelView size themselves to the available frame.
 private struct MainShell: View {
     @State private var tab: BingeTab = .home
+    // Automated walkthrough director (demo-capture only). Observed so
+    // `.switchTab` commands drive the active tab and the pre-roll
+    // countdown can overlay the whole shell.
+    @State private var tour = TourDirector.shared
     // Cross-tab nav state: ExploreView writes chainSeed on tile
     // tap; ReelView reads it on mount to enter chained mode.
     @State private var reelNavigator = ReelNavigator()
@@ -72,6 +76,13 @@ private struct MainShell: View {
             // NavigationStack push transition.
             BingeBottomNav(selected: $tab)
         }
+        .overlay { tourCountdownOverlay }
+        // Director drives the active tab during a walkthrough.
+        .onChange(of: tour.tick) { _, _ in
+            if case let .switchTab(t)? = tour.command {
+                withAnimation(.easeInOut(duration: 0.25)) { tab = t }
+            }
+        }
         .ignoresSafeArea(.keyboard, edges: .bottom)
             // Detect installed plugins once on shell mount. The
             // PluginContext singleton is `.loaded`-gated so any
@@ -104,6 +115,27 @@ private struct MainShell: View {
         )
     }
 
+
+    /// Pre-roll "3, 2, 1" so the user can start screen-recording before
+    /// the walkthrough drives the UI.
+    @ViewBuilder
+    private var tourCountdownOverlay: some View {
+        if let n = tour.countdown {
+            ZStack {
+                Color.black.opacity(0.65).ignoresSafeArea()
+                VStack(spacing: 8) {
+                    Text("\(n)")
+                        .font(.system(size: 80, weight: .bold))
+                        .foregroundStyle(.white)
+                        .contentTransition(.numericText())
+                    Text("Walkthrough starting…")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.7))
+                }
+            }
+            .transition(.opacity)
+        }
+    }
 
     @ViewBuilder
     private var tabContent: some View {

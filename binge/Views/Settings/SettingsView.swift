@@ -17,6 +17,10 @@ struct SettingsView: View {
     enum Mode { case setup, normal }
     let mode: Mode
 
+    // Pops Settings (normal mode is pushed from MenuPage) so the
+    // walkthrough director can drive the tab bar underneath.
+    @Environment(\.dismiss) private var dismiss
+
     @AppStorage("binge.stashUrl") private var stashUrl: String = ""
     // Stash API key lives in Keychain, not UserDefaults — see
     // KeychainStore. Computed get/set forwards to the singleton so
@@ -737,6 +741,16 @@ struct SettingsView: View {
         Section {
             Toggle("Showcase mode (blur media)", isOn: $showcaseBlur)
             Toggle("Demo content", isOn: $demoMode)
+            if demoMode {
+                Button {
+                    // Pop Settings first; the 3-2-1 pre-roll covers the
+                    // dismiss animation before the tour drives the tabs.
+                    dismiss()
+                    TourDirector.shared.start()
+                } label: {
+                    Label("Run walkthrough", systemImage: "play.rectangle")
+                }
+            }
         } header: {
             Text("Capture")
         } footer: {
@@ -745,7 +759,10 @@ struct SettingsView: View {
                     + "while keeping the UI sharp. Demo content replaces "
                     + "your library with fictional, SFW placeholder content "
                     + "for App Store captures — nothing real is shown. Both "
-                    + "are display-only; nothing is uploaded or changed."
+                    + "are display-only; nothing is uploaded or changed.\n\n"
+                    + "Run walkthrough drives a hands-free tour of the app "
+                    + "for screen-recording (3-2-1 pre-roll so you can hit "
+                    + "record). Available while Demo content is on."
             )
         }
     }

@@ -89,6 +89,7 @@
 		C6973F6949C02B7F56710304 /* PerformerLinks.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EF66AF58BF28935CAD28939 /* PerformerLinks.swift */; };
 		C73A329208092EB740DA67E5 /* RatingPrecision.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F5EA435BBEFF1F41522E995 /* RatingPrecision.swift */; };
 		C73CE5C6ED1D6CE432AA9FF5 /* AllowedGendersStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0869A66F1D479AF4FB1FF424 /* AllowedGendersStore.swift */; };
+		CCDEE452A5723C60C80CC40E /* TourDirector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 588E46AE16D398ECD70D3E86 /* TourDirector.swift */; };
 		D0DCE70FE497E11DC4C19723 /* ScribeSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 447179CF2AB5C3355547001A /* ScribeSession.swift */; };
 		D47C7567DF861DA4C28F51E8 /* PerformerReelSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2179C914B37581E4E4104FAB /* PerformerReelSheet.swift */; };
 		DE344913EDF409210B2C1B73 /* ExploreViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE8EEE9B5D2F2F6D9F75D5A0 /* ExploreViewModel.swift */; };
@@ -153,6 +154,7 @@
 		575FE862FD876E5345323D40 /* SwipeRightToDismiss.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwipeRightToDismiss.swift; sourceTree = "<group>"; };
 		57BC8779F2D7642D094F69F3 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		58205ADF82DD7AAE36B0A315 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		588E46AE16D398ECD70D3E86 /* TourDirector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TourDirector.swift; sourceTree = "<group>"; };
 		595681A8FD377FC835A3D71D /* BingeBottomNav.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BingeBottomNav.swift; sourceTree = "<group>"; };
 		5A08D62E3638326E295F79FC /* ReelNavigator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReelNavigator.swift; sourceTree = "<group>"; };
 		5A6B9DEF4EBE1BA4E2370947 /* PerformerProfileViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerformerProfileViewModel.swift; sourceTree = "<group>"; };
@@ -200,7 +202,7 @@
 		CE8EEE9B5D2F2F6D9F75D5A0 /* ExploreViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExploreViewModel.swift; sourceTree = "<group>"; };
 		CF1220101A0FE45FACE17BC7 /* ReelPerformerRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReelPerformerRow.swift; sourceTree = "<group>"; };
 		D301011B45CBA29466602321 /* RatingCompute.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RatingCompute.swift; sourceTree = "<group>"; };
-		D6181D0A2320A33E0AC3852E /* binge.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = binge.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		D6181D0A2320A33E0AC3852E /* binge.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = binge.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		D883BFB2C5B25A829B44E2D3 /* FollowService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FollowService.swift; sourceTree = "<group>"; };
 		D8A5ACFCAA4FF922145DA290 /* ScribeAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScribeAPI.swift; sourceTree = "<group>"; };
 		D9E6204A9EA4A757ECEAFCE6 /* HeartBurst.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeartBurst.swift; sourceTree = "<group>"; };
@@ -351,6 +353,7 @@
 				CB02C6FD61BA09BAF58E104F /* StashDBService+Cache.swift */,
 				11FCD5EA361B3C1C0A787D4B /* StashLoginService.swift */,
 				AA9C83E2E8485406B3B36F39 /* StoryBuilder.swift */,
+				588E46AE16D398ECD70D3E86 /* TourDirector.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -637,6 +640,7 @@
 				5B3AC59F39F4DC5715E7F590 /* StoryProgressStrip.swift in Sources */,
 				36170F685229ED941F379095 /* StoryViewerSheet.swift in Sources */,
 				543A91B3DF75C47C7E42082D /* SwipeRightToDismiss.swift in Sources */,
+				CCDEE452A5723C60C80CC40E /* TourDirector.swift in Sources */,
 				45B60AA2D6270F3207C65E03 /* VerifiedBadge.swift in Sources */,
 				56CE29465FBC504998368DFB /* VideoPlayerView.swift in Sources */,
 				EF06B69ECAFA0D2B1A032582 /* bingeApp.swift in Sources */,
@@ -708,7 +712,6 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = PRM329646X;
 				INFOPLIST_FILE = binge/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -789,7 +792,6 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = PRM329646X;
 				INFOPLIST_FILE = binge/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
