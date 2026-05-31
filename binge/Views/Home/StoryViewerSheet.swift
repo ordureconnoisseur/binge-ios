@@ -68,6 +68,9 @@ struct StoryViewerSheet: View {
     /// preview + no stream): clear the spinner and advance after a
     /// brief beat instead of hanging forever.
     private static let noMediaCapDuration: Double = 4.0
+    /// Demo stories have no real video — each scene gets a short timed
+    /// advance so the story visibly walks through its segments.
+    private static let demoStoryDuration: Double = 1.7
 
     init(
         stories: [Story],
@@ -620,6 +623,23 @@ struct StoryViewerSheet: View {
     /// Library: AVPlayer + preview clip + periodic time observer
     /// for progress + didPlayToEndTime auto-advance.
     private func loadLibrary(_ scene: BingeScene) {
+        // Demo: the media is a procedural gradient, not a real video, so
+        // didPlayToEndTime never fires. Drive a short timed progress like
+        // the StashDB path so the story walks through its scenes.
+        if DemoMode.isOn {
+            loading = false
+            let total = Self.demoStoryDuration
+            let start = Date()
+            stashDBTimer = Task { @MainActor in
+                while !Task.isCancelled {
+                    let elapsed = Date().timeIntervalSince(start)
+                    progress = min(1, elapsed / total)
+                    if elapsed >= total { autoAdvance(); return }
+                    try? await Task.sleep(for: .milliseconds(50))
+                }
+            }
+            return
+        }
         loading = true
         guard
             let url = scene.previewURL(base: baseURL)

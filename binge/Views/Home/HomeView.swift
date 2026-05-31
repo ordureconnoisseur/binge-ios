@@ -349,9 +349,15 @@ struct HomeView: View {
                 library: vm.feed, packs: vm.packs,
                 discovery: vm.discovery, repostCutoff: vm.repostCutoff
             )
-            if let target = entries.dropFirst(3).first {
-                withAnimation(.easeInOut(duration: 0.8)) {
-                    activeFeedEntryId = target.id
+            guard entries.count > 1 else { return }
+            // Step one card at a time, slowly, so it reads as deliberate
+            // browsing rather than a hard jump.
+            Task { @MainActor in
+                for step in 1...min(3, entries.count - 1) {
+                    withAnimation(.easeInOut(duration: 1.1)) {
+                        activeFeedEntryId = entries[step].id
+                    }
+                    try? await Task.sleep(for: .seconds(1.2))
                 }
             }
         case .homeWatchFull(let n):

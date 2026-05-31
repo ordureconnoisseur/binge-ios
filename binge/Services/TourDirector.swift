@@ -85,11 +85,12 @@ final class TourDirector {
     private static let script: [Step] = [
         .init(command: .switchTab(.home), delay: 1.2),
         .init(command: .homeScrollStories, delay: 1.8),
-        // Story viewer auto-advances on its own timer — long dwell lets
-        // it play through a couple of stories before we dismiss.
-        .init(command: .homeOpenStory(0), delay: 6.5),
+        // Demo stories are capped to 3 scenes each (1.7s/scene), so this
+        // dwell walks through ~2 performers' stories before we dismiss.
+        .init(command: .homeOpenStory(0), delay: 10.5),
         .init(command: .homeDismissStory, delay: 1.0),
-        .init(command: .homeScrollFeed, delay: 2.2),
+        // Feed scroll steps through 3 cards (~1.2s each) — give it room.
+        .init(command: .homeScrollFeed, delay: 4.8),
         .init(command: .homeWatchFull(2), delay: 2.4),
         .init(command: .reelLike, delay: 2.0),
         .init(command: .homePopReel, delay: 1.2),

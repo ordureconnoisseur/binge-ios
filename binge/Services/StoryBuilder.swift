@@ -101,10 +101,14 @@ enum StoryBuilder {
             let sortedReddit = b.reddit.sorted {
                 $0.createdUtc > $1.createdUtc
             }
-            let combined: [StoryScene] =
+            let allScenes: [StoryScene] =
                 sortedLibrary.map(StoryScene.library)
                 + sortedStashDB.map(StoryScene.stashDB)
                 + sortedReddit.map(StoryScene.reddit)
+            // Demo: cap scenes per story so the walkthrough crosses
+            // several performers' stories instead of dwelling on one.
+            let combined =
+                DemoMode.isOn ? Array(allScenes.prefix(3)) : allScenes
             guard !combined.isEmpty else { return nil }
             // Row-order key across performers: the most-recent
             // effectiveAt across all three sources. Each sub-array
