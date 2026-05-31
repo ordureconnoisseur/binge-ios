@@ -93,4 +93,41 @@ enum DemoContent {
         out.append(scene(id: "juno-1", title: "Afternoon Light", perf: performers[4], studio: studios[1], tags: ["Aesthetic", "Solo"], hoursAgo: 50))
         return out
     }()
+
+    /// Display name for a demo performer id.
+    static func performerName(_ id: String) -> String {
+        performers.first { $0.id == id }?.name ?? "Performer"
+    }
+
+    /// Scenes featuring a given demo performer.
+    static func scenes(forPerformer id: String) -> [BingeScene] {
+        scenes.filter { s in s.performers.contains { $0.id == id } }
+    }
+
+    /// Fictional profile record for a demo performer.
+    static func performerDetail(id: String) -> PerformerDetail {
+        let name = performerName(id)
+        let scs = scenes(forPerformer: id)
+        return PerformerDetail(
+            id: id,
+            name: name,
+            aliasList: [],
+            favorite: false,
+            imagePath: DemoMode.mediaURL("a-\(id)"),
+            details: "Demo performer — entirely fictional, for App Store capture.",
+            country: "US",
+            birthdate: nil,
+            hairColor: nil,
+            eyeColor: nil,
+            sceneCount: scs.count,
+            galleryCount: 0,
+            oCounter: scs.count * 3,
+            rating100: 84,
+            twitter: nil,
+            instagram: "@\(name.lowercased()).demo",
+            url: nil,
+            urls: ["https://example.com/\(name.lowercased())"],
+            stashIds: nil
+        )
+    }
 }

@@ -67,6 +67,17 @@ final class PerformerProfileViewModel {
         page = 1
         scenes = []
         hasMore = false
+
+        // Demo mode: fictional performer + their demo scenes; no network.
+        if DemoMode.isOn {
+            let p = DemoContent.performerDetail(id: performerId)
+            performer = p
+            favourite = p.favorite
+            scenes = DemoContent.scenes(forPerformer: performerId)
+            story = buildStory(from: scenes)
+            return
+        }
+
         let client = StashClient(baseURL: baseURL, apiKey: apiKey)
         do {
             async let detailResp: FindPerformerResponse = client.gql(
