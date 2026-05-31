@@ -33,6 +33,7 @@ struct HomeView: View {
     @AppStorage("binge.feedHidden") private var feedHiddenRaw: String = ""
 
     @State private var vm: HomeViewModel?
+    @State private var tour = TourDirector.shared
     @State private var presented: PresentedSheet?
     @State private var presentedPerformerId: String?
     /// Drilled-in destinations pushed onto Home's
@@ -331,6 +332,40 @@ struct HomeView: View {
     }
 
 
+    /// Walkthrough hooks owned by Home. `homeScrollStories` is handled
+    /// inside `StoriesRow` (it owns the horizontal scroll); everything
+    /// else drives Home's own scroll position / sheet / nav path.
+    private func handleTour() {
+        guard let vm else { return }
+        switch tour.command {
+        case .homeOpenStory(let i):
+            guard !vm.stories.isEmpty else { return }
+            let idx = vm.stories.indices.contains(i) ? i : 0
+            presented = .story(stories: vm.stories, startIndex: idx)
+        case .homeDismissStory:
+            presented = nil
+        case .homeScrollFeed:
+            let entries = merged(
+                library: vm.feed, packs: vm.packs,
+                discovery: vm.discovery, repostCutoff: vm.repostCutoff
+            )
+            if let target = entries.dropFirst(3).first {
+                withAnimation(.easeInOut(duration: 0.8)) {
+                    activeFeedEntryId = target.id
+                }
+            }
+        case .homeWatchFull(let n):
+            let scenes = vm.feed
+            guard !scenes.isEmpty else { return }
+            let scene = scenes.indices.contains(n) ? scenes[n] : scenes[0]
+            path.append(.reel(.timeline(scenes: scenes, startId: scene.id)))
+        case .homePopReel:
+            if !path.isEmpty { path.removeLast() }
+        default:
+            break
+        }
+    }
+
     var body: some View {
         NavigationStack(path: $path) {
             ScrollView {
@@ -491,6 +526,7 @@ struct HomeView: View {
                 ).first?.id
             }
         }
+        .onChange(of: tour.tick) { _, _ in handleTour() }
         .fullScreenCover(item: $presented) { sheet in
             switch sheet {
             case .scene(let scene):
