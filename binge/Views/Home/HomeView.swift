@@ -232,12 +232,23 @@ struct HomeView: View {
                 )
             }
         } label: {
-            Image(
-                systemName: hiddenCategories.isEmpty
-                    ? "line.3.horizontal.decrease.circle"
-                    : "line.3.horizontal.decrease.circle.fill"
-            )
+            // Match the web client's funnel filter glyph: stroked when
+            // no categories are hidden, filled when a filter is active.
+            Group {
+                if hiddenCategories.isEmpty {
+                    FilterFunnelShape().stroke(
+                        style: StrokeStyle(
+                            lineWidth: 1.8,
+                            lineCap: .round,
+                            lineJoin: .round
+                        )
+                    )
+                } else {
+                    FilterFunnelShape().fill()
+                }
+            }
             .foregroundStyle(.white)
+            .frame(width: 22, height: 22)
         }
     }
 
@@ -570,5 +581,28 @@ struct HomeView: View {
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 50)
+    }
+}
+
+/// Funnel filter glyph matching the web client's icon (viewBox 24×24,
+/// path "M3 5h18l-7 8v6l-4 2v-8L3 5Z"). Stroked or filled by the caller.
+private struct FilterFunnelShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        let s = min(rect.width, rect.height) / 24
+        let ox = rect.minX + (rect.width - 24 * s) / 2
+        let oy = rect.minY + (rect.height - 24 * s) / 2
+        func pt(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
+            CGPoint(x: ox + x * s, y: oy + y * s)
+        }
+        var p = Path()
+        p.move(to: pt(3, 5))
+        p.addLine(to: pt(21, 5))
+        p.addLine(to: pt(14, 13))
+        p.addLine(to: pt(14, 19))
+        p.addLine(to: pt(10, 21))
+        p.addLine(to: pt(10, 13))
+        p.addLine(to: pt(3, 5))
+        p.closeSubpath()
+        return p
     }
 }

@@ -49,14 +49,16 @@ final class PlayerUIView: UIView {
     override class var layerClass: AnyClass { AVPlayerLayer.self }
     var playerLayer: AVPlayerLayer { layer as! AVPlayerLayer }
 
-    // Showcase-mode frost: a UIVisualEffectView laid over the player
-    // layer. It samples the live AVPlayerLayer as its backdrop (the
-    // render server composites it), so the video blurs smoothly with
-    // no per-frame CIFilter cost — and only while capture mode is on.
-    // Lazily created the first time it's enabled. The style is dark +
-    // thick for strong obscuring; dial it down if you want a softer
-    // "blurred video" look over the maximally-safe "frosted" one.
+    // Showcase-mode blur: a UIVisualEffectView laid over the player
+    // layer, sampling the live AVPlayerLayer as its backdrop (the render
+    // server composites it) — smooth, no per-frame CIFilter cost, only
+    // while capture mode is on. `.systemUltraThinMaterial` keeps the
+    // colour tint to a minimum (vs the old dark thick frost), and a
+    // paused UIViewPropertyAnimator holds the effect at partial strength
+    // (`blurFraction`) so the blur is softer than a full system blur.
     private var blurOverlay: UIVisualEffectView?
+    private var blurAnimator: UIViewPropertyAnimator?
+    private let blurFraction: CGFloat = 0.55
 
     func setShowcaseBlurred(_ on: Bool) {
         guard on else {
@@ -64,14 +66,23 @@ final class PlayerUIView: UIView {
             return
         }
         if blurOverlay == nil {
-            let overlay = UIVisualEffectView(
-                effect: UIBlurEffect(style: .systemThickMaterialDark)
-            )
+            let overlay = UIVisualEffectView(effect: nil)
             overlay.frame = bounds
             overlay.autoresizingMask = [.flexibleWidth, .flexibleHeight]
             overlay.isUserInteractionEnabled = false
             addSubview(overlay)
             blurOverlay = overlay
+
+            // Scrub a paused animator to a partial fraction = a softer
+            // blur than the full effect, with no colour wash.
+            let animator = UIViewPropertyAnimator(
+                duration: 1, curve: .linear
+            ) {
+                overlay.effect = UIBlurEffect(style: .systemUltraThinMaterial)
+            }
+            animator.pausesOnCompletion = true
+            animator.fractionComplete = blurFraction
+            blurAnimator = animator
         }
         blurOverlay?.isHidden = false
     }
