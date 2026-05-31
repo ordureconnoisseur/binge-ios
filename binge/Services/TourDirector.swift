@@ -117,16 +117,21 @@ enum TourScript: String, CaseIterable, Identifiable {
         .init(command: .performerBack, delay: 1.2),
     ]
 
-    // Clip 2 — scroll the For You reel, like a few, open a performer,
-    // then open one of their videos. Trimmed preview ~18s.
+    // Clip 2 — scroll briskly through ~6 reels (a like roughly every
+    // third), then open a performer and one of their videos. Faster,
+    // more natural pace; short profile linger. Trimmed preview ~20s.
     private static let forYouSteps: [TourStep] = [
-        .init(command: .switchTab(.foryou), delay: 2.2),
-        .init(command: .reelLike, delay: 1.8),
-        .init(command: .reelAdvance, delay: 2.4),
-        .init(command: .reelLike, delay: 1.8),
-        .init(command: .reelAdvance, delay: 2.2),
-        .init(command: .reelOpenPerformer, delay: 3.0),
-        .init(command: .performerOpenScene, delay: 4.5),
+        .init(command: .switchTab(.foryou), delay: 2.0),
+        .init(command: .reelAdvance, delay: 1.6),
+        .init(command: .reelAdvance, delay: 1.5),
+        .init(command: .reelLike, delay: 1.5),
+        .init(command: .reelAdvance, delay: 1.6),
+        .init(command: .reelAdvance, delay: 1.5),
+        .init(command: .reelLike, delay: 1.5),
+        .init(command: .reelAdvance, delay: 1.6),
+        .init(command: .reelAdvance, delay: 1.5),
+        .init(command: .reelOpenPerformer, delay: 2.0),
+        .init(command: .performerOpenScene, delay: 3.5),
     ]
 
     // The complete tour (every feature, end to end).
