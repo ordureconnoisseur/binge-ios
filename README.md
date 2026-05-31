@@ -92,7 +92,7 @@ Both walk the tree, ffprobe each file, only touch what matches.
 | Setting | Default | Notes |
 |-|-|-|
 | Stash connection | — | URL + API key (or sign-in) |
-| Genders to surface | Female + Trans female | Drives Discover row + stories |
+| Genders to surface | All | Drives Discover row + stories |
 | Stream type | Auto | Auto / Direct / MP4 / HLS / WebM |
 | Recent window | 30 days | How far back "new" means for stories + feed |
 | Include StashDB new releases | On | In stories + Home |

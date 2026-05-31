@@ -38,12 +38,9 @@ enum AllowedGender: String, CaseIterable, Identifiable, Codable, Hashable {
 // which Swift evaluates without inheriting the caller's actor.
 enum AllowedGendersStore {
     static let storageKey = "binge.allowedGenders"
-    /// Default = female + trans female. Matches web's default and
-    /// binge's historical behaviour before the toggle existed —
-    /// existing users see no change until they tweak the setting.
-    static let defaults: Set<AllowedGender> = [
-        .female, .transgenderFemale,
-    ]
+    /// Default = all genders (neutral out of the box). Users narrow it
+    /// in Settings → Genders to surface to taste.
+    static let defaults: Set<AllowedGender> = Set(AllowedGender.allCases)
 
     /// Imperative reader used by call sites that aren't SwiftUI
     /// views (DiscoveryFeedBuilder / HomeViewModel.fetchDiscovery
