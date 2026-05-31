@@ -352,12 +352,15 @@ enum Queries {
     /// pick by label substring (matching the web app's pickStream).
     static let findScenesRandom = """
         query FindScenes($page: Int!, $perPage: Int!, $sort: String!) {
-          findScenes(filter: {
-            page: $page,
-            per_page: $perPage,
-            sort: $sort,
-            direction: DESC
-          }) {
+          findScenes(
+            scene_filter: { \(HiddenContent.tagsExcludeClause) },
+            filter: {
+              page: $page,
+              per_page: $perPage,
+              sort: $sort,
+              direction: DESC
+            }
+          ) {
             count
             scenes {
               id
@@ -381,7 +384,7 @@ enum Queries {
                 label
                 mime_type
               }
-              performers { id name image_path favorite }
+              performers { id name image_path favorite gender }
               studio { name }
               tags { id name }
             }
@@ -402,7 +405,8 @@ enum Queries {
         query RecentScenes($since: String!, $perPage: Int!) {
           findScenes(
             scene_filter: {
-              created_at: { value: $since, modifier: GREATER_THAN }
+              created_at: { value: $since, modifier: GREATER_THAN },
+              \(HiddenContent.tagsExcludeClause)
             },
             filter: {
               page: 1,
@@ -422,7 +426,7 @@ enum Queries {
               paths { stream screenshot preview }
               files { duration width height video_codec audio_codec frame_rate size bit_rate path }
               sceneStreams { url label mime_type }
-              performers { id name image_path favorite }
+              performers { id name image_path favorite gender }
               studio { name }
               tags { id name }
             }
@@ -464,7 +468,7 @@ enum Queries {
               paths { stream screenshot preview }
               files { duration width height video_codec audio_codec frame_rate size bit_rate path }
               sceneStreams { url label mime_type }
-              performers { id name image_path favorite }
+              performers { id name image_path favorite gender }
               studio { name }
               tags { id name }
             }
@@ -532,7 +536,7 @@ enum Queries {
               paths { stream screenshot preview }
               files { duration width height video_codec audio_codec frame_rate size bit_rate path }
               sceneStreams { url label mime_type }
-              performers { id name image_path favorite }
+              performers { id name image_path favorite gender }
               studio { name }
               tags { id name }
             }
@@ -775,7 +779,7 @@ enum Queries {
               paths { stream screenshot preview }
               files { duration width height video_codec audio_codec frame_rate size bit_rate path }
               sceneStreams { url label mime_type }
-              performers { id name image_path favorite }
+              performers { id name image_path favorite gender }
               studio { name }
               tags { id name }
             }
@@ -804,7 +808,7 @@ enum Queries {
               paths { stream screenshot preview }
               files { duration width height video_codec audio_codec frame_rate size bit_rate path }
               sceneStreams { url label mime_type }
-              performers { id name image_path favorite }
+              performers { id name image_path favorite gender }
               studio { name }
               tags { id name }
             }
@@ -847,7 +851,7 @@ enum Queries {
               paths { stream screenshot preview }
               files { duration width height video_codec audio_codec frame_rate size bit_rate path }
               sceneStreams { url label mime_type }
-              performers { id name image_path favorite }
+              performers { id name image_path favorite gender }
               studio { name }
               tags { id name }
             }
@@ -966,7 +970,7 @@ enum Queries {
               paths { stream screenshot preview }
               files { duration width height video_codec audio_codec frame_rate size bit_rate path }
               sceneStreams { url label mime_type }
-              performers { id name image_path favorite }
+              performers { id name image_path favorite gender }
               studio { name }
               tags { id name }
             }
@@ -984,7 +988,8 @@ enum Queries {
         query ScenesByDate($since: String!, $perPage: Int!) {
           findScenes(
             scene_filter: {
-              date: { value: $since, modifier: GREATER_THAN }
+              date: { value: $since, modifier: GREATER_THAN },
+              \(HiddenContent.tagsExcludeClause)
             },
             filter: {
               page: 1,
@@ -1004,7 +1009,7 @@ enum Queries {
               paths { stream screenshot preview }
               files { duration width height video_codec audio_codec frame_rate size bit_rate path }
               sceneStreams { url label mime_type }
-              performers { id name image_path favorite }
+              performers { id name image_path favorite gender }
               studio { name }
               tags { id name }
             }

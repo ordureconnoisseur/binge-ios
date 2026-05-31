@@ -33,6 +33,11 @@ struct AuthImageView: View {
     /// pass `.top` so the face area stays in frame instead of
     /// getting cropped out of a centered slice.
     var alignment: Alignment = .center
+    /// Showcase-mode blur radius (tiered, mirrors the web client):
+    /// 14pt for cover/feed/explore imagery (the default), 10pt for the
+    /// lighter avatar tier (passed by AvatarStack). The reel video uses
+    /// the heaviest tier via VideoPlayerView's frost.
+    var showcaseBlurRadius: CGFloat = 14
 
     @State private var image: UIImage?
     @State private var failed: Bool = false
@@ -61,7 +66,7 @@ struct AuthImageView: View {
                             .aspectRatio(contentMode: contentMode)
                             // Blur sits INSIDE .clipped() (and any
                             // caller circle-crop), so edges stay clean.
-                            .blur(radius: showcaseBlur ? 20 : 0)
+                            .blur(radius: showcaseBlur ? showcaseBlurRadius : 0)
                     }
                     .clipped()
             } else if failed {

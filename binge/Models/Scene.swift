@@ -82,12 +82,17 @@ struct BingeScene: Decodable, Identifiable, Hashable {
         let name: String
         let imagePath: String?
         let favorite: Bool
+        // Optional (defaults nil) so queries that don't select it still
+        // decode and call sites that build a Performer manually need not
+        // supply it. Drives the silent trans-performer hide (isHidden).
+        let gender: String? = nil
 
         enum CodingKeys: String, CodingKey {
             case id
             case name
             case imagePath = "image_path"
             case favorite
+            case gender
         }
     }
 

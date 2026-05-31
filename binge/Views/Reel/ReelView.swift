@@ -373,7 +373,7 @@ struct ReelView: View {
         algo.onPlay(scene: seed)
         // First batch fills out the reel below the seed.
         let batch = await algo.nextBatch(size: perPage)
-        let fresh = batch.filter { !seenIds.contains($0.id) }
+        let fresh = batch.filteringHidden().filter { !seenIds.contains($0.id) }
         scenes.append(contentsOf: fresh)
         for s in fresh { seenIds.insert(s.id) }
     }
@@ -393,14 +393,14 @@ struct ReelView: View {
         // The shared dedupe-by-id keeps either path safe.
         if let algo = chainAlgo {
             let batch = await algo.nextBatch(size: perPage)
-            let fresh = batch.filter { !seenIds.contains($0.id) }
+            let fresh = batch.filteringHidden().filter { !seenIds.contains($0.id) }
             scenes.append(contentsOf: fresh)
             for s in fresh { seenIds.insert(s.id) }
             return
         }
         do {
             let resp = try await fetchPage()
-            let newOnes = resp.findScenes.scenes.filter {
+            let newOnes = resp.findScenes.scenes.filteringHidden().filter {
                 !seenIds.contains($0.id)
             }
             scenes.append(contentsOf: newOnes)

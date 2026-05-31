@@ -77,6 +77,7 @@ enum DiscoveryFeedBuilder {
             let female = scene.performers.filter { perf in
                 guard let g = perf.gender else { return false }
                 return allowedGenders.contains(g)
+                    && !AllowedGendersStore.hiddenStrings.contains(g)
             }
             guard !female.isEmpty else { continue }
 

@@ -65,6 +65,7 @@
 		7A96837317FF20FE198E73F4 /* DiscoverPerformersBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 822C6379C6806F1989B6A913 /* DiscoverPerformersBar.swift */; };
 		7EFAE8E48A82F4DDCEE9EA3B /* Scene.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7353248322B3AACA12BF986 /* Scene.swift */; };
 		804C94DCB53301DAF5019339 /* StashDBService.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED716F7B44925289EE9FEC3C /* StashDBService.swift */; };
+		80FEC4373469B26DBD2FC23B /* HiddenContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2FF203ED64C71AF21A50CA8C /* HiddenContent.swift */; };
 		828ABB97F5EC2BFAA2E74C9B /* ReelNavigator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A08D62E3638326E295F79FC /* ReelNavigator.swift */; };
 		869378D3DF375A03AE51DA75 /* PerformerPickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66CC0327E64688C8143C0439 /* PerformerPickerSheet.swift */; };
 		8B6C36808887108C8F03BACD /* MenuPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 798D5DEF7657140B5C5C4414 /* MenuPage.swift */; };
@@ -131,6 +132,7 @@
 		2E439C9802FC7D9B452247D8 /* SceneCardMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneCardMenu.swift; sourceTree = "<group>"; };
 		2EED8A18592651CDE34640CA /* AddSceneService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddSceneService.swift; sourceTree = "<group>"; };
 		2F8FB6B37C800E5E55CA985E /* ScribeContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScribeContext.swift; sourceTree = "<group>"; };
+		2FF203ED64C71AF21A50CA8C /* HiddenContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HiddenContent.swift; sourceTree = "<group>"; };
 		350EF737A25208A650424C00 /* SceneFeedCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneFeedCard.swift; sourceTree = "<group>"; };
 		387388D999C703FF553C4AE3 /* bingeApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = bingeApp.swift; sourceTree = "<group>"; };
 		399E25860C05E43BD5414D0C /* ChainAlgo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChainAlgo.swift; sourceTree = "<group>"; };
@@ -194,7 +196,7 @@
 		CE8EEE9B5D2F2F6D9F75D5A0 /* ExploreViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExploreViewModel.swift; sourceTree = "<group>"; };
 		CF1220101A0FE45FACE17BC7 /* ReelPerformerRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReelPerformerRow.swift; sourceTree = "<group>"; };
 		D301011B45CBA29466602321 /* RatingCompute.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RatingCompute.swift; sourceTree = "<group>"; };
-		D6181D0A2320A33E0AC3852E /* binge.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = binge.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		D6181D0A2320A33E0AC3852E /* binge.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = binge.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		D883BFB2C5B25A829B44E2D3 /* FollowService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FollowService.swift; sourceTree = "<group>"; };
 		D8A5ACFCAA4FF922145DA290 /* ScribeAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScribeAPI.swift; sourceTree = "<group>"; };
 		D9E6204A9EA4A757ECEAFCE6 /* HeartBurst.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeartBurst.swift; sourceTree = "<group>"; };
@@ -330,6 +332,7 @@
 				64F3F2494486A96BD7F7CEA9 /* CollectionsService.swift */,
 				E7C399790AACDDFC8430BF74 /* DiscoveryFeedBuilder.swift */,
 				D883BFB2C5B25A829B44E2D3 /* FollowService.swift */,
+				2FF203ED64C71AF21A50CA8C /* HiddenContent.swift */,
 				1BBB8FFC03593B369FCCFC05 /* InteractedTagsStore.swift */,
 				CDAE2F9466D753C011B267D0 /* KeychainStore.swift */,
 				EA215E4AC29226CC9D326430 /* PerformerSweep.swift */,
@@ -559,6 +562,7 @@
 				642B71054AAFC4FCD6120EFB /* FollowingView.swift in Sources */,
 				227AB34BD2FE5E7DCBF549AF /* FollowingViewModel.swift in Sources */,
 				1FB2ACFD8959673D55643887 /* HeartBurst.swift in Sources */,
+				80FEC4373469B26DBD2FC23B /* HiddenContent.swift in Sources */,
 				B62D0FA19CC4B912DEBDB1E2 /* HomeView.swift in Sources */,
 				2C09AEE54AFE70037DC16F53 /* HomeViewModel.swift in Sources */,
 				8E1D0AE2A46E64B24EAFAFBE /* InteractedTagsStore.swift in Sources */,
@@ -696,7 +700,6 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = PRM329646X;
 				INFOPLIST_FILE = binge/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -777,7 +780,6 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = PRM329646X;
 				INFOPLIST_FILE = binge/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

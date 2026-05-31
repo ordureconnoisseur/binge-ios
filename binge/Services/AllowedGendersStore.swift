@@ -64,6 +64,18 @@ enum AllowedGendersStore {
         Set(current().map(\.rawValue))
     }
 
+    /// Genders silently hidden everywhere (trans), regardless of the
+    /// "Genders to surface" setting — mirrors web's HIDDEN_GENDERS.
+    static let hiddenStrings: Set<String> = [
+        "TRANSGENDER_FEMALE", "TRANSGENDER_MALE",
+    ]
+
+    /// currentStrings() minus the hidden genders — the set actually
+    /// surfaced in discovery + the Discover Performers bar.
+    static func visibleStrings() -> Set<String> {
+        currentStrings().subtracting(hiddenStrings)
+    }
+
     static func write(_ values: Set<AllowedGender>) {
         // Preserve CaseIterable order so the persisted string is
         // stable across writes — helps anyone inspecting UserDefaults.

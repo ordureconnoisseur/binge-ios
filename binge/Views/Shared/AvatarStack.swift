@@ -110,7 +110,8 @@ struct AvatarStack<Item: Identifiable & Hashable>: View {
                     apiKey: apiKey,
                     contentMode: .fill,
                     maxPixel: 256,
-                    alignment: .top
+                    alignment: .top,
+                    showcaseBlurRadius: 10
                 )
             } else {
                 Text(initial(item))

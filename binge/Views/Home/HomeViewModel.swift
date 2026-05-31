@@ -465,7 +465,13 @@ final class HomeViewModel {
             // belong in a performer-organized "what's new" surface
             // (they'd also produce zero story buckets and just bloat
             // the feed).
-            let merged = raw.filter { !$0.performers.isEmpty }
+            // Drop silently-hidden scenes (trans/scat tags + trans
+            // performers). The recent/byDate queries already exclude the
+            // hidden TAGS server-side; this also catches untagged trans
+            // performers.
+            let merged = raw
+                .filter { !$0.performers.isEmpty }
+                .filteringHidden()
             libraryStorySource = merged
             // Reset tails on a fresh load so refreshing drops
             // stale StashDB / Reddit entries before the new
