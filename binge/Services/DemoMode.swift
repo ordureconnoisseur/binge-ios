@@ -25,8 +25,13 @@ struct DemoGradient: View {
     let seed: String
 
     private var hue: Double {
-        var h = 0
-        for b in seed.utf8 { h = (h &* 31 &+ Int(b)) & 0x00ff_ffff }
+        // FNV-1a — good avalanche, so near-identical seeds (s-aria-1 vs
+        // s-aria-2) land on widely different hues instead of clustering.
+        var h: UInt64 = 1_469_598_103_934_665_603
+        for b in seed.utf8 {
+            h ^= UInt64(b)
+            h = h &* 1_099_511_628_211
+        }
         return Double(h % 360) / 360.0
     }
 

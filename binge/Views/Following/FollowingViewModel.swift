@@ -57,6 +57,11 @@ final class FollowingViewModel {
     func load() async {
         if case .loading = loadState { return }
         loadState = .loading
+        if DemoMode.isOn {
+            all = DemoContent.performerSummaries
+            loadState = .loaded
+            return
+        }
         let client = StashClient(baseURL: baseURL, apiKey: apiKey)
         do {
             let list = try await PerformerSweep.all(client: client)

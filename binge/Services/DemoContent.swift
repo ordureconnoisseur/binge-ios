@@ -41,7 +41,7 @@ enum DemoContent {
         return BingeScene(
             id: id,
             title: title,
-            details: "A demo scene for App Store capture — entirely fictional.",
+            details: "@\(perf.name.lowercased()) ✨ \(tags.first ?? "moment")",
             oCounter: Int(hoursAgo) % 5,
             createdAt: isoFormatter.string(from: when),
             date: dayFormatter.string(from: when),
@@ -130,4 +130,35 @@ enum DemoContent {
             stashIds: nil
         )
     }
+
+    /// Demo performers for the Following tab (first two favourited so the
+    /// Favourites section populates).
+    static var performerSummaries: [PerformerSummary] {
+        performers.enumerated().map { idx, p in
+            PerformerSummary(
+                id: p.id,
+                name: p.name,
+                imagePath: DemoMode.mediaURL("a-\(p.id)"),
+                sceneCount: scenes(forPerformer: p.id).count,
+                favorite: idx < 2
+            )
+        }
+    }
+
+    /// Fictional SFW tag chips for the Explore strip.
+    static let tagScores: [InteractedTagsStore.TagScore] = {
+        let names = [
+            "Golden Hour", "Outdoor", "Portrait", "Aesthetic",
+            "City", "Studio", "Candid", "Solo",
+        ]
+        let now = Date().timeIntervalSince1970 * 1000
+        return names.enumerated().map { idx, n in
+            InteractedTagsStore.TagScore(
+                tagId: "demo-tag-\(idx)",
+                tagName: n,
+                score: Double(names.count - idx),
+                lastSeenAt: now - Double(idx) * 1000
+            )
+        }
+    }()
 }

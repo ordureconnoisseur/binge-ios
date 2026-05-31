@@ -80,6 +80,10 @@ final class ExploreViewModel {
     /// personalized) fires the server-side recently-liked fallback
     /// in parallel.
     func loadChipStrip() async {
+        if DemoMode.isOn {
+            topTags = DemoContent.tagScores
+            return
+        }
         topTags = InteractedTagsStore.topTags(limit: Self.maxChips)
         if topTags.count >= 3 {
             // Local signal is strong enough — skip the fallback
