@@ -14,6 +14,11 @@ import SwiftUI
 // TabView(.page).
 struct VideoPlayerView: UIViewRepresentable {
     let player: AVPlayer
+    // Showcase mode — frost the live video for safe capture. @AppStorage
+    // makes SwiftUI re-run updateUIView when the setting flips. All four
+    // video surfaces (reel, feed card, story viewer, scene sheet) reuse
+    // this view, so the one hook covers them all.
+    @AppStorage("binge.showcaseBlur") private var showcaseBlur = false
 
     func makeUIView(context: Context) -> PlayerUIView {
         let view = PlayerUIView()
@@ -33,6 +38,7 @@ struct VideoPlayerView: UIViewRepresentable {
 
     func updateUIView(_ uiView: PlayerUIView, context: Context) {
         uiView.playerLayer.player = player
+        uiView.setShowcaseBlurred(showcaseBlur)
     }
 }
 
@@ -43,4 +49,31 @@ struct VideoPlayerView: UIViewRepresentable {
 final class PlayerUIView: UIView {
     override class var layerClass: AnyClass { AVPlayerLayer.self }
     var playerLayer: AVPlayerLayer { layer as! AVPlayerLayer }
+
+    // Showcase-mode frost: a UIVisualEffectView laid over the player
+    // layer. It samples the live AVPlayerLayer as its backdrop (the
+    // render server composites it), so the video blurs smoothly with
+    // no per-frame CIFilter cost — and only while capture mode is on.
+    // Lazily created the first time it's enabled. The style is dark +
+    // thick for strong obscuring; dial it down if you want a softer
+    // "blurred video" look over the maximally-safe "frosted" one.
+    private var blurOverlay: UIVisualEffectView?
+
+    func setShowcaseBlurred(_ on: Bool) {
+        guard on else {
+            blurOverlay?.isHidden = true
+            return
+        }
+        if blurOverlay == nil {
+            let overlay = UIVisualEffectView(
+                effect: UIBlurEffect(style: .systemThickMaterialDark)
+            )
+            overlay.frame = bounds
+            overlay.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            overlay.isUserInteractionEnabled = false
+            addSubview(overlay)
+            blurOverlay = overlay
+        }
+        blurOverlay?.isHidden = false
+    }
 }

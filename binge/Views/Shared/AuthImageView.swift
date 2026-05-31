@@ -36,6 +36,12 @@ struct AuthImageView: View {
 
     @State private var image: UIImage?
     @State private var failed: Bool = false
+    // Showcase mode — blurs the decoded image (covers, thumbnails, and
+    // the avatars AvatarStack renders through here) so the UI can be
+    // captured/streamed without exposing library content. Every image in
+    // the app funnels through AuthImageView, so this one hook covers them
+    // all. Display-only; off by default.
+    @AppStorage("binge.showcaseBlur") private var showcaseBlur = false
 
     var body: some View {
         Group {
@@ -53,6 +59,9 @@ struct AuthImageView: View {
                         Image(uiImage: image)
                             .resizable()
                             .aspectRatio(contentMode: contentMode)
+                            // Blur sits INSIDE .clipped() (and any
+                            // caller circle-crop), so edges stay clean.
+                            .blur(radius: showcaseBlur ? 20 : 0)
                     }
                     .clipped()
             } else if failed {

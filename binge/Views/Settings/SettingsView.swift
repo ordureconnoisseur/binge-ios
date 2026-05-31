@@ -37,6 +37,7 @@ struct SettingsView: View {
     @AppStorage("binge.includeReddit") private var includeReddit: Bool = true
     @AppStorage("binge.bingeServerUrl") private var bingeServerUrl: String = ""
     @AppStorage("binge.showDebug") private var showDebug: Bool = false
+    @AppStorage("binge.showcaseBlur") private var showcaseBlur: Bool = false
 
     // Local draft state for the connection fields — we only write
     // the @AppStorage values when a probe succeeds, so a half-typed
@@ -94,6 +95,7 @@ struct SettingsView: View {
             homeSection
             bingeServerSection
             bingeServerConfigSection
+            captureSection
             debugSection
         }
         .onAppear {
@@ -725,6 +727,24 @@ struct SettingsView: View {
     @ViewBuilder
     private var bingeServerConfigSection: some View {
         BingeServerConfigCard()
+    }
+
+    // MARK: - Capture
+
+    @ViewBuilder
+    private var captureSection: some View {
+        Section {
+            Toggle("Showcase mode (blur media)", isOn: $showcaseBlur)
+        } header: {
+            Text("Capture")
+        } footer: {
+            Text(
+                "Blurs every image, video, and avatar while leaving the "
+                    + "interface sharp — for screenshots, demo recordings, "
+                    + "or screen-sharing without exposing library content. "
+                    + "Display-only; nothing is uploaded or changed."
+            )
+        }
     }
 
     // MARK: - Debug
