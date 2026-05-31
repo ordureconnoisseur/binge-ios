@@ -6,10 +6,11 @@ import Foundation
 // tab return — fetch-on-mount without a cache pays ~1–3s of StashDB
 // latency every time the user touches Home or Explore.
 //
-// Storage: UserDefaults, JSON-encoded, prefixed with
-// "binge.stashdb.cache.". Payloads are small enough that this fits
-// well under the 4MB defaults soft-limit (trending = 24 scenes,
-// new = up to ~5k scenes × ~500 bytes = ~2.5MB worst case).
+// Storage: JSON files under Caches/binge-stashdb-cache/. Previously
+// UserDefaults, but the `newScenes` payload (up to ~5k scenes) overflowed
+// the 4MB CFPreferences limit and got rejected ("Attempting to store >=
+// 4194304 bytes ... is invalid"); the filesystem has no such cap. init
+// purges any old UserDefaults entries so a bloated domain is reclaimed.
 //
 // TTL is per-entry; callers pass it in. Defaults:
 //   - trending lists      : 12h   (matches web)
@@ -30,14 +31,43 @@ import Foundation
 final class StashDBCache: @unchecked Sendable {
     static let shared = StashDBCache()
 
-    private let defaults = UserDefaults.standard
-    /// Bumped to v2 when the "don't cache empty arrays" rule
-    /// landed — old entries from v1 may carry empty payloads
-    /// from transient StashDB failures, which would otherwise
-    /// silently lock out trending discovery for 12h.
+    /// On-disk cache directory under Caches.
+    private let dir: URL = {
+        let base = FileManager.default.urls(
+            for: .cachesDirectory, in: .userDomainMask
+        )[0]
+        let d = base.appendingPathComponent(
+            "binge-stashdb-cache", isDirectory: true
+        )
+        try? FileManager.default.createDirectory(
+            at: d, withIntermediateDirectories: true
+        )
+        return d
+    }()
+    /// Bumped to v2 when the "don't cache empty arrays" rule landed.
     private let keyPrefix = "binge.stashdb.cache.v2."
 
-    private init() {}
+    private init() {
+        // One-time migration: purge the old UserDefaults-backed cache so
+        // a previously-bloated (>4MB) preferences domain is reclaimed.
+        let ud = UserDefaults.standard
+        for k in ud.dictionaryRepresentation().keys
+        where k.hasPrefix("binge.stashdb.cache.") {
+            ud.removeObject(forKey: k)
+        }
+    }
+
+    /// Map a cache key to a filesystem-safe filename — deterministic and
+    /// prefix-preserving, so invalidate(prefix:) still matches by name.
+    private func filename(for key: String) -> String {
+        String((keyPrefix + key).map {
+            $0.isLetter || $0.isNumber || $0 == "." || $0 == "-" || $0 == "_"
+                ? $0 : "_"
+        })
+    }
+    private func fileURL(for key: String) -> URL {
+        dir.appendingPathComponent(filename(for: key))
+    }
 
     /// Default TTLs as cleanly-named statics so call-sites read
     /// well — `ttl: .trending` beats `ttl: 43200`.
@@ -55,16 +85,15 @@ final class StashDBCache: @unchecked Sendable {
     func read<T: Codable>(
         _ key: String, ttl: TimeInterval, as type: T.Type = T.self
     ) -> T? {
-        guard let data = defaults.data(forKey: keyPrefix + key) else {
-            return nil
-        }
+        let url = fileURL(for: key)
+        guard let data = try? Data(contentsOf: url) else { return nil }
         guard
             let entry = try? JSONDecoder().decode(
                 CacheEntry<T>.self, from: data
             )
         else {
             // Stale schema — clear so subsequent writes start clean.
-            defaults.removeObject(forKey: keyPrefix + key)
+            try? FileManager.default.removeItem(at: url)
             return nil
         }
         if Date().timeIntervalSince1970 - entry.fetchedAt > ttl {
@@ -79,32 +108,38 @@ final class StashDBCache: @unchecked Sendable {
             value: value
         )
         guard let data = try? JSONEncoder().encode(entry) else { return }
-        defaults.set(data, forKey: keyPrefix + key)
+        try? data.write(to: fileURL(for: key), options: .atomic)
     }
 
     /// Drop one entry. No-op if not present.
     func invalidate(_ key: String) {
-        defaults.removeObject(forKey: keyPrefix + key)
+        try? FileManager.default.removeItem(at: fileURL(for: key))
     }
 
     /// Drop every entry whose key starts with the given suffix
     /// (the keyPrefix is added automatically). Used to nuke a
     /// family of entries — e.g. all `linked.*` after a Follow.
     func invalidate(prefix: String) {
-        let full = keyPrefix + prefix
-        for k in defaults.dictionaryRepresentation().keys
-        where k.hasPrefix(full) {
-            defaults.removeObject(forKey: k)
+        let namePrefix = filename(for: prefix)
+        let fm = FileManager.default
+        let files =
+            (try? fm.contentsOfDirectory(
+                at: dir, includingPropertiesForKeys: nil
+            )) ?? []
+        for f in files where f.lastPathComponent.hasPrefix(namePrefix) {
+            try? fm.removeItem(at: f)
         }
     }
 
     /// Full clear of every cached StashDB lookup. Wired to
     /// pull-to-refresh on Home + Explore.
     func invalidateAll() {
-        for k in defaults.dictionaryRepresentation().keys
-        where k.hasPrefix(keyPrefix) {
-            defaults.removeObject(forKey: k)
-        }
+        let fm = FileManager.default
+        let files =
+            (try? fm.contentsOfDirectory(
+                at: dir, includingPropertiesForKeys: nil
+            )) ?? []
+        for f in files { try? fm.removeItem(at: f) }
     }
 
     /// In-memory hot path. Some workflows hit the cache multiple
