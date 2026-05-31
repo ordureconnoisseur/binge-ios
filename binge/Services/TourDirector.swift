@@ -83,7 +83,6 @@ struct TourStep {
 enum TourScript: String, CaseIterable, Identifiable {
     case full
     case stories
-    case homeProfile
     case forYou
 
     var id: String { rawValue }
@@ -91,9 +90,8 @@ enum TourScript: String, CaseIterable, Identifiable {
     var label: String {
         switch self {
         case .full: return "Full walkthrough"
-        case .stories: return "Clip · Stories + Home"
-        case .homeProfile: return "Clip · Home → Profile"
-        case .forYou: return "Clip · For You + likes"
+        case .stories: return "Clip 1 · Stories + Home"
+        case .forYou: return "Clip 2 · For You"
         }
     }
 
@@ -101,40 +99,34 @@ enum TourScript: String, CaseIterable, Identifiable {
         switch self {
         case .full: return Self.fullSteps
         case .stories: return Self.storiesSteps
-        case .homeProfile: return Self.homeProfileSteps
         case .forYou: return Self.forYouSteps
         }
     }
 
-    // Clip 1 — open the stories row, watch a couple play through,
-    // dismiss, then scroll the home feed. Sized so the trimmed preview
-    // lands ~17s (App Store previews must be 15-30s).
+    // Clip 1 — a quick story, then mostly scrolling the feed, then open
+    // a performer profile and favourite. Trimmed preview ~21s (App Store
+    // previews must be 15-30s).
     private static let storiesSteps: [TourStep] = [
         .init(command: .switchTab(.home), delay: 1.0),
-        .init(command: .homeScrollStories, delay: 2.0),
-        .init(command: .homeOpenStory(0), delay: 8.5),
-        .init(command: .homeDismissStory, delay: 1.0),
-        .init(command: .homeScrollFeed, delay: 5.0),
-    ]
-
-    // Clip 2 — scroll the home feed, then open a performer profile.
-    private static let homeProfileSteps: [TourStep] = [
-        .init(command: .switchTab(.home), delay: 1.0),
-        .init(command: .homeScrollFeed, delay: 5.5),
-        .init(command: .homeOpenPerformer, delay: 6.5),
+        .init(command: .homeScrollStories, delay: 1.6),
+        .init(command: .homeOpenStory(0), delay: 5.0),
+        .init(command: .homeDismissStory, delay: 0.8),
+        .init(command: .homeScrollFeed, delay: 6.8),
+        .init(command: .homeOpenPerformer, delay: 4.0),
         .init(command: .performerFavourite, delay: 2.5),
         .init(command: .performerBack, delay: 1.2),
     ]
 
-    // Clip 3 — scroll the For You reel and like a few.
+    // Clip 2 — scroll the For You reel, like a few, open a performer,
+    // then open one of their videos. Trimmed preview ~18s.
     private static let forYouSteps: [TourStep] = [
-        .init(command: .switchTab(.foryou), delay: 2.4),
-        .init(command: .reelLike, delay: 2.0),
-        .init(command: .reelAdvance, delay: 2.6),
-        .init(command: .reelLike, delay: 2.0),
-        .init(command: .reelAdvance, delay: 2.6),
-        .init(command: .reelAdvance, delay: 2.6),
-        .init(command: .reelLike, delay: 2.2),
+        .init(command: .switchTab(.foryou), delay: 2.2),
+        .init(command: .reelLike, delay: 1.8),
+        .init(command: .reelAdvance, delay: 2.4),
+        .init(command: .reelLike, delay: 1.8),
+        .init(command: .reelAdvance, delay: 2.2),
+        .init(command: .reelOpenPerformer, delay: 3.0),
+        .init(command: .performerOpenScene, delay: 4.5),
     ]
 
     // The complete tour (every feature, end to end).
@@ -184,6 +176,7 @@ enum TourCommand: Equatable {
     case reelAddToCollection
     case reelOpenPerformer
     case performerFavourite
+    case performerOpenScene
     case performerBack
     case exploreTapTag(Int)
     case followingOpenPerformer(Int)

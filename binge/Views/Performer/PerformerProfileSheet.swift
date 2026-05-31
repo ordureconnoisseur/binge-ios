@@ -127,6 +127,17 @@ struct PerformerProfileSheet: View {
             switch tour.command {
             case .performerFavourite:
                 vm?.toggleFavourite()
+            case .performerOpenScene:
+                // Open one of this performer's videos — push a drilled
+                // reel onto the cover's own stack (cover mode only).
+                if wrapInNavigationStack, let first = vm?.scenes.first {
+                    profilePath.append(
+                        .reel(.timeline(
+                            scenes: vm?.scenes ?? [first],
+                            startId: first.id
+                        ))
+                    )
+                }
             case .performerBack:
                 dismiss()
             default:

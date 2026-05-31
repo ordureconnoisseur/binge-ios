@@ -353,7 +353,7 @@ struct HomeView: View {
             // Step one card at a time, slowly, so it reads as deliberate
             // browsing rather than a hard jump.
             Task { @MainActor in
-                for step in 1...min(3, entries.count - 1) {
+                for step in 1...min(5, entries.count - 1) {
                     withAnimation(.easeInOut(duration: 1.1)) {
                         activeFeedEntryId = entries[step].id
                     }
