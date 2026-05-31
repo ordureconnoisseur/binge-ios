@@ -111,11 +111,16 @@ enum DemoContent {
         ]
         var out: [BingeScene] = []
         for (pIdx, p) in performers.enumerated() {
-            for i in 1...p.count {
+            // Only Aria (index 0) clusters enough recent scenes to form
+            // the single group post (packMinSize is 8); everyone else
+            // gets a few individual scenes so the feed/reel stay full
+            // without spawning extra group posts.
+            let n = pIdx == 0 ? p.count : min(p.count, 3)
+            for i in 1...n {
                 let coIdx = (pIdx + i) % performers.count
                 // Last scene of each performer is left solo for variety.
                 let co =
-                    (coIdx == pIdx || i == p.count) ? [] : [performers[coIdx]]
+                    (coIdx == pIdx || i == n) ? [] : [performers[coIdx]]
                 out.append(
                     scene(
                         id: "\(p.id)-\(i)",

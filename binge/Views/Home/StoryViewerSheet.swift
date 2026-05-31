@@ -191,8 +191,12 @@ struct StoryViewerSheet: View {
     @ViewBuilder
     private var content: some View {
         switch currentScene {
-        case .library:
-            if let player {
+        case .library(let scene):
+            if DemoMode.isOn {
+                // No real video in demo — fill the story with an animated
+                // gradient instead of a black screen.
+                AnimatedDemoGradient(seed: scene.id).ignoresSafeArea()
+            } else if let player {
                 VideoPlayerView(player: player).ignoresSafeArea()
             }
         case .stashDB(let sb):
