@@ -8,6 +8,7 @@ import SwiftUI
 // slide in over the menu list with a system back chevron.
 struct MenuPage: View {
     @State private var path = NavigationPath()
+    @State private var tour = TourDirector.shared
 
     enum Destination: Hashable {
         case saved
@@ -63,6 +64,20 @@ struct MenuPage: View {
             // the same native swipe-to-pop behaviour Home/Explore/
             // Following already use.
             .bingeRouteDestinations()
+        }
+        // Walkthrough: open Saved, then drill into a collection. Both
+        // append onto this stack (the collection resolves via SavedPage's
+        // navigationDestination(for: CollectionDef.self)).
+        .onChange(of: tour.tick) { _, _ in
+            switch tour.command {
+            case .menuOpenSaved:
+                path.append(Destination.saved)
+            case .savedOpenCollection(let i):
+                let colls = DemoContent.collections
+                if colls.indices.contains(i) { path.append(colls[i]) }
+            default:
+                break
+            }
         }
     }
 

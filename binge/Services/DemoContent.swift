@@ -232,6 +232,21 @@ enum DemoContent {
         ),
     ]
 
+    /// The full library reordered deterministically by a seed — used in
+    /// the Explore demo so tapping a tag chip visibly reshuffles the grid
+    /// (the underlying set is the same; only the order changes).
+    static func scenes(orderedBy seed: String) -> [BingeScene] {
+        func rank(_ id: String) -> UInt64 {
+            var h: UInt64 = 1_469_598_103_934_665_603
+            for b in (seed + id).utf8 {
+                h ^= UInt64(b)
+                h = h &* 1_099_511_628_211
+            }
+            return h
+        }
+        return scenes.sorted { rank($0.id) < rank($1.id) }
+    }
+
     /// Deterministic pseudo-random scene subset for a collection, keyed
     /// by its tag name — each collection shows a different handful of the
     /// library (~40%), stable across launches.

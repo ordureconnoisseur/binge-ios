@@ -13,6 +13,7 @@ struct FollowingView: View {
     private var stashApiKey: String { KeychainStore.shared.stashApiKey }
 
     @State private var vm: FollowingViewModel?
+    @State private var tour = TourDirector.shared
     /// Drilled-in destinations pushed onto Following's
     /// NavigationStack. Today: `.performer(localId:)` only —
     /// tile tap pushes the profile via the shared
@@ -81,6 +82,16 @@ struct FollowingView: View {
             if vm?.all.isEmpty == true {
                 await vm?.load()
             }
+        }
+        // Walkthrough: open a performer's profile.
+        .onChange(of: tour.tick) { _, _ in
+            guard case .followingOpenPerformer(let i) = tour.command,
+                let vm
+            else { return }
+            let list = vm.all
+            guard !list.isEmpty else { return }
+            let p = list.indices.contains(i) ? list[i] : list[0]
+            path.append(.performer(localId: p.id))
         }
     }
 

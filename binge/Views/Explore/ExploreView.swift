@@ -11,6 +11,7 @@ struct ExploreView: View {
     private var stashApiKey: String { KeychainStore.shared.stashApiKey }
 
     @State private var vm: ExploreViewModel?
+    @State private var tour = TourDirector.shared
     @FocusState private var searchFocused: Bool
     /// Drilled-in destinations pushed onto Explore's
     /// NavigationStack. `BingeRoute.reel(.chain(seed:))` for
@@ -118,6 +119,15 @@ struct ExploreView: View {
                 await vm?.load()
             }
             _ = await chips
+        }
+        // Walkthrough: tap a tag chip → the grid reshuffles under it.
+        .onChange(of: tour.tick) { _, _ in
+            guard case .exploreTapTag(let i) = tour.command, let vm
+            else { return }
+            let chips = vm.chipsToRender
+            guard chips.indices.contains(i) else { return }
+            vm.activeTag = chips[i]
+            Task { await vm.load() }
         }
         .fullScreenCover(
             isPresented: Binding(

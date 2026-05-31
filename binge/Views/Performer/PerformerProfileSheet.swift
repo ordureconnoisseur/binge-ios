@@ -37,6 +37,7 @@ struct PerformerProfileSheet: View {
     @AppStorage("binge.profileStashDB") private var showStashDB: Bool = false
 
     @State private var vm: PerformerProfileViewModel?
+    @State private var tour = TourDirector.shared
     @State private var tab: ProfileTab = .scenes
     @State private var storyOpen: Bool = false
     /// Inner NavigationStack path for cover-mode presentation.
@@ -119,6 +120,18 @@ struct PerformerProfileSheet: View {
             ScribeModal(subjectRef: ref)
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
+        }
+        // Walkthrough: favourite the performer / leave the profile. Only
+        // the on-screen profile is mounted, so this targets the right one.
+        .onChange(of: tour.tick) { _, _ in
+            switch tour.command {
+            case .performerFavourite:
+                vm?.toggleFavourite()
+            case .performerBack:
+                dismiss()
+            default:
+                break
+            }
         }
     }
 

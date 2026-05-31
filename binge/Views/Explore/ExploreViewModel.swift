@@ -115,7 +115,12 @@ final class ExploreViewModel {
         // Demo mode: the fictional library is the whole Explore grid;
         // no network, no pagination.
         if DemoMode.isOn {
-            let fresh = DemoContent.scenes.filter { !seenIds.contains($0.id) }
+            // Reorder by the active tag so tapping a chip visibly
+            // reshuffles the grid (the demo library is the same set).
+            let source =
+                activeTag.map { DemoContent.scenes(orderedBy: $0.tagId) }
+                ?? DemoContent.scenes
+            let fresh = source.filter { !seenIds.contains($0.id) }
             for s in fresh { seenIds.insert(s.id) }
             if replace { scenes = fresh } else { scenes.append(contentsOf: fresh) }
             self.page = page
