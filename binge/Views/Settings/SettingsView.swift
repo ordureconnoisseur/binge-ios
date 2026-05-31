@@ -782,13 +782,19 @@ struct SettingsView: View {
             Toggle("Showcase mode (blur media)", isOn: $showcaseBlur)
             Toggle("Demo content", isOn: $demoMode)
             if demoMode {
-                Button {
-                    // Pop Settings first; the 3-2-1 pre-roll covers the
-                    // dismiss animation before the tour drives the tabs.
-                    dismiss()
-                    TourDirector.shared.start()
-                } label: {
-                    Label("Run walkthrough", systemImage: "play.rectangle")
+                ForEach(TourScript.allCases) { script in
+                    Button {
+                        // Pop Settings first; the 3-2-1 pre-roll covers
+                        // the dismiss before the tour drives the tabs.
+                        dismiss()
+                        TourDirector.shared.start(script)
+                    } label: {
+                        Label(
+                            script.label,
+                            systemImage: script == .full
+                                ? "play.rectangle" : "play.circle"
+                        )
+                    }
                 }
             }
         } header: {

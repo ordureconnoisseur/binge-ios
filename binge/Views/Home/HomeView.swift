@@ -360,6 +360,11 @@ struct HomeView: View {
                     try? await Task.sleep(for: .seconds(1.2))
                 }
             }
+        case .homeOpenPerformer:
+            // Open Aria (p1) — the richest demo profile. Falls back to
+            // the first feed scene's primary performer if present.
+            presentedPerformerId =
+                vm.feed.first?.performers.first?.id ?? "p1"
         case .homeWatchFull(let n):
             let scenes = vm.feed
             guard !scenes.isEmpty else { return }
