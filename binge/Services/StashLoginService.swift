@@ -33,7 +33,14 @@ enum StashLoginService {
         let config = URLSessionConfiguration.default
         config.httpShouldSetCookies = true
         config.httpCookieAcceptPolicy = .always
-        let delegate = TrustAllSessionDelegate()
+        // Only bypass TLS validation for private / LAN / tailnet hosts,
+        // where a self-signed or IP cert is expected. For a PUBLIC host
+        // the password must not be exposed to a MITM, so fall through to
+        // strict default TLS validation.
+        let loginHost = URL(string: trimmedBase)?.host ?? ""
+        let delegate = TrustAllSessionDelegate(
+            allowInsecure: isPrivateHost(loginHost)
+        )
         let session = URLSession(
             configuration: config,
             delegate: delegate,
@@ -123,10 +130,46 @@ enum StashLoginService {
         return trimmed
     }
 
+    // Form-body encoding: percent-encode everything except RFC3986
+    // unreserved chars. `.urlQueryAllowed` leaves `&`, `=`, `+` intact,
+    // which corrupts the `application/x-www-form-urlencoded` body when a
+    // password contains them (the `&` splits the field, `+` decodes to a
+    // space) — sign-in then fails with a misleading "wrong password".
+    private static let formAllowed: CharacterSet = {
+        var cs = CharacterSet.alphanumerics
+        cs.insert(charactersIn: "-._~")
+        return cs
+    }()
+
     private static func percent(_ s: String) -> String {
-        s.addingPercentEncoding(
-            withAllowedCharacters: .urlQueryAllowed
-        ) ?? s
+        s.addingPercentEncoding(withAllowedCharacters: formAllowed) ?? s
+    }
+
+    /// Loopback / RFC1918 / Tailscale-CGNAT / .local / .ts.net / bare
+    /// hostname → private. Public FQDNs and public IPs → false.
+    private static func isPrivateHost(_ host: String) -> Bool {
+        let h = host.lowercased()
+        if h.isEmpty { return false }
+        if h == "localhost" || h.hasSuffix(".local")
+            || h.hasSuffix(".internal") || h.hasSuffix(".ts.net")
+        {
+            return true
+        }
+        let parts = h.split(separator: ".")
+        if parts.count == 4 {
+            let nums = parts.compactMap { Int($0) }
+            if nums.count == 4, nums.allSatisfy({ (0...255).contains($0) }) {
+                let a = nums[0]
+                let b = nums[1]
+                if a == 127 || a == 10 { return true }
+                if a == 172 && (16...31).contains(b) { return true }
+                if a == 192 && b == 168 { return true }
+                if a == 100 && (64...127).contains(b) { return true }  // CGNAT
+                return false
+            }
+        }
+        // Bare hostname (no dot) is a LAN/tailnet machine name.
+        return !h.contains(".")
     }
 }
 
@@ -178,6 +221,12 @@ private struct ApiKeyResponse: Decodable {
 private final class TrustAllSessionDelegate: NSObject,
     URLSessionDelegate
 {
+    /// Only accept an untrusted server cert when the target host is
+    /// private/LAN/tailnet. Public hosts fall through to strict default
+    /// TLS so a MITM can't intercept the password on the sign-in path.
+    let allowInsecure: Bool
+    init(allowInsecure: Bool) { self.allowInsecure = allowInsecure }
+
     func urlSession(
         _ session: URLSession,
         didReceive challenge: URLAuthenticationChallenge,
@@ -185,8 +234,9 @@ private final class TrustAllSessionDelegate: NSObject,
             URLSession.AuthChallengeDisposition, URLCredential?
         ) -> Void
     ) {
-        if challenge.protectionSpace.authenticationMethod
-            == NSURLAuthenticationMethodServerTrust,
+        if allowInsecure,
+            challenge.protectionSpace.authenticationMethod
+                == NSURLAuthenticationMethodServerTrust,
             let trust = challenge.protectionSpace.serverTrust
         {
             completionHandler(

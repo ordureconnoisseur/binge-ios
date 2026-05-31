@@ -7,8 +7,8 @@ import Foundation
 //
 // Same-origin auth doesn't exist on iOS — every request explicitly
 // sets the `ApiKey` header. The user pastes their API key into
-// Settings once; we store it in UserDefaults (Keychain comes in
-// v0.2).
+// Settings once (or signs in to fetch it); it's stored in the
+// Keychain (see KeychainStore), never UserDefaults.
 
 enum StashClientError: Error, LocalizedError {
     case notConfigured

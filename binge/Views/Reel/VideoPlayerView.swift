@@ -7,11 +7,10 @@ import SwiftUI
 // AVPlayerLayer-in-a-plain-UIView pattern lets us own playback +
 // gesture handling entirely.
 //
-// One AVPlayer per slide; ownership lives in SceneSlideView. We don't
-// pool players in v0.1 — iOS handles ~4 concurrent decoders without
-// trouble for short loops, and the reel only ever has the active
-// slide + 1 prefetched on each side mounted at once via
-// TabView(.page).
+// Players are pooled (see PlayerPool, a capacity-3 LRU of
+// AVQueuePlayer + AVPlayerLooper) and handed to this view per slide;
+// this wrapper just hosts whichever AVPlayer it's given. SceneSlideView
+// drives attach/detach + the showcase-blur frost below.
 struct VideoPlayerView: UIViewRepresentable {
     let player: AVPlayer
     // Showcase mode — frost the live video for safe capture. @AppStorage
