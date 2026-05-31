@@ -17,15 +17,28 @@ enum DemoContent {
         return f
     }()
 
-    private struct Perf { let id: String; let name: String }
+    private struct Perf {
+        let id: String
+        let name: String
+        /// Canonical scene count shown in Following + on the profile.
+        /// Distinct per performer (Aria the heaviest) so the Following
+        /// list reads like a real, varied library.
+        let count: Int
+    }
     // Single evocative names — clearly placeholder, no real-performer
-    // collision.
+    // collision. Aria carries the most scenes so she dominates the reel
+    // and forms a pack on Home.
     private static let performers: [Perf] = [
-        .init(id: "p1", name: "Aria"),
-        .init(id: "p2", name: "Nova"),
-        .init(id: "p3", name: "Sable"),
-        .init(id: "p4", name: "Wren"),
-        .init(id: "p5", name: "Juno"),
+        .init(id: "p1", name: "Aria", count: 12),
+        .init(id: "p2", name: "Nova", count: 9),
+        .init(id: "p3", name: "Sable", count: 8),
+        .init(id: "p4", name: "Wren", count: 7),
+        .init(id: "p5", name: "Juno", count: 6),
+        .init(id: "p6", name: "Lux", count: 5),
+        .init(id: "p7", name: "Echo", count: 4),
+        .init(id: "p8", name: "Vesper", count: 3),
+        .init(id: "p9", name: "Iris", count: 2),
+        .init(id: "p10", name: "Sage", count: 1),
     ]
     private static let studios = ["Aurora Films", "Lumen Studio", "Demo Pictures"]
 
@@ -81,27 +94,44 @@ enum DemoContent {
         )
     }
 
-    /// The full fictional library — one performer's bulk import (a pack
-    /// card) plus singles from others (stories + feed cards + reel).
+    /// The full fictional library — each performer gets `count` scenes
+    /// (Aria the most, so she dominates the reel and forms a pack on
+    /// Home). Every scene but the performer's last rotates in a co-star
+    /// for the @mention caption.
     static let scenes: [BingeScene] = {
+        let titles = [
+            "Golden Hour", "City Lights", "Studio Session", "Candid Moment",
+            "Afternoon Light", "Neon Nights", "Backstage", "Sunset Drive",
+            "First Light", "Close Up", "Daydream", "Soft Focus",
+        ]
+        let tagSets = [
+            ["Golden Hour", "Outdoor"], ["City", "Portrait"],
+            ["Studio", "Aesthetic"], ["Candid", "Portrait"],
+            ["Aesthetic", "Solo"], ["Outdoor", "Candid"],
+        ]
         var out: [BingeScene] = []
-        // Pack: Aria, 8 scenes with rotating co-stars (shows the avatar
-        // stack + @co-performer caption on a pack card).
-        for i in 1...8 {
-            let coStar = performers[(i % 4) + 1]  // Nova/Sable/Wren/Juno
-            out.append(
-                scene(
-                    id: "aria-\(i)", title: "Golden Hour \(i)",
-                    perf: performers[0], co: [coStar], studio: studios[0],
-                    tags: ["Golden Hour", "Outdoor"],
-                    hoursAgo: 2 + Double(i) * 0.3
+        for (pIdx, p) in performers.enumerated() {
+            for i in 1...p.count {
+                let coIdx = (pIdx + i) % performers.count
+                // Last scene of each performer is left solo for variety.
+                let co =
+                    (coIdx == pIdx || i == p.count) ? [] : [performers[coIdx]]
+                out.append(
+                    scene(
+                        id: "\(p.id)-\(i)",
+                        title: titles[(i - 1) % titles.count],
+                        perf: p,
+                        co: co,
+                        studio: studios[(pIdx + i) % studios.count],
+                        tags: tagSets[(pIdx + i) % tagSets.count],
+                        // Cluster each performer's scenes in time; earlier
+                        // performers are more recent, so Aria sits at the
+                        // top of Home as a fresh pack.
+                        hoursAgo: Double(pIdx) * 30 + Double(i) * 0.5
+                    )
                 )
-            )
+            }
         }
-        out.append(scene(id: "nova-1", title: "City Lights", perf: performers[1], co: [performers[2]], studio: studios[1], tags: ["City", "Portrait"], hoursAgo: 5))
-        out.append(scene(id: "sable-1", title: "Studio Session", perf: performers[2], co: [performers[3], performers[4]], studio: studios[2], tags: ["Studio", "Aesthetic"], hoursAgo: 9))
-        out.append(scene(id: "wren-1", title: "Candid", perf: performers[3], co: [performers[0]], studio: studios[0], tags: ["Candid", "Portrait"], hoursAgo: 26))
-        out.append(scene(id: "juno-1", title: "Afternoon Light", perf: performers[4], studio: studios[1], tags: ["Aesthetic", "Solo"], hoursAgo: 50))
         return out
     }()
 
@@ -118,7 +148,8 @@ enum DemoContent {
     /// Fictional profile record for a demo performer.
     static func performerDetail(id: String) -> PerformerDetail {
         let name = performerName(id)
-        let scs = scenes(forPerformer: id)
+        let count = performers.first { $0.id == id }?.count
+            ?? scenes(forPerformer: id).count
         return PerformerDetail(
             id: id,
             name: name,
@@ -130,9 +161,9 @@ enum DemoContent {
             birthdate: nil,
             hairColor: nil,
             eyeColor: nil,
-            sceneCount: scs.count,
+            sceneCount: count,
             galleryCount: 0,
-            oCounter: scs.count * 3,
+            oCounter: count * 3,
             rating100: 84,
             twitter: nil,
             instagram: "@\(name.lowercased()).demo",
@@ -150,8 +181,8 @@ enum DemoContent {
                 id: p.id,
                 name: p.name,
                 imagePath: DemoMode.mediaURL("a-\(p.id)"),
-                sceneCount: scenes(forPerformer: p.id).count,
-                favorite: idx < 2
+                sceneCount: p.count,
+                favorite: idx < 3
             )
         }
     }
