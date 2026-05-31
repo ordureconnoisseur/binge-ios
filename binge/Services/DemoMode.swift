@@ -1,3 +1,4 @@
+import Foundation
 import SwiftUI
 
 /// Demo mode — when on, binge shows entirely fictional, SFW content
@@ -21,21 +22,22 @@ enum DemoMode {
 /// gradient — no real images or video — so the UI looks populated and
 /// clean for App Store capture. The hue is a stable hash of the seed so
 /// the same scene/performer always gets the same colour.
+/// FNV-1a hue hash — good avalanche, so near-identical seeds (s-aria-1
+/// vs s-aria-2) land on widely different hues instead of clustering.
+private func demoHue(for seed: String) -> Double {
+    var h: UInt64 = 1_469_598_103_934_665_603
+    for b in seed.utf8 {
+        h ^= UInt64(b)
+        h = h &* 1_099_511_628_211
+    }
+    return Double(h % 360) / 360.0
+}
+
 struct DemoGradient: View {
     let seed: String
 
-    private var hue: Double {
-        // FNV-1a — good avalanche, so near-identical seeds (s-aria-1 vs
-        // s-aria-2) land on widely different hues instead of clustering.
-        var h: UInt64 = 1_469_598_103_934_665_603
-        for b in seed.utf8 {
-            h ^= UInt64(b)
-            h = h &* 1_099_511_628_211
-        }
-        return Double(h % 360) / 360.0
-    }
-
     var body: some View {
+        let hue = demoHue(for: seed)
         let top = Color(hue: hue, saturation: 0.5, brightness: 0.7)
         let bottom = Color(
             hue: (hue + 0.1).truncatingRemainder(dividingBy: 1),
@@ -47,5 +49,40 @@ struct DemoGradient: View {
             startPoint: .topLeading,
             endPoint: .bottomTrailing
         )
+    }
+}
+
+/// Animated variant for the demo reel — the gradient slowly drifts its
+/// hue and sweeps its angle so a full-screen slide reads as "playing"
+/// without any real footage. Reel-only; feed posters and avatars stay
+/// on the cheaper static `DemoGradient`.
+struct AnimatedDemoGradient: View {
+    let seed: String
+
+    var body: some View {
+        let base = demoHue(for: seed)
+        TimelineView(.animation) { ctx in
+            let t = ctx.date.timeIntervalSinceReferenceDate
+            // Subtle + slow: ~20s hue wobble, ~16s angular sweep.
+            let hue = base + 0.07 * sin(t * 0.31)
+            let a = t * 0.39
+            let top = Color(
+                hue: (hue + 1).truncatingRemainder(dividingBy: 1),
+                saturation: 0.5, brightness: 0.7
+            )
+            let bottom = Color(
+                hue: (hue + 1.1).truncatingRemainder(dividingBy: 1),
+                saturation: 0.62, brightness: 0.38
+            )
+            LinearGradient(
+                colors: [top, bottom],
+                startPoint: UnitPoint(
+                    x: 0.5 + 0.5 * cos(a), y: 0.5 + 0.5 * sin(a)
+                ),
+                endPoint: UnitPoint(
+                    x: 0.5 - 0.5 * cos(a), y: 0.5 - 0.5 * sin(a)
+                )
+            )
+        }
     }
 }

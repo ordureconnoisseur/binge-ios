@@ -89,8 +89,12 @@ struct SceneSlideView: View {
             Color.black
 
             // Screenshot poster — sits BEHIND the video. Hidden
-            // once the first decoded frame lands.
-            if posterVisible, let screenshotURL = scene.screenshotURL(base: baseURL) {
+            // once the first decoded frame lands. In demo mode there's
+            // no player, so the animated gradient is the whole slide.
+            if DemoMode.isOn {
+                AnimatedDemoGradient(seed: scene.id)
+                    .padding(.vertical, 22)
+            } else if posterVisible, let screenshotURL = scene.screenshotURL(base: baseURL) {
                 AuthImageView(url: screenshotURL, apiKey: apiKey)
                     .padding(.vertical, 22)
                     .transition(.opacity)
