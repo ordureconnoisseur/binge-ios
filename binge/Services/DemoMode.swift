@@ -8,10 +8,13 @@ enum DemoMode {
     static let storageKey = "binge.demoMode"
     static var isOn: Bool { UserDefaults.standard.bool(forKey: storageKey) }
 
-    /// Scheme used by demo media URLs so AuthImageView / the reel render
-    /// a procedural gradient instead of hitting the network.
-    static let scheme = "demo"
-    static func mediaURL(_ seed: String) -> String { "\(scheme)://\(seed)" }
+    /// Demo media is a sentinel HTTPS URL — using a real scheme means the
+    /// app's existing "base + path" URL builders (which only pass through
+    /// http-prefixed strings) leave it untouched instead of prepending the
+    /// Stash base. AuthImageView matches this host and renders a gradient
+    /// instead of fetching. The seed is the path component.
+    static let host = "binge.demo"
+    static func mediaURL(_ seed: String) -> String { "https://\(host)/\(seed)" }
 }
 
 /// Deterministic SFW gradient placeholder. Demo media is just a seeded

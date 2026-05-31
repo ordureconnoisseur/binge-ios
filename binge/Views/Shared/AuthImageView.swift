@@ -49,10 +49,10 @@ struct AuthImageView: View {
     @AppStorage("binge.showcaseBlur") private var showcaseBlur = false
 
     var body: some View {
-        if url.scheme == DemoMode.scheme {
+        if url.host == DemoMode.host {
             // Demo mode: render a procedural gradient instead of fetching
-            // — no real media, nothing to load.
-            DemoGradient(seed: url.host ?? url.absoluteString)
+            // — no real media, nothing to load. Seed = the path component.
+            DemoGradient(seed: url.lastPathComponent)
         } else {
             content
         }
