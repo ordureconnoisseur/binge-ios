@@ -41,6 +41,7 @@ struct SceneSlideView: View {
     @AppStorage("binge.muted") private var muted: Bool = true
     @AppStorage("binge.autoScroll") private var autoScroll: Bool = false
 
+    @State private var tour = TourDirector.shared
     @State private var player: AVPlayer?
     /// Per-cell counter. Resets to scene.oCounter on remount.
     /// We tried a process-wide singleton store to preserve the
@@ -337,6 +338,21 @@ struct SceneSlideView: View {
             detachTimeObserver()
             player?.pause()
             player = nil
+        }
+        // Walkthrough: only the active slide acts. Like / open the
+        // save sheet / open the primary performer's profile.
+        .onChange(of: tour.tick) { _, _ in
+            guard isActive else { return }
+            switch tour.command {
+            case .reelLike:
+                triggerLike()
+            case .reelAddToCollection:
+                saveOpen = true
+            case .reelOpenPerformer:
+                presentedPerformerId = scene.performers.first?.id
+            default:
+                break
+            }
         }
         .sheet(isPresented: $detailsOpen) {
             SceneDetailsSheet(scene: scene)

@@ -58,6 +58,7 @@ struct ReelView: View {
     @State private var seenIds: Set<String> = []
     @State private var page: Int = 1
     @State private var activeId: String?
+    @State private var tour = TourDirector.shared
     @State private var loading: Bool = false
     @State private var error: String?
     // nil → random mode. Non-nil → chained mode, driven by this
@@ -148,6 +149,15 @@ struct ReelView: View {
             } else {
                 await loadMoreIfNeeded()
             }
+        }
+        // Walkthrough: advance to the next slide (animated paging scroll).
+        .onChange(of: tour.tick) { _, _ in
+            guard case .reelAdvance = tour.command else { return }
+            guard let cur = activeId,
+                let idx = scenes.firstIndex(where: { $0.id == cur }),
+                idx + 1 < scenes.count
+            else { return }
+            withAnimation { activeId = scenes[idx + 1].id }
         }
         .onDisappear {
             // A drilled-in reel (chain / timeline, or one the user

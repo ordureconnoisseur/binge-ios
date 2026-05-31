@@ -15,6 +15,7 @@ struct SaveToCollectionSheet: View {
     @AppStorage("binge.stashUrl") private var stashUrl: String = ""
     private var stashApiKey: String { KeychainStore.shared.stashApiKey }
 
+    @State private var tour = TourDirector.shared
     @State private var service: CollectionsService?
     /// Current per-collection membership for THIS scene. Keyed by
     /// tagName so we don't re-check tag-id resolution every render.
@@ -86,6 +87,19 @@ struct SaveToCollectionSheet: View {
             currentTagIds = scene.tags.map(\.id)
             await service?.load()
             await refreshMemberships()
+        }
+        // Walkthrough: open → tick the first user collection → close,
+        // so "add to collection" plays out hands-free.
+        .task {
+            guard tour.isRunning else { return }
+            try? await Task.sleep(for: .seconds(1.1))
+            if let coll = service?.collections.first(where: { !$0.isDefault }) {
+                await toggle(
+                    coll, currentlyOn: memberships[coll.tagName] ?? false
+                )
+            }
+            try? await Task.sleep(for: .seconds(1.6))
+            dismiss()
         }
     }
 
