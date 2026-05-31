@@ -17,7 +17,7 @@ Native iOS client for [Stash](https://github.com/stashapp/stash). Sister project
 
 ## Screenshots
 
-> Captured in the built-in **demo mode** — entirely fictional, SFW placeholder content (procedural gradients + invented names), so nothing from a real library is shown.
+> Example captures — fictional names and placeholder visuals, not real library content.
 
 <p align="center">
   <img src="screenshots/home.png" width="240" alt="Home — stories row over a scene feed with a collapsed pack card" />
@@ -60,8 +60,6 @@ Paste your Stash URL, then either:
 
 Credentials are stored in the iOS Keychain.
 
-> No Stash server handy? Tap **Explore with demo content** on the welcome screen to browse the app with fictional placeholder data — no connection required.
-
 ---
 
 ## Companion plugin integrations
@@ -94,8 +92,6 @@ Both walk the tree, ffprobe each file, only touch what matches.
 | Setting | Default | Notes |
 |-|-|-|
 | Stash connection | — | URL + API key (or sign-in) |
-| Showcase mode | Off | Blur all media (covers, video, avatars) for safe screen-capture; the UI stays sharp. |
-| Demo content | Off | Replace your library with fictional, SFW placeholder data — for captures, no server needed. |
 | Genders to surface | Female + Trans female | Drives Discover row + stories |
 | Stream type | Auto | Auto / Direct / MP4 / HLS / WebM |
 | Recent window | 30 days | How far back "new" means for stories + feed |
