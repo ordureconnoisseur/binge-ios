@@ -122,6 +122,7 @@ struct SettingsView: View {
                 welcomeConnectionForm
                 welcomeProbeFeedback
                 welcomeOptionalNotes
+                demoModeButton
             }
             .padding(.horizontal, 22)
             .padding(.top, 32)
@@ -135,6 +136,45 @@ struct SettingsView: View {
             if draftApiKey.isEmpty { draftApiKey = stashApiKey }
         }
         .toolbar(.hidden, for: .navigationBar)
+    }
+
+    /// Drops straight into the app with fictional, SFW content and no
+    /// server — for App Store capture (and the walkthrough) on a fresh
+    /// install. RootView shows MainShell whenever demo mode is on.
+    @ViewBuilder
+    private var demoModeButton: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Divider().background(Color.white.opacity(0.1))
+            Button {
+                demoMode = true
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "play.rectangle.on.rectangle")
+                        .font(.system(size: 16, weight: .semibold))
+                    Text("Explore with demo content")
+                        .font(.system(size: 15, weight: .semibold))
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.4))
+                }
+                .foregroundStyle(.white)
+                .padding(.vertical, 14)
+                .padding(.horizontal, 16)
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Color.white.opacity(0.08))
+                )
+            }
+            .buttonStyle(.plain)
+            Text(
+                "Fictional, SFW placeholder content — no Stash server "
+                    + "needed. Turn it off later in Settings → Capture."
+            )
+            .font(.system(size: 12))
+            .foregroundStyle(.white.opacity(0.5))
+            .fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     @ViewBuilder

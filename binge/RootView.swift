@@ -6,10 +6,14 @@ import SwiftUI
 // launch — see BingeStartupSplash for the dismissal logic.
 struct RootView: View {
     @AppStorage("binge.stashUrl") private var stashUrl: String = ""
+    // Demo mode enters the app with fictional content and no server —
+    // for App Store capture / the walkthrough on a fresh install.
+    @AppStorage("binge.demoMode") private var demoMode: Bool = false
     private var stashApiKey: String { KeychainStore.shared.stashApiKey }
 
     var body: some View {
-        if stashUrl.isEmpty || stashApiKey.isEmpty {
+        let configured = !stashUrl.isEmpty && !stashApiKey.isEmpty
+        if !configured && !demoMode {
             SettingsView(mode: .setup)
         } else {
             ZStack {
