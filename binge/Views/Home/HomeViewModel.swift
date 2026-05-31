@@ -436,6 +436,27 @@ final class HomeViewModel {
         fetchGeneration &+= 1
         let gen = fetchGeneration
         repostCutoff = Self.repostCutoffDate(recentWindowDays: lookbackDays)
+
+        // Demo mode: assemble Home from the fictional library, skip the
+        // network + discovery/Reddit entirely.
+        if DemoMode.isOn {
+            let merged = DemoContent.scenes
+            libraryStorySource = merged
+            stashDBByLocalId = [:]
+            redditByLocalId = [:]
+            rebuildStories()
+            let assembled = Self.assemblePacks(
+                merged.sorted {
+                    Story.effectiveAt(for: $0) > Story.effectiveAt(for: $1)
+                },
+                recentWindowDays: lookbackDays
+            )
+            feed = assembled.scenes
+            packs = assembled.packs
+            loadState = .loaded
+            return
+        }
+
         let client = StashClient(baseURL: baseURL, apiKey: apiKey)
         let sinceIso = isoSince(daysAgo: lookbackDays)
         let sinceDate = String(sinceIso.prefix(10))

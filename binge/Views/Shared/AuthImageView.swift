@@ -49,6 +49,16 @@ struct AuthImageView: View {
     @AppStorage("binge.showcaseBlur") private var showcaseBlur = false
 
     var body: some View {
+        if url.scheme == DemoMode.scheme {
+            // Demo mode: render a procedural gradient instead of fetching
+            // — no real media, nothing to load.
+            DemoGradient(seed: url.host ?? url.absoluteString)
+        } else {
+            content
+        }
+    }
+
+    private var content: some View {
         Group {
             if let image {
                 // Color.clear claims the parent's full proposal so

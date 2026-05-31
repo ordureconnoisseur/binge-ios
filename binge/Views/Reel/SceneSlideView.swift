@@ -458,6 +458,14 @@ struct SceneSlideView: View {
 
 
     private func attachPlayer() {
+        // Demo mode: no real video — skip the player entirely so the
+        // slide shows the procedural gradient poster (AuthImageView
+        // renders demo:// as a gradient) + the overlay chrome.
+        if DemoMode.isOn {
+            player = nil
+            posterVisible = true
+            return
+        }
         // Remove any observer still bound to the OLD player before
         // swapping in the new one. Without this, the kickIfStuck
         // REBUILD path (evict + reattach) leaves a periodic time

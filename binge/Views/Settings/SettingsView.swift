@@ -38,6 +38,7 @@ struct SettingsView: View {
     @AppStorage("binge.bingeServerUrl") private var bingeServerUrl: String = ""
     @AppStorage("binge.showDebug") private var showDebug: Bool = false
     @AppStorage("binge.showcaseBlur") private var showcaseBlur: Bool = false
+    @AppStorage("binge.demoMode") private var demoMode: Bool = false
 
     // Local draft state for the connection fields — we only write
     // the @AppStorage values when a probe succeeds, so a half-typed
@@ -735,14 +736,16 @@ struct SettingsView: View {
     private var captureSection: some View {
         Section {
             Toggle("Showcase mode (blur media)", isOn: $showcaseBlur)
+            Toggle("Demo content", isOn: $demoMode)
         } header: {
             Text("Capture")
         } footer: {
             Text(
-                "Blurs every image, video, and avatar while leaving the "
-                    + "interface sharp — for screenshots, demo recordings, "
-                    + "or screen-sharing without exposing library content. "
-                    + "Display-only; nothing is uploaded or changed."
+                "Showcase mode blurs all media (covers, video, avatars) "
+                    + "while keeping the UI sharp. Demo content replaces "
+                    + "your library with fictional, SFW placeholder content "
+                    + "for App Store captures — nothing real is shown. Both "
+                    + "are display-only; nothing is uploaded or changed."
             )
         }
     }

@@ -62,6 +62,7 @@
 		73174C7B276269D711C1F386 /* ScribePrompts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7965B7392ABE5562CB5A0483 /* ScribePrompts.swift */; };
 		7467A318E0EDF763CAC62B40 /* PerformerSweep.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA215E4AC29226CC9D326430 /* PerformerSweep.swift */; };
 		759DBC7B52DC3E164BDC9096 /* Queries.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1746DCB371C7C6F87AF75246 /* Queries.swift */; };
+		7A641DD30D4AB7DF0902A47E /* DemoMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BA0C8A212E391086A8172DC /* DemoMode.swift */; };
 		7A96837317FF20FE198E73F4 /* DiscoverPerformersBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 822C6379C6806F1989B6A913 /* DiscoverPerformersBar.swift */; };
 		7EFAE8E48A82F4DDCEE9EA3B /* Scene.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7353248322B3AACA12BF986 /* Scene.swift */; };
 		804C94DCB53301DAF5019339 /* StashDBService.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED716F7B44925289EE9FEC3C /* StashDBService.swift */; };
@@ -102,6 +103,7 @@
 		F1CD09004118B62295EF9020 /* ScribeAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8A5ACFCAA4FF922145DA290 /* ScribeAPI.swift */; };
 		F1E25A2E712F2BFD95B04091 /* BingeLoadingIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC16B2E8CE37F5F761F71523 /* BingeLoadingIcon.swift */; };
 		F28AC9CDDE9BCBD3D8591739 /* InteractivePopRecognizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEF5048D1E93E047C25238D7 /* InteractivePopRecognizer.swift */; };
+		F31A7EE8A1B7DB0BD5E74437 /* DemoContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3A0E38CD679E189F8EF788B /* DemoContent.swift */; };
 		F59FE9DBEEC7EE7A257CE035 /* PlayerPool.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AF399DC6000640DB516E802 /* PlayerPool.swift */; };
 		F949ED5E6F1383B172891511 /* RedditStoryPost.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D7BF2E95CF8FE2B06BA389A /* RedditStoryPost.swift */; };
 		FC0B4B074C12004B9934CE42 /* PluginContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D758F21B5A55B7626C76B0B /* PluginContext.swift */; };
@@ -154,6 +156,7 @@
 		595681A8FD377FC835A3D71D /* BingeBottomNav.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BingeBottomNav.swift; sourceTree = "<group>"; };
 		5A08D62E3638326E295F79FC /* ReelNavigator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReelNavigator.swift; sourceTree = "<group>"; };
 		5A6B9DEF4EBE1BA4E2370947 /* PerformerProfileViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerformerProfileViewModel.swift; sourceTree = "<group>"; };
+		5BA0C8A212E391086A8172DC /* DemoMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoMode.swift; sourceTree = "<group>"; };
 		64F3F2494486A96BD7F7CEA9 /* CollectionsService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollectionsService.swift; sourceTree = "<group>"; };
 		65461192B688D541546F5CE2 /* ExploreView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExploreView.swift; sourceTree = "<group>"; };
 		66CC0327E64688C8143C0439 /* PerformerPickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerformerPickerSheet.swift; sourceTree = "<group>"; };
@@ -188,6 +191,7 @@
 		BA9B2D5EFF289A3481DAEDD9 /* StashDBModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StashDBModels.swift; sourceTree = "<group>"; };
 		C20DB99E702C13837BFDC0FF /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		C376317ECD62334950B3C0EA /* RatingTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RatingTypes.swift; sourceTree = "<group>"; };
+		C3A0E38CD679E189F8EF788B /* DemoContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoContent.swift; sourceTree = "<group>"; };
 		C41BB9ADF8CA2FBD59A7A370 /* VideoPlayerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoPlayerView.swift; sourceTree = "<group>"; };
 		C5FAD1EA81743147CCCE61CF /* HomeViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeViewModel.swift; sourceTree = "<group>"; };
 		CB02C6FD61BA09BAF58E104F /* StashDBService+Cache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "StashDBService+Cache.swift"; sourceTree = "<group>"; };
@@ -196,7 +200,7 @@
 		CE8EEE9B5D2F2F6D9F75D5A0 /* ExploreViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExploreViewModel.swift; sourceTree = "<group>"; };
 		CF1220101A0FE45FACE17BC7 /* ReelPerformerRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReelPerformerRow.swift; sourceTree = "<group>"; };
 		D301011B45CBA29466602321 /* RatingCompute.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RatingCompute.swift; sourceTree = "<group>"; };
-		D6181D0A2320A33E0AC3852E /* binge.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = binge.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		D6181D0A2320A33E0AC3852E /* binge.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = binge.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		D883BFB2C5B25A829B44E2D3 /* FollowService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FollowService.swift; sourceTree = "<group>"; };
 		D8A5ACFCAA4FF922145DA290 /* ScribeAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScribeAPI.swift; sourceTree = "<group>"; };
 		D9E6204A9EA4A757ECEAFCE6 /* HeartBurst.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeartBurst.swift; sourceTree = "<group>"; };
@@ -330,6 +334,8 @@
 				3F060D9FD3FBD56386038A0F /* BingeServerService.swift */,
 				399E25860C05E43BD5414D0C /* ChainAlgo.swift */,
 				64F3F2494486A96BD7F7CEA9 /* CollectionsService.swift */,
+				C3A0E38CD679E189F8EF788B /* DemoContent.swift */,
+				5BA0C8A212E391086A8172DC /* DemoMode.swift */,
 				E7C399790AACDDFC8430BF74 /* DiscoveryFeedBuilder.swift */,
 				D883BFB2C5B25A829B44E2D3 /* FollowService.swift */,
 				2FF203ED64C71AF21A50CA8C /* HiddenContent.swift */,
@@ -490,7 +496,7 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
-				LastUpgradeCheck = 2650;
+				LastUpgradeCheck = 1430;
 				TargetAttributes = {
 					F758745695B93DD0F7F27755 = {
 						ProvisioningStyle = Automatic;
@@ -551,6 +557,8 @@
 				EB2CA02390FFF39C9EB11985 /* CollectionDetailPage.swift in Sources */,
 				0ED1EA189BFBA10D6D56DF61 /* CollectionsService.swift in Sources */,
 				2BC4A6888409D30240619CE9 /* CriterionRatingModal.swift in Sources */,
+				F31A7EE8A1B7DB0BD5E74437 /* DemoContent.swift in Sources */,
+				7A641DD30D4AB7DF0902A47E /* DemoMode.swift in Sources */,
 				7A96837317FF20FE198E73F4 /* DiscoverPerformersBar.swift in Sources */,
 				671A494D44279AEA04877CAF /* DiscoveryFeedBuilder.swift in Sources */,
 				9A4111612B1910D2181A6ACC /* DiscoveryFeedCard.swift in Sources */,
@@ -675,7 +683,6 @@
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
@@ -689,7 +696,6 @@
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
-				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_VERSION = 5.10;
@@ -702,7 +708,6 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = PRM329646X;
 				INFOPLIST_FILE = binge/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -751,7 +756,6 @@
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
@@ -772,7 +776,6 @@
 				ONLY_ACTIVE_ARCH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
-				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.10;
@@ -785,7 +788,6 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = PRM329646X;
 				INFOPLIST_FILE = binge/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

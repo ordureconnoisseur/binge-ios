@@ -227,6 +227,11 @@ final class DiscoverPerformersBarViewModel {
     private func runFetch() async {
         loading = true
         defer { loading = false }
+        // Demo mode: no StashDB discovery — leave the bar empty.
+        if DemoMode.isOn {
+            loaded = true
+            return
+        }
         let svc = StashDBService(baseURL: baseURL, apiKey: apiKey)
         guard let box = await svc.cachedBoxConfig() else {
             print("[binge] discover bar: no stashbox configured")

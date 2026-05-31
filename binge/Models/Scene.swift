@@ -84,8 +84,9 @@ struct BingeScene: Decodable, Identifiable, Hashable {
         let favorite: Bool
         // Optional (defaults nil) so queries that don't select it still
         // decode and call sites that build a Performer manually need not
-        // supply it. Drives the silent trans-performer hide (isHidden).
-        let gender: String? = nil
+        // supply it. `var` (not `let`) so it stays in the memberwise init
+        // — a `let` with a default is excluded. Drives the trans hide.
+        var gender: String? = nil
 
         enum CodingKeys: String, CodingKey {
             case id

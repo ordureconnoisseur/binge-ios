@@ -420,6 +420,16 @@ struct ReelView: View {
     /// before.
     @MainActor
     private func fetchPage() async throws -> FindScenesResponse {
+        // Demo mode: the fictional library is the whole reel. Returning
+        // the same set each page means the dedupe stops pagination.
+        if DemoMode.isOn {
+            return FindScenesResponse(
+                findScenes: .init(
+                    count: DemoContent.scenes.count,
+                    scenes: DemoContent.scenes
+                )
+            )
+        }
         if let sf = filterNav.active {
             let sort = sf.findFilter?.sort ?? "random"
             let direction = (sf.findFilter?.direction ?? "DESC")

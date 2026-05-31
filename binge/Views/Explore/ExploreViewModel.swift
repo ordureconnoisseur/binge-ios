@@ -108,6 +108,17 @@ final class ExploreViewModel {
     }
 
     private func fetch(page: Int, replace: Bool) async {
+        // Demo mode: the fictional library is the whole Explore grid;
+        // no network, no pagination.
+        if DemoMode.isOn {
+            let fresh = DemoContent.scenes.filter { !seenIds.contains($0.id) }
+            for s in fresh { seenIds.insert(s.id) }
+            if replace { scenes = fresh } else { scenes.append(contentsOf: fresh) }
+            self.page = page
+            hasMore = false
+            loadState = .loaded
+            return
+        }
         let client = StashClient(baseURL: baseURL, apiKey: apiKey)
         var vars: [String: Any] = [
             "page": page,
