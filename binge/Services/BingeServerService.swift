@@ -82,6 +82,41 @@ enum BingeServerService {
         return trimmed.trimmingCharacters(in: .init(charactersIn: "/"))
     }
 
+    /// Whether it's safe to transmit credentials (Stash API key / Reddit
+    /// cookie) to this daemon URL. https is always fine; plain http is
+    /// allowed only to loopback / private / tailnet hosts — never a public
+    /// host, which would put the secrets on the open internet in cleartext.
+    static func isTrustedURL(_ raw: String) -> Bool {
+        guard let u = URL(string: raw), let scheme = u.scheme?.lowercased()
+        else { return false }
+        if scheme == "https" { return true }
+        if scheme != "http" { return false }
+        guard let host = u.host?.lowercased() else { return false }
+        if host == "localhost" || host == "127.0.0.1" || host == "::1" {
+            return true
+        }
+        if host.hasSuffix(".local") || host.hasSuffix(".internal")
+            || host.hasSuffix(".ts.net")
+        {
+            return true
+        }
+        // Bare hostname (no dot) is a LAN/tailnet machine name, not public.
+        if !host.contains(".") { return true }
+        // RFC1918 private + Tailscale CGNAT (100.64/10) IPv4 literals.
+        let parts = host.split(separator: ".").compactMap { Int($0) }
+        if parts.count == 4, parts.allSatisfy({ (0...255).contains($0) }) {
+            let a = parts[0]
+            let b = parts[1]
+            if a == 10 { return true }
+            if a == 172 && (16...31).contains(b) { return true }
+            if a == 192 && b == 168 { return true }
+            if a == 100 && (64...127).contains(b) { return true }  // CGNAT
+            return false
+        }
+        // Dotted public hostname → untrusted for cleartext credentials.
+        return false
+    }
+
     // MARK: - GET endpoints
 
     /// Returns nil on fetch failure (unreachable, timeout, malformed
@@ -119,6 +154,13 @@ enum BingeServerService {
     static func setConfig(
         _ payload: BingeServerConfigPayload
     ) async -> ConfigResult {
+        // Never send the Stash API key / Reddit cookie over cleartext to
+        // a remote host — https or a local/tailnet daemon only.
+        guard isTrustedURL(currentURL()) else {
+            return .failure(
+                "Won't send credentials to an untrusted binge-server URL — use https:// or a local/tailnet address."
+            )
+        }
         guard let url = URL(string: currentURL() + "/config") else {
             return .failure("Invalid binge-server URL")
         }
