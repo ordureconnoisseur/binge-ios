@@ -189,6 +189,13 @@ struct CollectionDetailPage: View {
     }
 
     private func fetch(page: Int, replace: Bool) async {
+        if DemoMode.isOn {
+            let all = DemoContent.collectionScenes(for: collection.tagName)
+            if replace { scenes = all }
+            self.page = page
+            hasMore = false
+            return
+        }
         guard let id = tagId else { return }
         let client = StashClient(baseURL: stashUrl, apiKey: stashApiKey)
         do {

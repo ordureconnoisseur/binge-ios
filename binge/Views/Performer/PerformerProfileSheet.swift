@@ -6,7 +6,7 @@ import SwiftUI
 // Structure (top to bottom):
 //   ─ Topbar: back chevron · name · ⋯
 //   ─ Hero row: 96pt avatar (with IG gradient ring when there's a
-//     story) on the left, 3-column stat block (SCENES / ORGASMS /
+//     story) on the left, 3-column stat block (SCENES / LIKES /
 //     RATING) filling the rest of the row
 //   ─ Bio block: name + ★ rate placeholder · a.k.a. aliases ·
 //     "Country · YYYY · Hair · Eyes" attrs · 3-line details ·
@@ -377,7 +377,7 @@ struct PerformerProfileSheet: View {
     private func statsRow(_ p: PerformerDetail) -> some View {
         HStack(spacing: 8) {
             stat(value: p.sceneCount, label: "Scenes")
-            stat(value: p.oCounter, label: "Orgasms")
+            stat(value: p.oCounter, label: "Likes")
             ratingStat(rating100: p.rating100)
         }
         .frame(maxWidth: .infinity)

@@ -59,6 +59,12 @@ final class CollectionsService {
     /// short-circuits.
     func load() async {
         if case .loading = loadState { return }
+        if DemoMode.isOn {
+            collections = DemoContent.collections
+            for c in collections { tagIds[c.tagName] = "demo-\(c.tagName)" }
+            loadState = .loaded
+            return
+        }
         loadState = .loading
         let client = StashClient(baseURL: baseURL, apiKey: apiKey)
         do {
@@ -184,6 +190,11 @@ final class CollectionsService {
     /// Pre-existing tags from before the parent-hierarchy change
     /// get reparented in place on first run.
     func tagId(for collection: CollectionDef) async -> String? {
+        if DemoMode.isOn {
+            let id = "demo-\(collection.tagName)"
+            tagIds[collection.tagName] = id
+            return id
+        }
         if let cached = tagIds[collection.tagName] { return cached }
         let client = StashClient(baseURL: baseURL, apiKey: apiKey)
         // Favourite ★ is owned by Advanced Rating — don't reparent.
@@ -244,6 +255,17 @@ final class CollectionsService {
         let trimmed = name.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return nil }
         let tagName = "\(trimmed)\(Self.suffix)"
+        if DemoMode.isOn {
+            let def = CollectionDef(
+                name: trimmed, tagName: tagName,
+                icon: .generic, isDefault: false
+            )
+            if !collections.contains(where: { $0.tagName == tagName }) {
+                collections.append(def)
+            }
+            tagIds[tagName] = "demo-\(tagName)"
+            return def
+        }
         let client = StashClient(baseURL: baseURL, apiKey: apiKey)
         do {
             // Find-or-create. findTagByName lookup avoids
@@ -301,6 +323,11 @@ final class CollectionsService {
     @discardableResult
     func delete(_ collection: CollectionDef) async -> Bool {
         guard !collection.isDefault else { return false }
+        if DemoMode.isOn {
+            collections.removeAll { $0.tagName == collection.tagName }
+            tagIds.removeValue(forKey: collection.tagName)
+            return true
+        }
         guard let id = await tagId(for: collection) else { return false }
         let client = StashClient(baseURL: baseURL, apiKey: apiKey)
         do {
@@ -327,6 +354,9 @@ final class CollectionsService {
         collection: CollectionDef,
         next: Bool
     ) async -> Bool? {
+        // Demo mode: pretend it worked so the sheet's checkmark flips
+        // but nothing is written to Stash.
+        if DemoMode.isOn { return next }
         guard let id = await tagId(for: collection) else { return nil }
         let has = currentTagIds.contains(id)
         if has == next { return next }
@@ -357,6 +387,10 @@ final class CollectionsService {
     /// SavedPage tile's 2×2 grid. Returns ordered screenshot
     /// paths (newest first) — empty on error / empty collection.
     func covers(for collection: CollectionDef) async -> [String] {
+        if DemoMode.isOn {
+            return DemoContent.collectionScenes(for: collection.tagName)
+                .prefix(4).compactMap { $0.paths.screenshot }
+        }
         guard let id = await tagId(for: collection) else { return [] }
         let client = StashClient(baseURL: baseURL, apiKey: apiKey)
         do {

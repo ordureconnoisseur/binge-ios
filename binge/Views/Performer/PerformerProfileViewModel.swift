@@ -222,6 +222,8 @@ final class PerformerProfileViewModel {
     func toggleFavourite() {
         let next = !favourite
         favourite = next
+        // Demo mode: flip the heart visually, write nothing to Stash.
+        if DemoMode.isOn { return }
         Task {
             let client = StashClient(baseURL: baseURL, apiKey: apiKey)
             do {

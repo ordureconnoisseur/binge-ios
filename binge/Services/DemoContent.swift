@@ -203,4 +203,46 @@ enum DemoContent {
             )
         }
     }()
+
+    /// A few fictional collections for the Saved tab — the two defaults
+    /// (Favourites / Watch Later) plus user-made ones. Each is backed by
+    /// a deterministic slice of the library via `collectionScenes`.
+    static let collections: [CollectionDef] = [
+        .init(
+            name: "Favourites",
+            tagName: CollectionsService.favouritesTagName,
+            icon: .favourite, isDefault: true
+        ),
+        .init(
+            name: "Watch Later",
+            tagName: CollectionsService.watchLaterTagName,
+            icon: .watchLater, isDefault: true
+        ),
+        .init(
+            name: "Golden Hours", tagName: "Golden Hours 📁",
+            icon: .generic, isDefault: false
+        ),
+        .init(
+            name: "City Nights", tagName: "City Nights 📁",
+            icon: .generic, isDefault: false
+        ),
+        .init(
+            name: "Studio Days", tagName: "Studio Days 📁",
+            icon: .generic, isDefault: false
+        ),
+    ]
+
+    /// Deterministic pseudo-random scene subset for a collection, keyed
+    /// by its tag name — each collection shows a different handful of the
+    /// library (~40%), stable across launches.
+    static func collectionScenes(for tagName: String) -> [BingeScene] {
+        var seed: UInt64 = 1_469_598_103_934_665_603
+        for b in tagName.utf8 {
+            seed ^= UInt64(b)
+            seed = seed &* 1_099_511_628_211
+        }
+        return scenes.enumerated().filter { idx, _ in
+            (UInt64(idx) &* 2_654_435_761 &+ seed) % 5 < 2
+        }.map(\.element)
+    }
 }
