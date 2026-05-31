@@ -50,6 +50,7 @@ struct StoryViewerSheet: View {
     /// header avatar/name to drill into that profile. Pauses
     /// the underlying player while presented.
     @State private var presentedPerformerId: String?
+    @State private var tour = TourDirector.shared
 
     /// How long a StashDB cover stays on screen before auto-
     /// advance. 5s matches the web plugin's image-story cap.
@@ -138,6 +139,7 @@ struct StoryViewerSheet: View {
         }
         .onAppear { loadScene() }
         .onDisappear { teardown() }
+        .statusBarHidden(tour.isRunning)
         .onChange(of: storyIndex) { _, _ in
             sceneIndex = 0
             loadScene()

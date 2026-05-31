@@ -133,6 +133,7 @@ struct PerformerProfileSheet: View {
                 break
             }
         }
+        .statusBarHidden(tour.isRunning)
     }
 
     @ViewBuilder

@@ -83,6 +83,9 @@ private struct MainShell: View {
                 withAnimation(.easeInOut(duration: 0.25)) { tab = t }
             }
         }
+        // Hide the status bar for the whole capture so the recording has
+        // no clock / battery / wifi. Restored when the tour ends.
+        .statusBarHidden(tour.isRunning)
         .ignoresSafeArea(.keyboard, edges: .bottom)
             // Detect installed plugins once on shell mount. The
             // PluginContext singleton is `.loaded`-gated so any
