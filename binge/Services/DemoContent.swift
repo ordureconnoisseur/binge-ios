@@ -33,15 +33,24 @@ enum DemoContent {
         id: String,
         title: String,
         perf: Perf,
+        co: [Perf] = [],
         studio: String,
         tags: [String],
         hoursAgo: Double
     ) -> BingeScene {
         let when = Date().addingTimeInterval(-hoursAgo * 3600)
+        // Caption @-mentions the co-stars (matches the web feed cards);
+        // solo scenes just get a vibe line.
+        let caption =
+            co.isEmpty
+            ? "✨ \(tags.first ?? "moment")"
+            : "with "
+                + co.map { "@\($0.name.lowercased())" }
+                .joined(separator: " ") + " ✨"
         return BingeScene(
             id: id,
             title: title,
-            details: "@\(perf.name.lowercased()) ✨ \(tags.first ?? "moment")",
+            details: caption,
             oCounter: Int(hoursAgo) % 5,
             createdAt: isoFormatter.string(from: when),
             date: dayFormatter.string(from: when),
@@ -58,13 +67,13 @@ enum DemoContent {
                 )
             ],
             sceneStreams: [],
-            performers: [
+            performers: ([perf] + co).map { p in
                 .init(
-                    id: perf.id, name: perf.name,
-                    imagePath: DemoMode.mediaURL("a-\(perf.id)"),
+                    id: p.id, name: p.name,
+                    imagePath: DemoMode.mediaURL("a-\(p.id)"),
                     favorite: false, gender: "FEMALE"
                 )
-            ],
+            },
             studio: .init(name: studio),
             tags: tags.enumerated().map {
                 .init(id: "demoTag-\($0.offset)-\(id)", name: $0.element)
@@ -76,20 +85,22 @@ enum DemoContent {
     /// card) plus singles from others (stories + feed cards + reel).
     static let scenes: [BingeScene] = {
         var out: [BingeScene] = []
-        // Pack: Aria, 8 scenes within a few hours → collapses to a pack.
+        // Pack: Aria, 8 scenes with rotating co-stars (shows the avatar
+        // stack + @co-performer caption on a pack card).
         for i in 1...8 {
+            let coStar = performers[(i % 4) + 1]  // Nova/Sable/Wren/Juno
             out.append(
                 scene(
                     id: "aria-\(i)", title: "Golden Hour \(i)",
-                    perf: performers[0], studio: studios[0],
+                    perf: performers[0], co: [coStar], studio: studios[0],
                     tags: ["Golden Hour", "Outdoor"],
                     hoursAgo: 2 + Double(i) * 0.3
                 )
             )
         }
-        out.append(scene(id: "nova-1", title: "City Lights", perf: performers[1], studio: studios[1], tags: ["City", "Portrait"], hoursAgo: 5))
-        out.append(scene(id: "sable-1", title: "Studio Session", perf: performers[2], studio: studios[2], tags: ["Studio", "Aesthetic"], hoursAgo: 9))
-        out.append(scene(id: "wren-1", title: "Candid", perf: performers[3], studio: studios[0], tags: ["Candid", "Portrait"], hoursAgo: 26))
+        out.append(scene(id: "nova-1", title: "City Lights", perf: performers[1], co: [performers[2]], studio: studios[1], tags: ["City", "Portrait"], hoursAgo: 5))
+        out.append(scene(id: "sable-1", title: "Studio Session", perf: performers[2], co: [performers[3], performers[4]], studio: studios[2], tags: ["Studio", "Aesthetic"], hoursAgo: 9))
+        out.append(scene(id: "wren-1", title: "Candid", perf: performers[3], co: [performers[0]], studio: studios[0], tags: ["Candid", "Portrait"], hoursAgo: 26))
         out.append(scene(id: "juno-1", title: "Afternoon Light", perf: performers[4], studio: studios[1], tags: ["Aesthetic", "Solo"], hoursAgo: 50))
         return out
     }()
