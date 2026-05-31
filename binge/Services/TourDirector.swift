@@ -106,19 +106,21 @@ enum TourScript: String, CaseIterable, Identifiable {
         }
     }
 
-    // Clip 1 — open the stories row and watch a couple play through.
+    // Clip 1 — open the stories row and watch a few play through.
+    // Dwell sized so the trimmed preview lands at ~17s (App Store
+    // previews must be 15-30s).
     private static let storiesSteps: [TourStep] = [
         .init(command: .switchTab(.home), delay: 1.0),
         .init(command: .homeScrollStories, delay: 2.2),
-        .init(command: .homeOpenStory(0), delay: 9.0),
+        .init(command: .homeOpenStory(0), delay: 13.5),
         .init(command: .homeDismissStory, delay: 1.2),
     ]
 
     // Clip 2 — scroll the home feed, then open a performer profile.
     private static let homeProfileSteps: [TourStep] = [
         .init(command: .switchTab(.home), delay: 1.0),
-        .init(command: .homeScrollFeed, delay: 5.0),
-        .init(command: .homeOpenPerformer, delay: 3.5),
+        .init(command: .homeScrollFeed, delay: 5.5),
+        .init(command: .homeOpenPerformer, delay: 6.5),
         .init(command: .performerFavourite, delay: 2.5),
         .init(command: .performerBack, delay: 1.2),
     ]
