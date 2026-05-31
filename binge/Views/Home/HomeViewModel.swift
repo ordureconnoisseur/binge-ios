@@ -122,12 +122,13 @@ final class HomeViewModel {
     /// scenes from the same primary performer whose created_at
     /// values are within `packWindow` of the most recent one,
     /// and whose count is >= `packMinSize`, collapses into one
-    /// PackFeedItem. A full day rather than an hour because a
-    /// large scan (hundreds of files, hashing + preview gen) can
-    /// spread scene-record creation across hours; an hour-tight
-    /// window would fragment one import into several sub-packs.
+    /// PackFeedItem. A full week rather than a day: large imports
+    /// (hundreds of files, hashing + preview gen) and staggered
+    /// scans of the same performer can spread scene-record creation
+    /// across several days; a tighter window would fragment one
+    /// logical import into several sub-packs.
     private static let packMinSize: Int = 8
-    private static let packWindow: TimeInterval = 24 * 60 * 60
+    private static let packWindow: TimeInterval = 7 * 24 * 60 * 60
 
     /// YYYY-MM-DD cutoff for "repost" classification. A scene whose
     /// scraped release date is older than this could only have reached
