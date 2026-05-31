@@ -86,4 +86,18 @@ final class PlayerUIView: UIView {
         }
         blurOverlay?.isHidden = false
     }
+
+    deinit {
+        // A property animator left paused/active throws when released
+        // ("error to release a paused or stopped property animator").
+        // Drive it to a releasable state before this view deallocs.
+        if let a = blurAnimator {
+            switch a.state {
+            case .active: a.stopAnimation(true)
+            case .stopped: a.finishAnimation(at: .current)
+            case .inactive: break
+            @unknown default: break
+            }
+        }
+    }
 }
