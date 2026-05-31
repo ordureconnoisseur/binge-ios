@@ -39,6 +39,7 @@ struct MenuPage: View {
                 .padding(.top, 8)
             }
             .background(Color.black.ignoresSafeArea())
+            .statusBarHidden(tour.isRunning)
             .navigationTitle("More")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

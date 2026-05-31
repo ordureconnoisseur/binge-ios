@@ -150,6 +150,7 @@ struct ReelView: View {
                 await loadMoreIfNeeded()
             }
         }
+        .statusBarHidden(tour.isRunning)
         // Walkthrough: advance to the next slide (animated paging scroll).
         .onChange(of: tour.tick) { _, _ in
             guard case .reelAdvance = tour.command else { return }

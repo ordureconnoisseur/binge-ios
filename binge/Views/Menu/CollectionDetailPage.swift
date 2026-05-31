@@ -19,6 +19,7 @@ struct CollectionDetailPage: View {
     @State private var loadingMore: Bool = false
     @State private var error: String?
     @State private var tagId: String?
+    @State private var tour = TourDirector.shared
 
     private let pageSize: Int = 24
 
@@ -46,6 +47,7 @@ struct CollectionDetailPage: View {
             }
         }
         .background(Color.black.ignoresSafeArea())
+        .statusBarHidden(tour.isRunning)
         .navigationTitle(collection.name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(Color.black, for: .navigationBar)

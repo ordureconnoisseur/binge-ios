@@ -476,6 +476,7 @@ struct HomeView: View {
             .scrollPosition(
                 id: $activeFeedEntryId, anchor: .center
             )
+            .statusBarHidden(tour.isRunning)
             .background(Color.black.ignoresSafeArea())
             .refreshable {
                 await vm?.refresh()

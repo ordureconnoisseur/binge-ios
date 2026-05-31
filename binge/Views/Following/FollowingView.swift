@@ -53,6 +53,7 @@ struct FollowingView: View {
                 }
             }
             .background(Color.black.ignoresSafeArea())
+            .statusBarHidden(tour.isRunning)
             // Drag-down to dismiss the search keyboard — feels
             // natural and avoids needing an explicit "Done" button.
             .scrollDismissesKeyboard(.interactively)

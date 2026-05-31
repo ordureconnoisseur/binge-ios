@@ -87,6 +87,7 @@ struct ExploreView: View {
                 }
             }
             .background(Color.black.ignoresSafeArea())
+            .statusBarHidden(tour.isRunning)
             .scrollDismissesKeyboard(.interactively)
             .refreshable {
                 await vm?.load()

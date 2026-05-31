@@ -13,6 +13,7 @@ struct SavedPage: View {
     @AppStorage("binge.stashUrl") private var stashUrl: String = ""
     private var stashApiKey: String { KeychainStore.shared.stashApiKey }
 
+    @State private var tour = TourDirector.shared
     @State private var service: CollectionsService?
     @State private var covers: [String: [String]] = [:]  // tagName → up to 4 URLs
     @State private var creating: Bool = false
@@ -32,6 +33,7 @@ struct SavedPage: View {
             .padding(.bottom, 30)
         }
         .background(Color.black.ignoresSafeArea())
+        .statusBarHidden(tour.isRunning)
         .navigationTitle("Saved")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
