@@ -78,7 +78,7 @@ struct SaveToCollectionSheet: View {
         }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
-        .sensoryFeedback(.success, trigger: saveHaptic)
+        .bingeHaptic(.success, trigger: saveHaptic)
         .task {
             if service == nil {
                 service = CollectionsService(

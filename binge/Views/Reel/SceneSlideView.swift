@@ -357,7 +357,7 @@ struct SceneSlideView: View {
             }
         }
         // Haptic on like — the signature double-tap feel.
-        .sensoryFeedback(.impact(weight: .medium), trigger: likeHaptic)
+        .bingeHaptic(.impact(weight: .medium), trigger: likeHaptic)
         .sheet(isPresented: $detailsOpen) {
             SceneDetailsSheet(scene: scene)
         }

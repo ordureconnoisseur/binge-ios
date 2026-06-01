@@ -146,7 +146,7 @@ struct PerformerProfileSheet: View {
             }
         }
         .statusBarHidden(tour.isRunning)
-        .sensoryFeedback(.impact(weight: .light), trigger: favHaptic)
+        .bingeHaptic(.impact(weight: .light), trigger: favHaptic)
     }
 
     @ViewBuilder

@@ -99,6 +99,7 @@
 		EB598A15E7AA3A4C2CA0EC95 /* PerformerDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0770A57D38CE72F26960109 /* PerformerDetail.swift */; };
 		EB9C6D31EF6187AD4C99A09D /* ScribeModal.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE6BB1FC0B9F11C6260B8656 /* ScribeModal.swift */; };
 		EF06B69ECAFA0D2B1A032582 /* bingeApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 387388D999C703FF553C4AE3 /* bingeApp.swift */; };
+		EF10829CB3CEDC0AC0CC0998 /* Haptics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 358C815AFE073F1C2C27414C /* Haptics.swift */; };
 		EF97DB2051414C090F27F16F /* PackDetailSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD04963BE6D7F470CDF0D7C6 /* PackDetailSheet.swift */; };
 		F1B8B9F51D80FC70230EBD76 /* RatingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2732B3AA7DCB477B2B3AC90F /* RatingService.swift */; };
 		F1CD09004118B62295EF9020 /* ScribeAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8A5ACFCAA4FF922145DA290 /* ScribeAPI.swift */; };
@@ -137,6 +138,7 @@
 		2F8FB6B37C800E5E55CA985E /* ScribeContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScribeContext.swift; sourceTree = "<group>"; };
 		2FF203ED64C71AF21A50CA8C /* HiddenContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HiddenContent.swift; sourceTree = "<group>"; };
 		350EF737A25208A650424C00 /* SceneFeedCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneFeedCard.swift; sourceTree = "<group>"; };
+		358C815AFE073F1C2C27414C /* Haptics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Haptics.swift; sourceTree = "<group>"; };
 		387388D999C703FF553C4AE3 /* bingeApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = bingeApp.swift; sourceTree = "<group>"; };
 		399E25860C05E43BD5414D0C /* ChainAlgo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChainAlgo.swift; sourceTree = "<group>"; };
 		3AF399DC6000640DB516E802 /* PlayerPool.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerPool.swift; sourceTree = "<group>"; };
@@ -202,7 +204,7 @@
 		CE8EEE9B5D2F2F6D9F75D5A0 /* ExploreViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExploreViewModel.swift; sourceTree = "<group>"; };
 		CF1220101A0FE45FACE17BC7 /* ReelPerformerRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReelPerformerRow.swift; sourceTree = "<group>"; };
 		D301011B45CBA29466602321 /* RatingCompute.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RatingCompute.swift; sourceTree = "<group>"; };
-		D6181D0A2320A33E0AC3852E /* binge.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = binge.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		D6181D0A2320A33E0AC3852E /* binge.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = binge.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		D883BFB2C5B25A829B44E2D3 /* FollowService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FollowService.swift; sourceTree = "<group>"; };
 		D8A5ACFCAA4FF922145DA290 /* ScribeAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScribeAPI.swift; sourceTree = "<group>"; };
 		D9E6204A9EA4A757ECEAFCE6 /* HeartBurst.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeartBurst.swift; sourceTree = "<group>"; };
@@ -371,6 +373,7 @@
 				F5D5249A7F4BEDA0DF03BE0A /* BingeRoute.swift */,
 				700F3C35D7677C62B83B0660 /* BingeRouteDestinations.swift */,
 				992D9083C992312B123859EA /* BingeStartupSplash.swift */,
+				358C815AFE073F1C2C27414C /* Haptics.swift */,
 				FEF5048D1E93E047C25238D7 /* InteractivePopRecognizer.swift */,
 				2E439C9802FC7D9B452247D8 /* SceneCardMenu.swift */,
 				575FE862FD876E5345323D40 /* SwipeRightToDismiss.swift */,
@@ -572,6 +575,7 @@
 				FD696B51B4FD1F436B889149 /* FollowService.swift in Sources */,
 				642B71054AAFC4FCD6120EFB /* FollowingView.swift in Sources */,
 				227AB34BD2FE5E7DCBF549AF /* FollowingViewModel.swift in Sources */,
+				EF10829CB3CEDC0AC0CC0998 /* Haptics.swift in Sources */,
 				1FB2ACFD8959673D55643887 /* HeartBurst.swift in Sources */,
 				80FEC4373469B26DBD2FC23B /* HiddenContent.swift in Sources */,
 				B62D0FA19CC4B912DEBDB1E2 /* HomeView.swift in Sources */,
@@ -712,7 +716,6 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = PRM329646X;
 				INFOPLIST_FILE = binge/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -793,7 +796,6 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = PRM329646X;
 				INFOPLIST_FILE = binge/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

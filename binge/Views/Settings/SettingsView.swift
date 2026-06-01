@@ -43,6 +43,7 @@ struct SettingsView: View {
     @AppStorage("binge.showDebug") private var showDebug: Bool = false
     @AppStorage("binge.showcaseBlur") private var showcaseBlur: Bool = false
     @AppStorage("binge.demoMode") private var demoMode: Bool = false
+    @AppStorage("binge.hapticsEnabled") private var hapticsEnabled: Bool = true
 
     // Local draft state for the connection fields — we only write
     // the @AppStorage values when a probe succeeds, so a half-typed
@@ -690,12 +691,15 @@ struct SettingsView: View {
     private var reelSection: some View {
         Section {
             Toggle("Auto-scroll", isOn: $autoScroll)
+            Toggle("Haptics", isOn: $hapticsEnabled)
         } header: {
             Text("Reel")
         } footer: {
             Text(
-                "Advance to the next scene automatically when the "
-                    + "current one finishes."
+                "Auto-scroll advances to the next scene automatically "
+                    + "when the current one finishes. Haptics add subtle "
+                    + "taps on like, scene changes, favourite, save, and "
+                    + "rating."
             )
         }
     }

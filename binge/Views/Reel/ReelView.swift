@@ -152,7 +152,7 @@ struct ReelView: View {
         }
         .statusBarHidden(tour.isRunning)
         // Subtle tick as each slide snaps into place (TikTok-style).
-        .sensoryFeedback(.selection, trigger: activeId)
+        .bingeHaptic(.selection, trigger: activeId)
         // Walkthrough: advance to the next slide (animated paging scroll).
         .onChange(of: tour.tick) { _, _ in
             guard case .reelAdvance = tour.command else { return }

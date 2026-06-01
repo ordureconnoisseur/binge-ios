@@ -82,7 +82,7 @@ struct CriterionRatingModal: View {
             .toolbarColorScheme(.dark, for: .navigationBar)
         }
         .task { await load() }
-        .sensoryFeedback(.selection, trigger: scoreHaptic)
+        .bingeHaptic(.selection, trigger: scoreHaptic)
     }
 
     @ViewBuilder
