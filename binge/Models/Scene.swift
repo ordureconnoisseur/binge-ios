@@ -147,6 +147,25 @@ struct BingeScene: Decodable, Identifiable, Hashable {
     //   - webm:   WebM transcode. AVPlayer can't play it on
     //             iOS — exposed for parity with the web client.
     func streamURL(base: String) -> URL? {
+        // MKV is a CONTAINER AVFoundation can't demux at all — even an
+        // H.264-in-MKV file fails direct playback. So it overrides both
+        // the codec-based routing AND the user's stream-type preference
+        // (incl. "direct"): always hand AVPlayer a transcoded stream.
+        if isMKV {
+            if let hls = firstHLSStreamURL() {
+                return logged(absoluteURL(hls, base: base))
+            }
+            if let url = preferredStream(
+                ladder: ["MP4 HD (720p)", "MP4 Standard (480p)", "MP4"],
+                mime: "video/mp4"
+            ) {
+                return logged(absoluteURL(url, base: base))
+            }
+            // No transcode stream advertised — direct is the only option
+            // left (will likely fail, but better than nil).
+            return logged(directStreamURL(base: base))
+        }
+
         let preference = UserDefaults.standard.string(
             forKey: "binge.transcodeType"
         ) ?? "auto"
@@ -246,6 +265,16 @@ struct BingeScene: Decodable, Identifiable, Hashable {
             }
         }
         return nil
+    }
+
+    /// True when the source container is Matroska (.mkv). AVFoundation
+    /// can't open the MKV container regardless of the codecs inside, so
+    /// these always need a transcoded stream — see `streamURL`.
+    var isMKV: Bool {
+        guard let path = files.first?.path?.lowercased() else {
+            return false
+        }
+        return path.hasSuffix(".mkv")
     }
 
     /// True when the source file's codec is HEVC / H.265.

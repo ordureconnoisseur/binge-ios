@@ -96,6 +96,7 @@ struct SceneDetailsSheet: View {
                 .foregroundStyle(.white.opacity(0.55))
 
             VStack(alignment: .leading, spacing: 8) {
+                playbackNoteView
                 if let path = f.path, !path.isEmpty {
                     techRow(label: "Path", value: path, monospace: true)
                 }
@@ -122,6 +123,41 @@ struct SceneDetailsSheet: View {
                 }
             }
         }
+    }
+
+    /// Whether the scene plays directly or via a Stash transcode, and
+    /// why. MKV (a container AVPlayer can't open) always transcodes;
+    /// HEVC / VP9 / AV1 transcode by codec. H.264 streams direct.
+    private var playbackNote: (text: String, transcoded: Bool) {
+        if scene.isMKV {
+            return ("Transcoded · MKV container", true)
+        }
+        if scene.needsTranscode {
+            let codec = (scene.files.first?.videoCodec ?? "non-H.264")
+                .uppercased()
+            return ("Transcoded · \(codec)", true)
+        }
+        return ("Direct stream", false)
+    }
+
+    @ViewBuilder
+    private var playbackNoteView: some View {
+        let note = playbackNote
+        HStack(spacing: 6) {
+            Image(
+                systemName: note.transcoded
+                    ? "arrow.triangle.2.circlepath" : "bolt.fill"
+            )
+            .font(.system(size: 11, weight: .semibold))
+            Text(note.text)
+                .font(.system(size: 12, weight: .semibold))
+        }
+        .foregroundStyle(
+            note.transcoded
+                ? Color.orange.opacity(0.9)
+                : Color.green.opacity(0.85)
+        )
+        .padding(.bottom, 2)
     }
 
     @ViewBuilder
