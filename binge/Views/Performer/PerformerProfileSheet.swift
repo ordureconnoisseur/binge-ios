@@ -38,6 +38,7 @@ struct PerformerProfileSheet: View {
 
     @State private var vm: PerformerProfileViewModel?
     @State private var tour = TourDirector.shared
+    @State private var favHaptic = 0
     @State private var tab: ProfileTab = .scenes
     @State private var storyOpen: Bool = false
     /// Inner NavigationStack path for cover-mode presentation.
@@ -145,6 +146,7 @@ struct PerformerProfileSheet: View {
             }
         }
         .statusBarHidden(tour.isRunning)
+        .sensoryFeedback(.impact(weight: .light), trigger: favHaptic)
     }
 
     @ViewBuilder
@@ -552,6 +554,7 @@ struct PerformerProfileSheet: View {
     private func favouriteButton(active: Bool) -> some View {
         Button {
             vm?.toggleFavourite()
+            favHaptic += 1
         } label: {
             Text(active ? "Favourited" : "Favourite")
                 .font(.system(size: 15, weight: .semibold))

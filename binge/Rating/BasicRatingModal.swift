@@ -25,6 +25,7 @@ struct BasicRatingModal: View {
     @State private var loading: Bool = true
     @State private var busy: Bool = false
     @State private var error: String?
+    @State private var scoreHaptic = 0
 
     var body: some View {
         NavigationStack {
@@ -60,6 +61,7 @@ struct BasicRatingModal: View {
             .toolbarColorScheme(.dark, for: .navigationBar)
         }
         .task { await load() }
+        .sensoryFeedback(.selection, trigger: scoreHaptic)
     }
 
     // MARK: - Preview
@@ -158,6 +160,7 @@ struct BasicRatingModal: View {
     }
 
     private func setStar(_ star: Int) async {
+        scoreHaptic += 1
         let currentStar = (rating100.map { ($0 + 10) / 20 }) ?? 0
         // Tap on the current top star clears; tap elsewhere sets.
         let newRating: Int? = (currentStar == star) ? nil : star * 20

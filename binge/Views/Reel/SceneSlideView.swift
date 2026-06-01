@@ -62,6 +62,8 @@ struct SceneSlideView: View {
     // completes). Multiple concurrent bursts allowed — spam-tapping
     // the heart stacks them.
     @State private var burstIds: [UUID] = []
+    // Bumped on like → drives the haptic tap (see .sensoryFeedback).
+    @State private var likeHaptic = 0
     @State private var presentedPerformerId: String?
     @State private var moreOpen: Bool = false
     @State private var saveOpen: Bool = false
@@ -354,6 +356,8 @@ struct SceneSlideView: View {
                 break
             }
         }
+        // Haptic on like — the signature double-tap feel.
+        .sensoryFeedback(.impact(weight: .medium), trigger: likeHaptic)
         .sheet(isPresented: $detailsOpen) {
             SceneDetailsSheet(scene: scene)
         }
@@ -667,6 +671,7 @@ struct SceneSlideView: View {
         // burstIds doesn't grow unbounded across the session.
         let id = UUID()
         burstIds.append(id)
+        likeHaptic += 1
         Task {
             try? await Task.sleep(for: .seconds(2.8))
             burstIds.removeAll { $0 == id }

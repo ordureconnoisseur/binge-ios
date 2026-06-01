@@ -16,6 +16,7 @@ struct SaveToCollectionSheet: View {
     private var stashApiKey: String { KeychainStore.shared.stashApiKey }
 
     @State private var tour = TourDirector.shared
+    @State private var saveHaptic = 0
     @State private var service: CollectionsService?
     /// Current per-collection membership for THIS scene. Keyed by
     /// tagName so we don't re-check tag-id resolution every render.
@@ -77,6 +78,7 @@ struct SaveToCollectionSheet: View {
         }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
+        .sensoryFeedback(.success, trigger: saveHaptic)
         .task {
             if service == nil {
                 service = CollectionsService(
@@ -191,6 +193,7 @@ struct SaveToCollectionSheet: View {
     private func toggle(_ coll: CollectionDef, currentlyOn: Bool) async {
         guard let service else { return }
         let next = !currentlyOn
+        if next { saveHaptic += 1 }
         // Optimistic flip.
         memberships[coll.tagName] = next
         pending.insert(coll.tagName)

@@ -48,6 +48,7 @@ struct CriterionRatingModal: View {
     @State private var state: LoadState = .loading
     @State private var pendingCriterionId: String?
     @State private var missingTagWarning: String?
+    @State private var scoreHaptic = 0
 
     enum LoadState {
         case loading
@@ -81,6 +82,7 @@ struct CriterionRatingModal: View {
             .toolbarColorScheme(.dark, for: .navigationBar)
         }
         .task { await load() }
+        .sensoryFeedback(.selection, trigger: scoreHaptic)
     }
 
     @ViewBuilder
@@ -339,6 +341,7 @@ struct CriterionRatingModal: View {
     private func setScore(
         criterion: RatingCriterion, score: Int?
     ) async {
+        scoreHaptic += 1
         guard case .ready(
             let config, var tags, var ratings,
             let oldRating100, let precision
