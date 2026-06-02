@@ -29,13 +29,12 @@ Paged vertical swipe through scenes — double-tap to like, hold to pause, swipe
 
 ### Home
 
-<img align="right" width="250" src="screenshots/home.png" alt="Home — stories row over a scene feed with a pack card" />
+<img align="right" width="225" src="screenshots/story.png" alt="Story viewer — performer carousel + progress strip" />
+<img align="right" width="225" src="screenshots/home.png" alt="Home — stories row over a scene feed with a pack card" />
 
 An IG-style **stories row** of performers with fresh content (library scenes within your lookback, plus StashDB new releases and Reddit posts when binge-server is reachable) sits over a **scene feed** of cards: preview video, performer header, title + expandable description + tags. Bulk imports of one performer collapse into a single **pack card** with a mosaic, so one prolific performer doesn't flood the feed. Tap a bubble → the story viewer auto-plays and lets you flick across performers.
 
 <br clear="all" />
-
-<p align="center"><img width="250" src="screenshots/story.png" alt="Story viewer — performer carousel + progress strip" /></p>
 
 ### Explore
 
@@ -47,13 +46,12 @@ A search bar, recency-scored tag chips from your interaction history, and a 3-co
 
 ### Following · Saved
 
-<img align="right" width="250" src="screenshots/following.png" alt="Following — favourites + all performers" />
+<img align="right" width="225" src="screenshots/saved.png" alt="Saved — collections with cover mosaics" />
+<img align="right" width="225" src="screenshots/following.png" alt="Following — favourites + all performers" />
 
 **Following** splits every performer in your library into Favourites + All, with name / scene-count sorting and search. **Saved** holds your collections (Favourite ★, Watch Later, and any custom ones); each opens a scene grid, and the reel's bookmark drops a scene into any of them.
 
 <br clear="all" />
-
-<p align="center"><img width="250" src="screenshots/saved.png" alt="Saved — collections with cover mosaics" /></p>
 
 ### Performer profile
 
