@@ -15,23 +15,53 @@ Native iOS client for [Stash](https://github.com/stashapp/stash). Sister project
 
 ---
 
-## Screenshots
+## What it does
 
-> Example captures — fictional names and placeholder visuals, not real library content.
+> Screenshots are **demo-mode** captures — fictional names + placeholder visuals, nothing real. The StashDB discovery surfaces (Follow/Add, Discover row) need live data and aren't pictured.
 
-<p align="center">
-  <img src="screenshots/home.png" width="240" alt="Home — stories row over a scene feed with a collapsed pack card" />
-  <img src="screenshots/reel.png" width="240" alt="Vertical reel with the action stack" />
-  <img src="screenshots/profile.png" width="240" alt="Performer profile — stats, links, scene grid" />
-</p>
-<p align="center">
-  <img src="screenshots/explore.png" width="240" alt="Explore — tag chips over a scene grid" />
-  <img src="screenshots/following.png" width="240" alt="Following — favourites + all performers" />
-  <img src="screenshots/saved.png" width="240" alt="Saved — collection grid" />
-  <img src="screenshots/story.png" width="240" alt="Story viewer" />
-</p>
+### Reel · For You
 
-<!-- A reel-in-motion hero clip will replace the static reel shot once captured. -->
+<img align="right" width="250" src="screenshots/reel.png" alt="Vertical reel with the action stack" />
+
+Paged vertical swipe through scenes — double-tap to like, hold to pause, swipe to advance. The right-side action stack carries heart, rate, scribe, save, and ⋯; filter chips at the top constrain the feed by performer / tag / studio and persist as you scroll. Subtle haptics fire on like, page-snap, favourite, save, and rating.
+
+<br clear="all" />
+
+### Home
+
+<img align="right" width="250" src="screenshots/home.png" alt="Home — stories row over a scene feed with a pack card" />
+
+An IG-style **stories row** of performers with fresh content (library scenes within your lookback, plus StashDB new releases and Reddit posts when binge-server is reachable) sits over a **scene feed** of cards: preview video, performer header, title + expandable description + tags. Bulk imports of one performer collapse into a single **pack card** with a mosaic, so one prolific performer doesn't flood the feed. Tap a bubble → the story viewer auto-plays and lets you flick across performers.
+
+<br clear="all" />
+
+<p align="center"><img width="250" src="screenshots/story.png" alt="Story viewer — performer carousel + progress strip" /></p>
+
+### Explore
+
+<img align="right" width="250" src="screenshots/explore.png" alt="Explore — tag chips over a scene grid" />
+
+A search bar, recency-scored tag chips from your interaction history, and a 3-column scene grid. A **Discover Performers** row scrolls StashDB's recent-activity performers (filtered to your enabled genders). Tap a chip to refilter, a tile to drop into a chained reel, or a performer to open their profile.
+
+<br clear="all" />
+
+### Following · Saved
+
+<img align="right" width="250" src="screenshots/following.png" alt="Following — favourites + all performers" />
+
+**Following** splits every performer in your library into Favourites + All, with name / scene-count sorting and search. **Saved** holds your collections (Favourite ★, Watch Later, and any custom ones); each opens a scene grid, and the reel's bookmark drops a scene into any of them.
+
+<br clear="all" />
+
+<p align="center"><img width="250" src="screenshots/saved.png" alt="Saved — collections with cover mosaics" /></p>
+
+### Performer profile
+
+<img align="right" width="250" src="screenshots/profile.png" alt="Performer profile — stats, links, scene grid" />
+
+A full-screen profile: avatar (with the pink→purple→blue story ring on new content), bio, stats, social-link row, a Favourite/Follow action, and Scenes + Photos tabs. Library and StashDB-only variants share the layout; the latter swaps in a Follow action and a scrape sheet.
+
+<br clear="all" />
 
 ---
 
