@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- Runs deploy.sh inside the logged-in GUI session, where the login
+       keychain is unlocked. SSH sessions get a locked keychain and
+       codesign fails with errSecInternalComponent, so the build server
+       triggers this agent via launchctl kickstart instead of running
+       xcodebuild directly over SSH. Install once:
+         cp scripts/com.binge.deploy.plist ~/Library/LaunchAgents/
+         launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.binge.deploy.plist -->
+  <key>Label</key><string>com.binge.deploy</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-c</string>
+    <string>mkdir -p "$HOME/Projects/binge-ios/build"; exec > "$HOME/Projects/binge-ios/build/deploy.log" 2>&1; "$HOME/Projects/binge-ios/scripts/deploy.sh"; echo "DEPLOY_EXIT:$?"</string>
+  </array>
+  <key>RunAtLoad</key><false/>
+</dict>
+</plist>
