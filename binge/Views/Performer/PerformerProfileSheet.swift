@@ -899,39 +899,41 @@ struct PerformerProfileSheet: View {
             HStack(spacing: 3) {
                 Image(systemName: badge.icon)
                     .font(.system(size: 9, weight: .bold))
+                    // o_counter reads as a "like" — pink heart to match.
+                    .foregroundStyle(badge.like ? Color.bingeLike : .white)
                 Text(badge.text)
                     .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.white)
             }
-            .foregroundStyle(.white)
             .shadow(color: .black.opacity(0.7), radius: 2)
             .padding(.leading, 7)
             .padding(.bottom, 6)
         }
     }
 
-    /// Resolve (SF Symbol, label) for the active sort's stat.
+    /// Resolve (SF Symbol, label, isLike) for the active sort's stat.
     private func sortStat(
         for scene: BingeScene
-    ) -> (icon: String, text: String)? {
+    ) -> (icon: String, text: String, like: Bool)? {
         switch vm?.sort ?? .recent {
         case .views:
             guard let v = scene.playCount, v > 0 else { return nil }
-            return ("play.fill", Self.compactCount(v))
+            return ("eye.fill", Self.compactCount(v), false)
         case .orgasms:
             guard let o = scene.oCounter, o > 0 else { return nil }
-            return ("drop.fill", Self.compactCount(o))
+            return ("heart.fill", Self.compactCount(o), true)
         case .rating:
             guard let r = scene.rating100 else { return nil }
-            return ("star.fill", formatRating(r))
+            return ("star.fill", formatRating(r), false)
         case .added:
             guard let t = Self.compactMonthYear(scene.createdAt)
             else { return nil }
-            return ("calendar", t)
+            return ("calendar", t, false)
         case .recent:
             guard let t = Self.compactMonthYear(
                 Story.effectiveAt(for: scene)
             ) else { return nil }
-            return ("calendar", t)
+            return ("calendar", t, false)
         }
     }
 
