@@ -621,12 +621,11 @@ struct PerformerProfileSheet: View {
         let tiles = mergedSceneTiles()
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .center, spacing: 10) {
-                Text("SCENES (\(tiles.count))")
-                    .font(.system(size: 11, weight: .bold))
-                    .tracking(0.7)
-                    .foregroundStyle(.white.opacity(0.55))
-                Spacer()
+                // The sort menu doubles as the section header — its
+                // label ("RECENT") makes a separate "SCENES (n)" title
+                // redundant.
                 sortMenu
+                Spacer()
                 stashDBToggle
             }
             .padding(.horizontal, 22)
@@ -704,15 +703,15 @@ struct PerformerProfileSheet: View {
                 }
             }
         } label: {
-            HStack(spacing: 3) {
-                Text((vm?.sort ?? .recent).label)
-                    .font(.system(size: 11, weight: .semibold))
+            HStack(spacing: 4) {
+                Text((vm?.sort ?? .recent).label.uppercased())
+                    .font(.system(size: 11, weight: .bold))
+                    .tracking(0.7)
                 Image(systemName: "chevron.down")
                     .font(.system(size: 8, weight: .bold))
                     .opacity(0.7)
             }
             .foregroundStyle(.white.opacity(0.6))
-            .padding(.horizontal, 4)
             .padding(.vertical, 5)
             .contentShape(Rectangle())
         }
