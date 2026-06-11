@@ -893,12 +893,18 @@ struct PerformerProfileSheet: View {
 
     /// Per-tile stat badge for the active sort. Renders nothing when
     /// the relevant value is missing (unrated / no views / no date).
+    /// Badge glyph source — SF Symbol or a vector asset-catalog image
+    /// (the views eye uses the same SVG as the web plugin).
+    private enum BadgeIcon {
+        case symbol(String)
+        case asset(String)
+    }
+
     @ViewBuilder
     private func sortStatBadge(for scene: BingeScene) -> some View {
         if let badge = sortStat(for: scene) {
             HStack(spacing: 3) {
-                Image(systemName: badge.icon)
-                    .font(.system(size: 9, weight: .bold))
+                badgeGlyph(badge.icon)
                     // o_counter reads as a "like" — pink heart to match.
                     .foregroundStyle(badge.like ? Color.bingeLike : .white)
                 Text(badge.text)
@@ -911,29 +917,44 @@ struct PerformerProfileSheet: View {
         }
     }
 
-    /// Resolve (SF Symbol, label, isLike) for the active sort's stat.
+    @ViewBuilder
+    private func badgeGlyph(_ icon: BadgeIcon) -> some View {
+        switch icon {
+        case .symbol(let name):
+            Image(systemName: name)
+                .font(.system(size: 9, weight: .bold))
+        case .asset(let name):
+            Image(name)
+                .renderingMode(.template)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 12, height: 12)
+        }
+    }
+
+    /// Resolve (glyph, label, isLike) for the active sort's stat.
     private func sortStat(
         for scene: BingeScene
-    ) -> (icon: String, text: String, like: Bool)? {
+    ) -> (icon: BadgeIcon, text: String, like: Bool)? {
         switch vm?.sort ?? .recent {
         case .views:
             guard let v = scene.playCount, v > 0 else { return nil }
-            return ("eye.fill", Self.compactCount(v), false)
+            return (.asset("ViewIcon"), Self.compactCount(v), false)
         case .orgasms:
             guard let o = scene.oCounter, o > 0 else { return nil }
-            return ("heart.fill", Self.compactCount(o), true)
+            return (.symbol("heart.fill"), Self.compactCount(o), true)
         case .rating:
             guard let r = scene.rating100 else { return nil }
-            return ("star.fill", formatRating(r), false)
+            return (.symbol("star.fill"), formatRating(r), false)
         case .added:
             guard let t = Self.compactMonthYear(scene.createdAt)
             else { return nil }
-            return ("calendar", t, false)
+            return (.symbol("calendar"), t, false)
         case .recent:
             guard let t = Self.compactMonthYear(
                 Story.effectiveAt(for: scene)
             ) else { return nil }
-            return ("calendar", t, false)
+            return (.symbol("calendar"), t, false)
         }
     }
 
