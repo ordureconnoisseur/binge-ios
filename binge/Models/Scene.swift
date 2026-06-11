@@ -8,6 +8,11 @@ struct BingeScene: Decodable, Identifiable, Hashable {
     let title: String?
     let details: String?
     let oCounter: Int?
+    // Play count + rating100 — optional so queries that don't select
+    // them (the reel feed, etc.) still decode. The performer grid
+    // selects them to drive the per-tile sort-stat badge.
+    let playCount: Int?
+    let rating100: Int?
     // Home-tab sort keys. Both are optional so the existing
     // findScenesRandom query — which doesn't select these fields —
     // still decodes cleanly. findRecentScenes / findScenesByDate
@@ -111,6 +116,8 @@ struct BingeScene: Decodable, Identifiable, Hashable {
         case title
         case details
         case oCounter = "o_counter"
+        case playCount = "play_count"
+        case rating100
         case createdAt = "created_at"
         case date
         case paths

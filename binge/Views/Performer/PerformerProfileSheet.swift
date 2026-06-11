@@ -870,6 +870,13 @@ struct PerformerProfileSheet: View {
             .aspectRatio(9.0 / 16.0, contentMode: .fit)
             .clipped()
             .clipShape(RoundedRectangle(cornerRadius: 8))
+            // Persistent corner badge (TikTok-style) for the stat that
+            // matches the active sort. allowsHitTesting(false) so it
+            // never steals the tile's navigation tap.
+            .overlay(alignment: .bottomLeading) {
+                sortStatBadge(for: scene)
+                    .allowsHitTesting(false)
+            }
             // Without contentShape, NavigationLink's tap target
             // collapses to the painted image's bounds — the
             // ZStack's `Color(white: 0.08)` fill behind the
@@ -882,6 +889,84 @@ struct PerformerProfileSheet: View {
             .contentShape(RoundedRectangle(cornerRadius: 8))
         }
         .buttonStyle(.plain)
+    }
+
+    /// Per-tile stat badge for the active sort. Renders nothing when
+    /// the relevant value is missing (unrated / no views / no date).
+    @ViewBuilder
+    private func sortStatBadge(for scene: BingeScene) -> some View {
+        if let badge = sortStat(for: scene) {
+            HStack(spacing: 3) {
+                Image(systemName: badge.icon)
+                    .font(.system(size: 9, weight: .bold))
+                Text(badge.text)
+                    .font(.system(size: 11, weight: .semibold))
+            }
+            .foregroundStyle(.white)
+            .shadow(color: .black.opacity(0.7), radius: 2)
+            .padding(.leading, 7)
+            .padding(.bottom, 6)
+        }
+    }
+
+    /// Resolve (SF Symbol, label) for the active sort's stat.
+    private func sortStat(
+        for scene: BingeScene
+    ) -> (icon: String, text: String)? {
+        switch vm?.sort ?? .recent {
+        case .views:
+            guard let v = scene.playCount, v > 0 else { return nil }
+            return ("play.fill", Self.compactCount(v))
+        case .orgasms:
+            guard let o = scene.oCounter, o > 0 else { return nil }
+            return ("drop.fill", Self.compactCount(o))
+        case .rating:
+            guard let r = scene.rating100 else { return nil }
+            return ("star.fill", formatRating(r))
+        case .added:
+            guard let t = Self.compactMonthYear(scene.createdAt)
+            else { return nil }
+            return ("calendar", t)
+        case .recent:
+            guard let t = Self.compactMonthYear(
+                Story.effectiveAt(for: scene)
+            ) else { return nil }
+            return ("calendar", t)
+        }
+    }
+
+    /// k/M-abbreviated count: 999 → "999", 23_400_000 → "23.4M".
+    static func compactCount(_ n: Int) -> String {
+        if n < 1000 { return "\(n)" }
+        if n < 10_000 {
+            return String(format: "%.1f", Double(n) / 1000)
+                .replacingOccurrences(of: ".0", with: "") + "k"
+        }
+        if n < 1_000_000 {
+            return "\(Int((Double(n) / 1000).rounded()))k"
+        }
+        if n < 10_000_000 {
+            return String(format: "%.1f", Double(n) / 1_000_000)
+                .replacingOccurrences(of: ".0", with: "") + "M"
+        }
+        return "\(Int((Double(n) / 1_000_000).rounded()))M"
+    }
+
+    /// "Jun 2026" from a "YYYY-MM-DD" or ISO string; falls back to the
+    /// bare year, then nil when unparseable/empty.
+    static func compactMonthYear(_ raw: String?) -> String? {
+        guard let raw, !raw.isEmpty else { return nil }
+        let parts = raw.prefix(7).split(separator: "-")
+        guard parts.count == 2,
+              let m = Int(parts[1]), (1...12).contains(m) else {
+            let y = String(raw.prefix(4))
+            return y.count == 4 ? y : nil
+        }
+        let months = [
+            "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+            "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+        ]
+        return "\(months[m - 1]) \(parts[0])"
     }
 
     /// StashDB tile — cover image with a pink "STASHDB" badge,

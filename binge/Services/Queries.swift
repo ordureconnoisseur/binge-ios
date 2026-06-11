@@ -968,6 +968,8 @@ enum Queries {
               created_at
               date
               o_counter
+              play_count
+              rating100
               paths { stream screenshot preview }
               files { duration width height video_codec audio_codec frame_rate size bit_rate path }
               sceneStreams { url label mime_type }

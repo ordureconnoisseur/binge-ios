@@ -65,6 +65,8 @@ enum DemoContent {
             title: title,
             details: caption,
             oCounter: Int(hoursAgo) % 5,
+            playCount: (Int(hoursAgo) * 3) % 40,
+            rating100: 70 + (Int(hoursAgo) % 4) * 7,
             createdAt: isoFormatter.string(from: when),
             date: dayFormatter.string(from: when),
             paths: .init(
