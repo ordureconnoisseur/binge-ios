@@ -1,6 +1,34 @@
 import Foundation
 import SwiftUI
 
+// Sort options for the performer scene grid. `stashKey` is the
+// findScenes `sort:` key (validated against the live Stash schema —
+// the rating key is "rating", NOT "rating100"). All sorts run DESC.
+// "recent" is release date with a fallback to created_at applied
+// client-side when merging (see PerformerProfileSheet.mergedSceneTiles).
+enum PerformerSceneSort: String, CaseIterable, Identifiable {
+    case recent, views, orgasms, rating, added
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .recent: return "Recent"
+        case .views: return "Most views"
+        case .orgasms: return "Most orgasms"
+        case .rating: return "Highest rated"
+        case .added: return "Recently added"
+        }
+    }
+    var stashKey: String {
+        switch self {
+        case .recent: return "date"
+        case .views: return "play_count"
+        case .orgasms: return "o_counter"
+        case .rating: return "rating"
+        case .added: return "created_at"
+        }
+    }
+}
+
 // Loads + manages state for a single performer profile.
 //
 // Two parallel queries on appear: full performer record + first
@@ -45,6 +73,9 @@ final class PerformerProfileViewModel {
     var loadingMore: Bool = false
     private var page: Int = 1
     private let pageSize: Int = 24
+    /// Active grid sort. Changing it via `setSort` resets pagination
+    /// and reloads from page 1 under the new order.
+    var sort: PerformerSceneSort = .recent
 
     // Same 30-day lookback as the Home stories row.
     private let storyLookbackDays = 30
@@ -73,7 +104,9 @@ final class PerformerProfileViewModel {
             let p = DemoContent.performerDetail(id: performerId)
             performer = p
             favourite = p.favorite
-            scenes = DemoContent.scenes(forPerformer: performerId)
+            scenes = sortedDemoScenes(
+                DemoContent.scenes(forPerformer: performerId)
+            )
             story = buildStory(from: scenes)
             return
         }
@@ -90,6 +123,7 @@ final class PerformerProfileViewModel {
                     "performerId": performerId,
                     "page": page,
                     "perPage": pageSize,
+                    "sort": sort.stashKey,
                 ]
             )
             let (detail, scenesData) = try await (detailResp, scenesResp)
@@ -127,6 +161,7 @@ final class PerformerProfileViewModel {
                     "performerId": performerId,
                     "page": nextPage,
                     "perPage": pageSize,
+                    "sort": sort.stashKey,
                 ]
             )
             // Dedupe defensively — a scene added between page
@@ -144,6 +179,35 @@ final class PerformerProfileViewModel {
             print(
                 "[binge] performer loadMore[\(performerId)] failed: \(error)"
             )
+        }
+    }
+
+    /// Switch the grid sort and reload from page 1. No-op when the
+    /// sort is unchanged so re-selecting the active option doesn't
+    /// thrash the network.
+    func setSort(_ next: PerformerSceneSort) async {
+        guard next != sort else { return }
+        sort = next
+        await load()
+    }
+
+    /// Order demo scenes to mirror the live sorts (all DESC). The demo
+    /// model lacks play_count / rating100, so "views" and "rating" fall
+    /// back to o_counter — close enough for capture purposes.
+    private func sortedDemoScenes(_ scenes: [BingeScene]) -> [BingeScene] {
+        switch sort {
+        case .recent:
+            return scenes.sorted {
+                Story.effectiveAt(for: $0) > Story.effectiveAt(for: $1)
+            }
+        case .added:
+            return scenes.sorted {
+                ($0.createdAt ?? "") > ($1.createdAt ?? "")
+            }
+        case .orgasms, .views, .rating:
+            return scenes.sorted {
+                ($0.oCounter ?? 0) > ($1.oCounter ?? 0)
+            }
         }
     }
 

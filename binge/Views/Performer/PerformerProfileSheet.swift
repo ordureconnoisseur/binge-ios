@@ -620,12 +620,13 @@ struct PerformerProfileSheet: View {
     private func scenesSection(_ scenes: [BingeScene]) -> some View {
         let tiles = mergedSceneTiles()
         VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .center) {
+            HStack(alignment: .center, spacing: 10) {
                 Text("SCENES (\(tiles.count))")
                     .font(.system(size: 11, weight: .bold))
                     .tracking(0.7)
                     .foregroundStyle(.white.opacity(0.55))
                 Spacer()
+                sortMenu
                 stashDBToggle
             }
             .padding(.horizontal, 22)
@@ -666,15 +667,57 @@ struct PerformerProfileSheet: View {
         }
     }
 
-    /// Merge library + (optional) StashDB scenes for this
-    /// performer into one date-DESC sorted list. When the toggle
-    /// is off, vm.stashDBScenes is empty, so this returns the
-    /// pure library list.
+    /// Merge library + (optional) StashDB scenes for this performer.
+    /// The library list arrives already ordered by the server per the
+    /// active sort. For "recent" we re-interleave both sources by
+    /// effective date DESC (release date, falling back to created_at) —
+    /// the only sort where StashDB scenes have a comparable key. Every
+    /// other sort orders by a stat StashDB tiles don't carry (views /
+    /// orgasms / rating), so we keep the server order and append the
+    /// StashDB tiles at the end.
     private func mergedSceneTiles() -> [SceneTile] {
         guard let vm else { return [] }
         let lib = vm.scenes.map(SceneTile.library)
         let sdb = vm.stashDBScenes.map(SceneTile.stashDB)
-        return (lib + sdb).sorted { $0.effectiveAt > $1.effectiveAt }
+        if vm.sort == .recent {
+            return (lib + sdb).sorted { $0.effectiveAt > $1.effectiveAt }
+        }
+        return lib + sdb
+    }
+
+    /// Subtle sort dropdown alongside the SCENES header. Native
+    /// SwiftUI Menu — reads as a quiet "Recent ⌄" label that opens
+    /// a checklist of options. Selecting one reloads the grid under
+    /// the new order via vm.setSort.
+    @ViewBuilder
+    private var sortMenu: some View {
+        Menu {
+            ForEach(PerformerSceneSort.allCases) { option in
+                Button {
+                    Task { await vm?.setSort(option) }
+                } label: {
+                    if vm?.sort == option {
+                        Label(option.label, systemImage: "checkmark")
+                    } else {
+                        Text(option.label)
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 3) {
+                Text((vm?.sort ?? .recent).label)
+                    .font(.system(size: 11, weight: .semibold))
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 8, weight: .bold))
+                    .opacity(0.7)
+            }
+            .foregroundStyle(.white.opacity(0.6))
+            .padding(.horizontal, 4)
+            .padding(.vertical, 5)
+            .contentShape(Rectangle())
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
     }
 
     /// Compact toggle alongside the SCENES header. Persisted

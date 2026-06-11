@@ -946,7 +946,8 @@ enum Queries {
         query ScenesForPerformer(
           $performerId: ID!,
           $page: Int!,
-          $perPage: Int!
+          $perPage: Int!,
+          $sort: String!
         ) {
           findScenes(
             scene_filter: {
@@ -955,7 +956,7 @@ enum Queries {
             filter: {
               page: $page,
               per_page: $perPage,
-              sort: "date",
+              sort: $sort,
               direction: DESC
             }
           ) {
