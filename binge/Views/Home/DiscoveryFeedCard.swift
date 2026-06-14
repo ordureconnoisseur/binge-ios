@@ -43,6 +43,18 @@ struct DiscoveryFeedCard: View {
     @State private var stackPerformers: [DiscoveryItem.Performer] = []
     @State private var unlinkedCoPerformers: [DiscoveryItem.Performer] = []
 
+    #if DEBUG
+    /// Whether the configured forage daemon is reachable — gates the
+    /// "Send to forage" menu item so it's invisible when forage isn't
+    /// running. Backed by a shared probe (ForageReachability) so the
+    /// whole feed shares one /healthz call.
+    @State private var forageReachable = false
+    @State private var forageStatus: ForageStatus = .idle
+    private enum ForageStatus: Equatable {
+        case idle, sending, sent(String), error(String)
+    }
+    #endif
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
@@ -68,6 +80,11 @@ struct DiscoveryFeedCard: View {
         // a remount). .task(id:) handles both.
         .task(id: item.id) {
             rebuildDerived()
+        }
+        .task {
+            #if DEBUG
+            forageReachable = await ForageReachability.shared.reachable()
+            #endif
         }
     }
 
@@ -171,6 +188,19 @@ struct DiscoveryFeedCard: View {
                 }
             )
         }
+        #if DEBUG
+        if forageReachable {
+            out.append(
+                .init(
+                    label: forageMenuLabel,
+                    systemImage: "tray.and.arrow.down",
+                    sub: forageMenuSub
+                ) {
+                    sendToForage()
+                }
+            )
+        }
+        #endif
         out.append(
             .init(
                 label: "View on StashDB",
@@ -182,6 +212,53 @@ struct DiscoveryFeedCard: View {
         )
         return out
     }
+
+    #if DEBUG
+    private var forageMenuLabel: String {
+        switch forageStatus {
+        case .sending: return "Sending to forage…"
+        case .sent: return "On forage watchlist"
+        default: return "Send to forage"
+        }
+    }
+
+    private var forageMenuSub: String {
+        if case let .sent(target) = forageStatus {
+            return target == "any"
+                ? "Watching for any release"
+                : "Watching for a \(target) copy"
+        }
+        return "Add to your forage watchlist"
+    }
+
+    /// Adds the discovery scene to forage's watchlist via POST /watches.
+    /// The menu closes on tap, so the outcome surfaces inline in the
+    /// caption (see `forageStatusLine`).
+    private func sendToForage() {
+        if case .sending = forageStatus { return }
+        if case .sent = forageStatus { return }
+        forageStatus = .sending
+        Task {
+            let result = await ForageService.addWatch(
+                .init(
+                    stashdb_id: item.sceneStashId,
+                    title: item.title ?? "",
+                    date: item.releaseDate,
+                    image_url: item.coverUrl,
+                    performer_name: item.primaryPerformer.name,
+                    performer_id: item.primaryPerformer.localId,
+                    target: ForageService.currentTarget()
+                )
+            )
+            await MainActor.run {
+                switch result {
+                case let .ok(target): forageStatus = .sent(target)
+                case let .failure(msg): forageStatus = .error(msg)
+                }
+            }
+        }
+    }
+    #endif
 
     private func openStashDB() {
         guard let url = URL(string: item.stashboxUrl) else { return }
@@ -337,8 +414,40 @@ struct DiscoveryFeedCard: View {
                     .foregroundStyle(.red.opacity(0.85))
                     .padding(.top, 2)
             }
+            #if DEBUG
+            forageStatusLine
+            #endif
         }
     }
+
+    #if DEBUG
+    @ViewBuilder
+    private var forageStatusLine: some View {
+        switch forageStatus {
+        case .sending:
+            Text("Sending to forage…")
+                .font(.system(size: 12))
+                .foregroundStyle(.white.opacity(0.6))
+                .padding(.top, 2)
+        case let .sent(target):
+            Text(
+                target == "any"
+                    ? "On forage watchlist ✓"
+                    : "On forage watchlist · \(target) ✓"
+            )
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(Color.green.opacity(0.9))
+            .padding(.top, 2)
+        case let .error(msg):
+            Text(msg)
+                .font(.system(size: 12))
+                .foregroundStyle(.red.opacity(0.85))
+                .padding(.top, 2)
+        case .idle:
+            EmptyView()
+        }
+    }
+    #endif
 
     /// `with @name1 @name2` row — ONLY StashDB-only co-performers.
     /// Library-linked co-performers are shown as avatars in the

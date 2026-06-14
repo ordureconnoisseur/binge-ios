@@ -40,6 +40,10 @@ struct SettingsView: View {
     @AppStorage("binge.includeStashDB") private var includeStashDB: Bool = true
     @AppStorage("binge.includeReddit") private var includeReddit: Bool = true
     @AppStorage("binge.bingeServerUrl") private var bingeServerUrl: String = ""
+    #if DEBUG
+    @AppStorage("binge.forageUrl") private var forageUrl: String = ""
+    @AppStorage("binge.forageWatchTarget") private var forageWatchTarget: String = "any"
+    #endif
     @AppStorage("binge.showDebug") private var showDebug: Bool = false
     @AppStorage("binge.showcaseBlur") private var showcaseBlur: Bool = false
     @AppStorage("binge.demoMode") private var demoMode: Bool = false
@@ -101,6 +105,9 @@ struct SettingsView: View {
             homeSection
             bingeServerSection
             bingeServerConfigSection
+            #if DEBUG
+            forageSection
+            #endif
             captureSection
             debugSection
         }
@@ -778,6 +785,40 @@ struct SettingsView: View {
         BingeServerConfigCard()
     }
 
+    // MARK: - forage (DEBUG only — see ForageService for why)
+
+    #if DEBUG
+    @ViewBuilder
+    private var forageSection: some View {
+        Section {
+            HStack {
+                TextField(ForageService.defaultURL, text: $forageUrl)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .keyboardType(.URL)
+                ForageHealthDot()
+            }
+            Picker("Watch quality", selection: $forageWatchTarget) {
+                Text("Any release").tag("any")
+                Text("720p").tag("720p")
+                Text("1080p").tag("1080p")
+                Text("4k").tag("4k")
+            }
+        } header: {
+            Text("forage")
+        } footer: {
+            Text(
+                "\"Send to forage\" on a discovery scene adds it to your "
+                    + "forage daemon's watchlist. Default is "
+                    + "\(ForageService.defaultURL). Authentication is "
+                    + "automatic — binge presents your Stash API key, which "
+                    + "forage already trusts; nothing to paste. The action "
+                    + "only appears when the daemon is reachable."
+            )
+        }
+    }
+    #endif
+
     // MARK: - Capture
 
     @ViewBuilder
@@ -974,6 +1015,44 @@ private struct BingeServerHealthDot: View {
         state = (h?.ok == true) ? .ok : .down
     }
 }
+
+#if DEBUG
+private struct ForageHealthDot: View {
+    @AppStorage("binge.forageUrl") private var url: String = ""
+    @State private var state: Probe = .pending
+
+    enum Probe { case pending, ok, down }
+
+    var body: some View {
+        Circle()
+            .fill(colorForState)
+            .frame(width: 8, height: 8)
+            .accessibilityLabel(labelForState)
+            .task(id: url) { await probe() }
+    }
+
+    private var colorForState: Color {
+        switch state {
+        case .pending: return .yellow
+        case .ok: return .green
+        case .down: return .red
+        }
+    }
+
+    private var labelForState: String {
+        switch state {
+        case .pending: return "forage status pending"
+        case .ok: return "forage reachable"
+        case .down: return "forage unreachable"
+        }
+    }
+
+    private func probe() async {
+        state = .pending
+        state = await ForageService.probeReachable() ? .ok : .down
+    }
+}
+#endif
 
 /// Settings card mirroring the web's `BingeServerConfigCard` —
 /// auto-pushes the Stash API key on first reach (silent), and
