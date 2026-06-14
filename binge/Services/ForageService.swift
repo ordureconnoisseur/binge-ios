@@ -95,7 +95,7 @@ enum ForageService {
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
         req.addValue("application/json", forHTTPHeaderField: "Content-Type")
-        let key = KeychainStore.shared.stashApiKey
+        let key = await KeychainStore.shared.stashApiKey
         if !key.isEmpty {
             req.addValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
         }
