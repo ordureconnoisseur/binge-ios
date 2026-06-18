@@ -52,9 +52,15 @@ final class PlayerPool {
         for scene: BingeScene,
         baseURL: String,
         apiKey: String,
-        muted: Bool
+        muted: Bool,
+        // When set, build the player against THIS url instead of
+        // the scene's computed streamURL, and bypass the cache so a
+        // stale entry isn't returned. Used by SceneSlideView's
+        // direct->HLS fallback for non-faststart HEVC that stalls
+        // on direct play. The caller evicts the old entry first.
+        overrideURL: URL? = nil
     ) -> AVPlayer? {
-        if var entry = entries[scene.id] {
+        if overrideURL == nil, var entry = entries[scene.id] {
             entry.lastUsed = Date()
             entries[scene.id] = entry
             entry.player.isMuted = muted
@@ -65,7 +71,8 @@ final class PlayerPool {
             return entry.player
         }
         let createStart = Date()
-        guard let url = scene.streamURL(base: baseURL) else {
+        guard let url = overrideURL ?? scene.streamURL(base: baseURL)
+        else {
             print(
                 "[PlayerPool] MISS scene=\(scene.id) -> no streamURL"
             )

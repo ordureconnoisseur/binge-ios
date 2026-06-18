@@ -219,9 +219,18 @@ struct BingeScene: Decodable, Identifiable, Hashable {
         default:
             // auto: per-codec routing.
             //   - H264 → direct stream (no ffmpeg load).
-            //   - HEVC → HLS (the original conditional-transcode
-            //     fix; battle-tested, the user's HEVC library
-            //     plays reliably on this path).
+            //   - HEVC → direct stream. The iPhone hardware-
+            //     decodes HEVC Main / 8-bit 4:2:0 (what the
+            //     library's transcode pipeline produces) natively.
+            //     At the pipeline's ~1.4 Mbps a direct stream is
+            //     FEWER bytes over the Tailscale link than Stash's
+            //     H.264 transcode, with no ffmpeg load and no
+            //     transcode-stall freeze, so playback starts fast.
+            //     The minority of non-faststart HEVC files (moov
+            //     atom at end-of-file) can't progressively stream
+            //     and stall on direct play; the reel detects that
+            //     and rebuilds against transcodeFallbackURL (HLS),
+            //     recovering them to the old working path.
             //   - VP9 / AV1 / unknown → MP4 transcode ladder.
             //     HLS was unreliable for VP9 specifically (~10%
             //     of Instagram clips would black-screen even
@@ -230,8 +239,8 @@ struct BingeScene: Decodable, Identifiable, Hashable {
             //     VP9→H264 MP4 path goes through ffmpeg once,
             //     caches, and serves vanilla progressive MP4
             //     that AVPlayer handles unconditionally.
-            if isHEVC, let hls = firstHLSStreamURL() {
-                return logged(absoluteURL(hls, base: base))
+            if isHEVC {
+                return logged(directStreamURL(base: base))
             }
             if needsTranscode {
                 if let url = preferredStream(
@@ -250,6 +259,26 @@ struct BingeScene: Decodable, Identifiable, Hashable {
             }
             return logged(directStreamURL(base: base))
         }
+    }
+
+    /// Transcoded URL to fall back to when a direct HEVC stream
+    /// stalls - the non-faststart case (moov atom at end-of-file)
+    /// that AVPlayer can't progressively stream over the network.
+    /// Prefers Stash's HLS endpoint (the path HEVC used before
+    /// direct became the default; battle-tested), then the MP4
+    /// ladder. nil when no transcode stream is advertised, since
+    /// there is then nothing to fall back to.
+    func transcodeFallbackURL(base: String) -> URL? {
+        if let hls = firstHLSStreamURL() {
+            return absoluteURL(hls, base: base)
+        }
+        if let url = preferredStream(
+            ladder: ["MP4 HD (720p)", "MP4 Standard (480p)", "MP4"],
+            mime: "video/mp4"
+        ) {
+            return absoluteURL(url, base: base)
+        }
+        return nil
     }
 
     private func directStreamURL(base: String) -> URL? {

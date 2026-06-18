@@ -86,6 +86,13 @@ struct SceneSlideView: View {
     /// trigger an endless eviction loop. Reset on remount + on
     /// scene-id change.
     @State private var didRebuildPlayer: String?
+    /// When a direct HEVC stream stalls (a non-faststart file that
+    /// can't progressively stream), `kickIfStuck` sets this to the
+    /// scene's HLS transcode URL and rebuilds the player against it
+    /// - the path HEVC used before direct playback became the
+    /// default. nil on a fresh mount so every slide tries the
+    /// faster direct stream first; reset alongside didRebuildPlayer.
+    @State private var fallbackURL: URL?
 
     var body: some View {
         ZStack {
@@ -322,6 +329,7 @@ struct SceneSlideView: View {
             localOCounter = scene.oCounter ?? 0
             posterVisible = true
             didRebuildPlayer = nil
+            fallbackURL = nil
             attachPlayer()
             // First-mount of an active slide counts as "play" too.
             // onChange(of: isActive) only fires on transitions, so
@@ -334,6 +342,7 @@ struct SceneSlideView: View {
             posterVisible = true
             hasAutoAdvanced = false
             didRebuildPlayer = nil
+            fallbackURL = nil
             attachPlayer()
         }
         .onDisappear {
@@ -502,7 +511,8 @@ struct SceneSlideView: View {
             for: scene,
             baseURL: baseURL,
             apiKey: apiKey,
-            muted: muted
+            muted: muted,
+            overrideURL: fallbackURL
         )
         player = p
         if isActive {
@@ -601,13 +611,30 @@ struct SceneSlideView: View {
                 }
             }
             // Polling exhausted: still stuck after 3s with no
-            // recoverable buffer state. Evict + rebuild once.
+            // recoverable buffer state. Recover once per mount.
             guard didRebuildPlayer != sceneId else { return }
             didRebuildPlayer = sceneId
-            print(
-                "[SceneSlide] REBUILD scene=\(sceneId) "
-                + "reason=stuck-buffer-never-ready"
-            )
+            // HEVC plays direct (hardware decode). A non-faststart
+            // file (moov atom at end-of-file) can never start over
+            // the network no matter how often we rebuild the same
+            // direct stream, so switch to Stash's HLS transcode -
+            // the path HEVC used before direct became the default.
+            // Non-HEVC just rebuilds the same stream (usually a
+            // dead player from a media-services reset; a fresh one
+            // recovers).
+            if fallbackURL == nil, scene.isHEVC,
+               let fb = scene.transcodeFallbackURL(base: baseURL) {
+                fallbackURL = fb
+                print(
+                    "[SceneSlide] FALLBACK scene=\(sceneId) "
+                    + "-> HLS transcode"
+                )
+            } else {
+                print(
+                    "[SceneSlide] REBUILD scene=\(sceneId) "
+                    + "reason=stuck-buffer-never-ready"
+                )
+            }
             PlayerPool.shared.evict(sceneId: sceneId)
             attachPlayer()
         }

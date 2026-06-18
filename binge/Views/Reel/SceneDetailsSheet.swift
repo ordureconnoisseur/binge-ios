@@ -126,11 +126,16 @@ struct SceneDetailsSheet: View {
     }
 
     /// Whether the scene plays directly or via a Stash transcode, and
-    /// why. MKV (a container AVPlayer can't open) always transcodes;
-    /// HEVC / VP9 / AV1 transcode by codec. H.264 streams direct.
+    /// why (for the default "auto" routing - see Scene.streamURL).
+    /// MKV (a container AVPlayer can't open) always transcodes.
+    /// H.264 and HEVC both stream direct - the iPhone hardware-
+    /// decodes HEVC. Only VP9 / AV1 / unknown codecs transcode.
     private var playbackNote: (text: String, transcoded: Bool) {
         if scene.isMKV {
             return ("Transcoded · MKV container", true)
+        }
+        if scene.isHEVC {
+            return ("Direct stream · HEVC", false)
         }
         if scene.needsTranscode {
             let codec = (scene.files.first?.videoCodec ?? "non-H.264")
