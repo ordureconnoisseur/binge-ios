@@ -69,7 +69,7 @@ func buildUpdatedTagIds(
         return tagPrefix != prefix
     }
     var result = filtered.map(\.id)
-    guard let newScore else { return result }
+    guard newScore != nil else { return result }
     guard let newScoreTagId else { return nil }
     if !result.contains(newScoreTagId) {
         result.append(newScoreTagId)

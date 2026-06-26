@@ -33,7 +33,7 @@ final class RatingPrecisionLoader {
             let result = await Self.fetchPrecision(
                 baseURL: baseURL, apiKey: apiKey
             )
-            await self?.cache(result)
+            self?.cache(result)
             return result
         }
         fetchTask = task

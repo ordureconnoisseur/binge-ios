@@ -81,7 +81,7 @@ final class RatingConfigLoader {
             let result = await Self.fetchPluginConfig(
                 baseURL: baseURL, apiKey: apiKey
             )
-            await self?.cacheRaw(result)
+            self?.cacheRaw(result)
             return result
         }
         rawFetchTask = task

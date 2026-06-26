@@ -45,14 +45,14 @@ struct SwipeRightToDismiss: ViewModifier {
 
     @State private var offset: CGFloat = 0
     @State private var isEdgeDrag: Bool = false
-
-    private var screenWidth: CGFloat {
-        UIScreen.main.bounds.width
-    }
+    @State private var screenWidth: CGFloat = 0
 
     func body(content: Content) -> some View {
         content
             .offset(x: offset)
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: {
+                screenWidth = $0
+            }
             .highPriorityGesture(
                 DragGesture(
                     minimumDistance: 8,

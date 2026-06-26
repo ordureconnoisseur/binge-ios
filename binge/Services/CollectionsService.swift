@@ -21,8 +21,8 @@ final class CollectionsService {
     /// Tag suffix that marks a Stash tag as a binge collection.
     /// Trailing space + folder emoji — mirrors web's COLLECTION_TAG_SUFFIX.
     static let suffix: String = " 📁"
-    static let favouritesTagName: String = "Favourite ★"
-    static let watchLaterTagName: String = "Watch Later 📁"
+    nonisolated static let favouritesTagName: String = "Favourite ★"
+    nonisolated static let watchLaterTagName: String = "Watch Later 📁"
     /// Parent tag under which every binge-managed collection is
     /// nested in Stash's tag tree. Mirrors web's parent-tag
     /// hierarchy so the user's tag list stays tidy. No " 📁"

@@ -67,7 +67,7 @@ struct StoryProgressStrip: View {
         }
         let half = Self.maxVisible / 2
         var start = max(0, currentIndex - half)
-        var end = min(sceneCount, start + Self.maxVisible)
+        let end = min(sceneCount, start + Self.maxVisible)
         // Shift back if we hit the right edge so we always show
         // exactly maxVisible segments.
         if end - start < Self.maxVisible {
