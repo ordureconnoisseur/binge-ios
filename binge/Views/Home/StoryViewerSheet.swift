@@ -50,7 +50,15 @@ struct StoryViewerSheet: View {
     /// header avatar/name to drill into that profile. Pauses
     /// the underlying player while presented.
     @State private var presentedPerformerId: String?
+    /// Save-to-Stash status for the current social scene. Reset per
+    /// scene in loadScene(). Tapping Save also pauses auto-advance so
+    /// the result has time to land.
+    @State private var saveState: SaveState = .idle
     @State private var tour = TourDirector.shared
+
+    enum SaveState: Equatable {
+        case idle, saving, saved, failed(String)
+    }
 
     /// How long a StashDB cover stays on screen before auto-
     /// advance. 5s matches the web plugin's image-story cap.
@@ -340,13 +348,14 @@ struct StoryViewerSheet: View {
         .ignoresSafeArea()
     }
 
-    /// Reddit footer — title (for media kinds where the caption
-    /// would otherwise be invisible) + "View on Reddit" CTA. The
-    /// text kind already shows its title in the content view, so
-    /// the title line is omitted there to avoid duplication.
+    /// Social footer (reddit / X / pornhub — they all map onto the
+    /// reddit-shaped scene). Title (for media kinds) + a domain-aware
+    /// "View on …" CTA + a Save-to-Stash button when the post carries
+    /// a save payload. The text kind already shows its title in the
+    /// content view, so the title line is omitted there.
     @ViewBuilder
     private func redditFooter(_ post: RedditStoryPost) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             if post.kind != .text,
                 let title = post.title, !title.isEmpty
             {
@@ -356,32 +365,144 @@ struct StoryViewerSheet: View {
                     .lineLimit(2)
                     .shadow(color: .black.opacity(0.6), radius: 4, x: 0, y: 1)
             }
-            if let url = URL(string: post.permalink) {
-                Link(destination: url) {
-                    HStack(spacing: 5) {
-                        Text("View on Reddit")
-                            .font(.system(size: 13, weight: .semibold))
-                        Image(systemName: "arrow.up.right.square")
-                            .font(.system(size: 11, weight: .semibold))
-                    }
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(
-                        Capsule().fill(Color.bingeLike.opacity(0.5))
-                    )
-                    .overlay(
-                        Capsule().stroke(
-                            Color.bingeLike.opacity(0.7),
-                            lineWidth: 1
+            HStack(spacing: 8) {
+                if let url = URL(string: post.permalink) {
+                    Link(destination: url) {
+                        HStack(spacing: 5) {
+                            Text(sourceCtaLabel(for: post.domain))
+                                .font(.system(size: 13, weight: .semibold))
+                            Image(systemName: "arrow.up.right.square")
+                                .font(.system(size: 11, weight: .semibold))
+                        }
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(
+                            Capsule().fill(Color.bingeLike.opacity(0.5))
                         )
-                    )
+                        .overlay(
+                            Capsule().stroke(
+                                Color.bingeLike.opacity(0.7),
+                                lineWidth: 1
+                            )
+                        )
+                    }
+                }
+                if post.save != nil {
+                    saveButton(post)
                 }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 16)
         .padding(.bottom, 28)
+    }
+
+    /// "View on Reddit" / "View on X" / "Open on PornHub" — keyed off
+    /// the post's domain (matches the web StoryViewer's CTA labels).
+    private func sourceCtaLabel(for domain: String?) -> String {
+        switch (domain ?? "").lowercased() {
+        case "x.com", "twitter.com": return "View on X"
+        case "pornhub.com": return "Open on PornHub"
+        default: return "View on Reddit"
+        }
+    }
+
+    /// Save-to-Stash button — downloads + adds the post to the
+    /// library via binge-server. Tapping pauses auto-advance so the
+    /// result (a few seconds for a video) has time to land. Idle →
+    /// "Save"; in-flight → spinner; done → "Saved"; error → message.
+    @ViewBuilder
+    private func saveButton(_ post: RedditStoryPost) -> some View {
+        switch saveState {
+        case .saved:
+            HStack(spacing: 5) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 12, weight: .semibold))
+                Text("Saved")
+                    .font(.system(size: 13, weight: .semibold))
+            }
+            .foregroundStyle(.green)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(Capsule().fill(Color.white.opacity(0.10)))
+        case .failed(let msg):
+            Button { Task { await doSave(post) } } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 11, weight: .semibold))
+                    Text("Retry")
+                        .font(.system(size: 13, weight: .semibold))
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(Capsule().fill(Color.red.opacity(0.45)))
+            }
+            .help(msg)
+        default:
+            Button {
+                // Pause auto-advance so the save result can render.
+                player?.pause()
+                stashDBTimer?.cancel()
+                capTimer?.cancel()
+                Task { await doSave(post) }
+            } label: {
+                HStack(spacing: 5) {
+                    if saveState == .saving {
+                        ProgressView()
+                            .controlSize(.small)
+                            .tint(.white)
+                    } else {
+                        Image(systemName: "square.and.arrow.down")
+                            .font(.system(size: 12, weight: .semibold))
+                    }
+                    Text(saveState == .saving ? "Saving…" : "Save to Stash")
+                        .font(.system(size: 13, weight: .semibold))
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(Capsule().fill(Color.white.opacity(0.14)))
+                .overlay(
+                    Capsule().stroke(Color.white.opacity(0.25), lineWidth: 1)
+                )
+            }
+            .disabled(saveState == .saving)
+        }
+    }
+
+    /// Build the save request from the current story's performer +
+    /// the post's save payload, fire it, and reflect the outcome.
+    private func doSave(_ post: RedditStoryPost) async {
+        guard let payload = post.save,
+            let source = BingeServerService.SaveSource(
+                rawValue: payload.source
+            ),
+            let performerId = currentStory?.performer.id
+        else {
+            saveState = .failed("Not saveable")
+            return
+        }
+        saveState = .saving
+        let req = BingeServerService.SaveToStashRequest(
+            performerStashId: performerId,
+            source: source,
+            handle: payload.handle,
+            id: payload.id,
+            mediaUrl: payload.mediaUrl,
+            kind: payload.kind,
+            sourceUrl: post.permalink,
+            text: post.title,
+            createdUtc: post.createdUtc
+        )
+        let result = await BingeServerService.saveToStash(req)
+        switch result {
+        case .ok:
+            saveState = .saved
+        case .failure(let msg):
+            saveState = .failed(msg)
+        }
     }
 
     /// Library footer — title (optional) + "Watch full scene"
@@ -612,6 +733,7 @@ struct StoryViewerSheet: View {
         teardown()
         progress = 0
         didAutoAdvance = false
+        saveState = .idle
         switch currentScene {
         case .library(let scene):
             loadLibrary(scene)

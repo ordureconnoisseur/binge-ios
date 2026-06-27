@@ -744,6 +744,25 @@ final class HomeViewModel {
                 let createdISO = ISO8601DateFormatter().string(
                     from: Date(timeIntervalSince1970: Double(p.createdUtc))
                 )
+                // Saveable when there's real media to download. The
+                // payload carries the ORIGINAL (un-proxied) url so the
+                // daemon fetches it directly; redgifs vs reddit is read
+                // off the host / domain.
+                let savePayload: RedditStoryPost.SavePayload? = {
+                    guard let m = p.mediaUrl,
+                        kind == .image || kind == .video
+                    else { return nil }
+                    let host = URL(string: m)?.host?.lowercased() ?? ""
+                    let isRedgifs = host.contains("redgifs")
+                        || (p.domain ?? "").lowercased().contains("redgifs")
+                    return RedditStoryPost.SavePayload(
+                        source: isRedgifs ? "redgifs" : "reddit",
+                        mediaUrl: m,
+                        handle: nil,
+                        id: p.id,
+                        kind: kind.rawValue
+                    )
+                }()
                 return RedditStoryPost(
                     id: "reddit:\(p.id)",
                     kind: kind,
@@ -755,7 +774,8 @@ final class HomeViewModel {
                     permalink: p.permalink,
                     domain: p.domain,
                     createdUtc: p.createdUtc,
-                    effectiveAt: createdISO
+                    effectiveAt: createdISO,
+                    save: savePayload
                 )
             }
             bucket[localId] = StoryBuilder.RedditEntry(

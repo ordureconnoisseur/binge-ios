@@ -32,6 +32,28 @@ struct RedditStoryPost: Identifiable, Hashable {
     /// HomeViewModel (sortable as a string, no Date round-trip).
     let effectiveAt: String
 
+    /// When non-nil, this post can be saved to Stash — carries the
+    /// ORIGINAL (un-proxied) source url + classification the daemon
+    /// needs to download + place the file. nil for posts that aren't
+    /// saveable (text/link cards, or a daemon that can't reach the
+    /// source). `var` so it stays in the memberwise init with a
+    /// default — existing call sites need not pass it.
+    var save: SavePayload? = nil
+
+    /// Everything the daemon's /save needs except the performer id
+    /// (which the viewer supplies from the surrounding Story). The
+    /// `mediaUrl` here is the raw upstream url (NOT the proxied/stream
+    /// playback url) — e.g. the pornhub watch page, the raw X media,
+    /// or the original redd.it/redgifs file.
+    struct SavePayload: Hashable {
+        /// SaveSource rawValue: "x" | "reddit" | "redgifs" | "pornhub".
+        let source: String
+        let mediaUrl: String
+        let handle: String?
+        let id: String?
+        let kind: String  // "image" | "video"
+    }
+
     enum Kind: String, Hashable {
         case image
         case video
