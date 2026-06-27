@@ -94,6 +94,9 @@ struct PerformerProfileSheet: View {
                 )
             }
             await vm?.load()
+            // Fold this performer's recent X media into the story
+            // (lights the ring; X-only performers get one too).
+            await vm?.loadXMedia()
             // If the user had the toggle on already (from a
             // previous session), auto-fetch the StashDB scenes
             // now — provided the performer is actually linked.
@@ -266,6 +269,7 @@ struct PerformerProfileSheet: View {
                                     apiKey: apiKey
                                 )
                                 await vm?.load()
+                                await vm?.loadXMedia()
                                 // Recreating the VM dropped the
                                 // StashDB mix-in; re-fetch it so the
                                 // tiles don't vanish on refresh when

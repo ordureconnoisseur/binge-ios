@@ -79,6 +79,19 @@ final class PerformerProfileViewModel {
 
     // Same 30-day lookback as the Home stories row.
     private let storyLookbackDays = 30
+    // X media uses a tighter window — "just their latest stuff", not
+    // the whole profile (matches web's X_STORY_LOOKBACK_DAYS).
+    private let xStoryLookbackDays = 7
+    /// Recent X media folded into the story as reddit-shaped posts.
+    /// Empty when the performer has no X handle / X is disabled /
+    /// the daemon is down. Lights the avatar ring even for an
+    /// X-only performer (no recent library or StashDB content).
+    private var xPosts: [RedditStoryPost] = []
+    private var xLoaded = false
+    private var includeX: Bool {
+        UserDefaults.standard.object(forKey: "binge.includeX")
+            as? Bool ?? true
+    }
 
     let performerId: String
     private let baseURL: String
@@ -235,20 +248,86 @@ final class PerformerProfileViewModel {
             // YYYY-MM-DD precedes YYYY-MM-DDT... lexically.
             return !eff.isEmpty && eff >= cutoffDate
         }
-        guard !recent.isEmpty else { return nil }
+        // Combine recent library scenes with any folded-in X media
+        // (reddit-shaped posts) and order by effectiveAt DESC so the
+        // freshest content - from either source - leads the strip.
+        // An X-only performer (no recent library content) still gets
+        // a ring.
+        let combined: [StoryScene] =
+            (recent.map(StoryScene.library)
+                + xPosts.map(StoryScene.reddit))
+            .sorted { $0.effectiveAt > $1.effectiveAt }
+        guard !combined.isEmpty else { return nil }
         let bingePerformer = BingeScene.Performer(
             id: perf.id,
             name: perf.name,
             imagePath: perf.imagePath,
             favorite: perf.favorite
         )
-        // Story.scenes is now a [StoryScene] multi-source enum;
-        // we wrap library BingeScenes in the .library case.
         return Story(
             performer: bingePerformer,
-            scenes: recent.map(StoryScene.library),
-            latestEffectiveAt: Story.effectiveAt(for: recent[0])
+            scenes: combined,
+            latestEffectiveAt: combined[0].effectiveAt
         )
+    }
+
+    /// On-demand fetch of this performer's recent (≤7d) X media,
+    /// folded into the story so the avatar ring lights up and the
+    /// viewer shows the X posts. Quietly degrades when X is disabled,
+    /// the performer has no handle, or the daemon is down/blocked.
+    /// Idempotent — runs once per loaded VM.
+    func loadXMedia() async {
+        if xLoaded { return }
+        guard includeX, let perf = performer else { return }
+        guard let handle = BingeServerService.xHandleFromUrls(perf.urls)
+        else { return }
+        guard let stashId = Int(performerId) else { return }
+        xLoaded = true
+        guard let res = await BingeServerService.fetchXFeed(
+            stashId: stashId
+        ) else { return }
+        let cutoff = Int(
+            Date().addingTimeInterval(
+                -Double(xStoryLookbackDays) * 86_400
+            ).timeIntervalSince1970
+        )
+        let resolvedHandle = res.handle.isEmpty ? handle : res.handle
+        let iso = ISO8601DateFormatter()
+        let posts: [RedditStoryPost] = res.media.compactMap { m in
+            guard m.createdUtc >= cutoff, !m.mediaUrl.isEmpty,
+                let kind = RedditStoryPost.Kind(rawValue: m.kind)
+            else { return nil }
+            let createdISO = iso.string(
+                from: Date(timeIntervalSince1970: Double(m.createdUtc))
+            )
+            let permalink = m.tweetUrl.isEmpty
+                ? "https://x.com/\(resolvedHandle)"
+                : m.tweetUrl
+            return RedditStoryPost(
+                id: "x:\(m.tweetId):\(m.mediaUrl)",
+                kind: kind,
+                title: m.text,
+                body: nil,
+                // X media (pbs/video.twimg.com) is public — rendered
+                // directly, no proxy (matches web).
+                mediaUrl: m.mediaUrl,
+                linkUrl: nil,
+                thumbUrl: nil,
+                permalink: permalink,
+                domain: "x.com",
+                createdUtc: m.createdUtc,
+                effectiveAt: createdISO,
+                save: RedditStoryPost.SavePayload(
+                    source: "x",
+                    mediaUrl: m.mediaUrl,
+                    handle: resolvedHandle,
+                    id: m.tweetId,
+                    kind: m.kind
+                )
+            )
+        }
+        xPosts = posts
+        story = buildStory(from: scenes)
     }
 
     /// One-shot fetch of StashDB-only scenes for this performer.
