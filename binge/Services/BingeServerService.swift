@@ -67,15 +67,15 @@ struct BingeServerConfigState: Decodable {
 }
 
 struct BingeServerConfigPayload: Encodable {
-    var stashUrl: String?
-    var stashApiKey: String?
-    var redditSessionCookie: String?
+    var stashUrl: String? = nil
+    var stashApiKey: String? = nil
+    var redditSessionCookie: String? = nil
     // X cookies must be sent together (auth_token is useless without ct0).
-    var xAuthToken: String?
-    var xCt0: String?
+    var xAuthToken: String? = nil
+    var xCt0: String? = nil
     // Social library roots.
-    var socialWriteRoot: String?
-    var socialStashRoot: String?
+    var socialWriteRoot: String? = nil
+    var socialStashRoot: String? = nil
 }
 
 enum BingeServerService {

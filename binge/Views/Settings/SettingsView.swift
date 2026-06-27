@@ -39,6 +39,8 @@ struct SettingsView: View {
     @AppStorage("binge.lookbackDays") private var lookbackDays: Int = 30
     @AppStorage("binge.includeStashDB") private var includeStashDB: Bool = true
     @AppStorage("binge.includeReddit") private var includeReddit: Bool = true
+    @AppStorage("binge.includeX") private var includeX: Bool = true
+    @AppStorage("binge.includePornhub") private var includePornhub: Bool = true
     @AppStorage("binge.bingeServerUrl") private var bingeServerUrl: String = ""
     #if DEBUG
     @AppStorage("binge.forageUrl") private var forageUrl: String = ""
@@ -735,6 +737,8 @@ struct SettingsView: View {
             }
             Toggle("Discover from StashDB", isOn: $includeStashDB)
             Toggle("Discover from Reddit", isOn: $includeReddit)
+            Toggle("Discover from PornHub", isOn: $includePornhub)
+            Toggle("X media on profiles", isOn: $includeX)
         } header: {
             Text("Home")
         } footer: {
@@ -744,9 +748,11 @@ struct SettingsView: View {
                     + "StashDB discovery surfaces new scenes from "
                     + "stashdb.org for performers in your library "
                     + "(needs a stashbox API key configured in "
-                    + "Stash). Reddit discovery pulls posts from "
-                    + "performers' configured reddit URLs via "
-                    + "binge-server (configure below)."
+                    + "Stash). Reddit + PornHub discovery pull recent "
+                    + "posts/uploads for performers' configured URLs "
+                    + "via binge-server (configure below). X media "
+                    + "loads on demand when you open a performer's "
+                    + "profile and folds into their story."
             )
         }
     }
@@ -1073,6 +1079,12 @@ private struct BingeServerConfigCard: View {
     @State private var cookieError: String?
     @State private var cookieSaved: Bool = false
     @State private var showHelp: Bool = false
+    // X (Twitter) cookie pair — auth_token + ct0 must be set together.
+    @State private var xAuthInput: String = ""
+    @State private var xCt0Input: String = ""
+    @State private var xBusy: Bool = false
+    @State private var xError: String?
+    @State private var xSaved: Bool = false
 
     var body: some View {
         Section {
@@ -1101,15 +1113,20 @@ private struct BingeServerConfigCard: View {
                 if showHelp {
                     cookieHelp
                 }
+                xCookiesRow(c)
+                socialSaveRow(c)
             }
         } header: {
             Text("binge-server configuration")
         } footer: {
             Text(
                 "Daemon needs your Stash API key (auto-pushed on "
-                    + "first connect) and a Reddit session cookie "
-                    + "(paste below). Without the cookie no Reddit "
-                    + "posts will be fetched."
+                    + "first connect) and per-source credentials: a "
+                    + "Reddit session cookie + an X auth_token/ct0 "
+                    + "pair. Without a source's credential, that "
+                    + "source surfaces nothing. \"Save to Stash\" "
+                    + "needs the daemon's social library roots set "
+                    + "(server-side)."
             )
         }
         .task(id: url) { await refresh() }
@@ -1186,6 +1203,94 @@ private struct BingeServerConfigCard: View {
                         .font(.footnote)
                         .lineLimit(2)
                 }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func xCookiesRow(_ c: BingeServerConfigState) -> some View {
+        let isSet = c.xCookiesSet ?? false
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Label(
+                    "X cookies",
+                    systemImage: isSet
+                        ? "checkmark.circle.fill"
+                        : "exclamationmark.circle"
+                )
+                .foregroundStyle(isSet ? .green : .orange)
+                Spacer()
+                Text(isSet ? "Set" : "Not set")
+                    .foregroundStyle(.secondary)
+                    .font(.footnote)
+            }
+            SecureField(
+                isSet ? "Paste new auth_token to rotate…" : "auth_token",
+                text: $xAuthInput
+            )
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
+            SecureField("ct0", text: $xCt0Input)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            HStack {
+                Button {
+                    Task { await saveXCookies() }
+                } label: {
+                    if xBusy {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Text(isSet ? "Rotate" : "Save")
+                    }
+                }
+                .disabled(
+                    xBusy
+                        || xAuthInput.trimmingCharacters(
+                            in: .whitespacesAndNewlines
+                        ).isEmpty
+                        || xCt0Input.trimmingCharacters(
+                            in: .whitespacesAndNewlines
+                        ).isEmpty
+                )
+                if xSaved {
+                    Label("Saved", systemImage: "checkmark")
+                        .foregroundStyle(.green)
+                        .font(.footnote)
+                }
+                if let err = xError {
+                    Text(err)
+                        .foregroundStyle(.red)
+                        .font(.footnote)
+                        .lineLimit(2)
+                }
+            }
+        }
+    }
+
+    /// Read-only status of the daemon's "Save to Stash" library roots
+    /// (set server-side via env). Shows whether saving will work +
+    /// where files land.
+    @ViewBuilder
+    private func socialSaveRow(_ c: BingeServerConfigState) -> some View {
+        let configured = c.socialSaveConfigured ?? false
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Label(
+                    "Save to Stash",
+                    systemImage: configured
+                        ? "checkmark.circle.fill"
+                        : "exclamationmark.circle"
+                )
+                .foregroundStyle(configured ? .green : .orange)
+                Spacer()
+                Text(configured ? "Ready" : "Not configured")
+                    .foregroundStyle(.secondary)
+                    .font(.footnote)
+            }
+            if let root = c.socialStashRoot, !root.isEmpty {
+                Text("Library: \(root)")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             }
         }
     }
@@ -1271,6 +1376,35 @@ private struct BingeServerConfigCard: View {
             cookieError = msg
         }
         cookieBusy = false
+    }
+
+    /// Push the X auth_token + ct0 pair. The daemon validates the
+    /// pair against X before persisting; an invalid pair surfaces
+    /// here. Both are required (auth_token is useless without ct0).
+    private func saveXCookies() async {
+        let auth = xAuthInput.trimmingCharacters(
+            in: .whitespacesAndNewlines
+        )
+        let ct0 = xCt0Input.trimmingCharacters(
+            in: .whitespacesAndNewlines
+        )
+        if auth.isEmpty || ct0.isEmpty { return }
+        xBusy = true
+        xError = nil
+        xSaved = false
+        let result = await BingeServerService.setConfig(
+            BingeServerConfigPayload(xAuthToken: auth, xCt0: ct0)
+        )
+        switch result {
+        case .ok:
+            xSaved = true
+            xAuthInput = ""
+            xCt0Input = ""
+            config = await BingeServerService.config()
+        case .failure(let msg):
+            xError = msg
+        }
+        xBusy = false
     }
 }
 
