@@ -192,7 +192,7 @@ enum BingeServerService {
     /// One cached PornHub video (metadata only; media is fetched via
     /// the stream/preview proxies on demand). Mirrors
     /// internal/api/pornhub.go.
-    struct PornhubVideo: Decodable, Hashable {
+    struct PornhubVideo: Decodable, Hashable, Identifiable {
         let id: String  // viewkey
         let title: String?
         let sourceUrl: String  // pornhub watch page

@@ -51,6 +51,15 @@ final class PerformerProfileViewModel {
     /// "Show StashDB content" toggle on the profile — empty
     /// otherwise. Interleaved by date with `scenes` in the UI.
     var stashDBScenes: [StashDBScene] = []
+    /// Cached PornHub videos for this performer (when they link a
+    /// pornhub.com pornstar/model page). Rendered as tiles in the
+    /// scenes grid; tapping streams the mp4 via the daemon proxy.
+    var pornhubVideos: [BingeServerService.PornhubVideo] = []
+    private var pornhubLoaded = false
+    private var includePornhub: Bool {
+        UserDefaults.standard.object(forKey: "binge.includePornhub")
+            as? Bool ?? true
+    }
     var stashDBLoading: Bool = false
     /// True once a StashDB fetch has completed (even if it yielded
     /// zero unowned scenes), so toggling the section off/on doesn't
@@ -328,6 +337,22 @@ final class PerformerProfileViewModel {
         }
         xPosts = posts
         story = buildStory(from: scenes)
+    }
+
+    /// On-demand fetch of this performer's PornHub videos, folded
+    /// into the scenes grid as tiles. Quietly degrades when PornHub
+    /// is disabled, the performer has no pornhub.com url, or the
+    /// daemon is down. Idempotent — runs once per loaded VM.
+    func loadPornhub() async {
+        if pornhubLoaded { return }
+        guard includePornhub, let perf = performer else { return }
+        guard BingeServerService.hasPornhubUrl(perf.urls) else { return }
+        guard let stashId = Int(performerId) else { return }
+        pornhubLoaded = true
+        guard let videos = await BingeServerService.fetchPornhubFeed(
+            stashId: stashId
+        ) else { return }
+        pornhubVideos = videos
     }
 
     /// One-shot fetch of StashDB-only scenes for this performer.

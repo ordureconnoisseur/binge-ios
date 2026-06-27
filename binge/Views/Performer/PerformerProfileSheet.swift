@@ -1,3 +1,4 @@
+import AVKit
 import SwiftUI
 
 // Full-screen performer profile. Direct port of the web's
@@ -41,6 +42,9 @@ struct PerformerProfileSheet: View {
     @State private var favHaptic = 0
     @State private var tab: ProfileTab = .scenes
     @State private var storyOpen: Bool = false
+    /// PornHub video the user tapped — drives a fullScreenCover that
+    /// streams the mp4 via the daemon proxy with a Save button.
+    @State private var pornhubPlaying: BingeServerService.PornhubVideo?
     /// Inner NavigationStack path for cover-mode presentation.
     /// Lets a scene tile push a `.reel(.timeline(...))` route
     /// onto the profile's own nav stack so the dismiss
@@ -97,6 +101,8 @@ struct PerformerProfileSheet: View {
             // Fold this performer's recent X media into the story
             // (lights the ring; X-only performers get one too).
             await vm?.loadXMedia()
+            // PornHub videos fold into the scenes grid as tiles.
+            await vm?.loadPornhub()
             // If the user had the toggle on already (from a
             // previous session), auto-fetch the StashDB scenes
             // now — provided the performer is actually linked.
@@ -113,6 +119,12 @@ struct PerformerProfileSheet: View {
                     apiKey: apiKey
                 )
             }
+        }
+        .fullScreenCover(item: $pornhubPlaying) { video in
+            PornhubPlayerSheet(
+                video: video,
+                performerStashId: performerId
+            )
         }
         // Scribe sheet — mounted INSIDE the fullScreenCover that
         // hosts this profile so it stacks above the cover.
@@ -270,6 +282,7 @@ struct PerformerProfileSheet: View {
                                 )
                                 await vm?.load()
                                 await vm?.loadXMedia()
+                                await vm?.loadPornhub()
                                 // Recreating the VM dropped the
                                 // StashDB mix-in; re-fetch it so the
                                 // tiles don't vanish on refresh when
@@ -654,18 +667,27 @@ struct PerformerProfileSheet: View {
     enum SceneTile: Identifiable, Hashable {
         case library(BingeScene)
         case stashDB(StashDBScene)
+        case pornhub(BingeServerService.PornhubVideo)
         var id: String {
             switch self {
             case .library(let s): return "lib:\(s.id)"
             case .stashDB(let s): return "sdb:\(s.id)"
+            case .pornhub(let v): return "ph:\(v.id)"
             }
         }
-        /// Date for the merge sort. Both kinds prefer their
-        /// release_date; library falls back to created_at.
+        /// Date for the merge sort. library/stashDB prefer their
+        /// release_date (library falls back to created_at); pornhub
+        /// uses its upload time (createdUtc → ISO).
         var effectiveAt: String {
             switch self {
             case .library(let s): return Story.effectiveAt(for: s)
             case .stashDB(let s): return s.releaseDate ?? ""
+            case .pornhub(let v):
+                return ISO8601DateFormatter().string(
+                    from: Date(
+                        timeIntervalSince1970: Double(v.createdUtc)
+                    )
+                )
             }
         }
     }
@@ -682,10 +704,17 @@ struct PerformerProfileSheet: View {
         guard let vm else { return [] }
         let lib = vm.scenes.map(SceneTile.library)
         let sdb = vm.stashDBScenes.map(SceneTile.stashDB)
+        let ph = vm.pornhubVideos.map(SceneTile.pornhub)
+        // On "recent" every source carries a comparable date, so
+        // interleave all three. Other sorts order by a stat only
+        // library tiles have (views/orgasms/rating), so keep the
+        // server order and append the dateless-by-that-key sources.
         if vm.sort == .recent {
-            return (lib + sdb).sorted { $0.effectiveAt > $1.effectiveAt }
+            return (lib + sdb + ph).sorted {
+                $0.effectiveAt > $1.effectiveAt
+            }
         }
-        return lib + sdb
+        return lib + sdb + ph
     }
 
     /// Subtle sort dropdown alongside the SCENES header. Native
@@ -828,7 +857,83 @@ struct PerformerProfileSheet: View {
             libraryCell(scene)
         case .stashDB(let scene):
             stashDBCell(scene)
+        case .pornhub(let video):
+            pornhubCell(video)
         }
+    }
+
+    /// PornHub tile — proxied thumbnail with an orange "PH" badge.
+    /// Tapping opens a streaming player (mp4 via the daemon proxy)
+    /// with a Save-to-Stash action. No hover-preview (iOS can't
+    /// decode the webm preview the web uses), so the poster is the
+    /// static thumbnail — same as a library cell's screenshot.
+    @ViewBuilder
+    private func pornhubCell(_ video: BingeServerService.PornhubVideo)
+        -> some View
+    {
+        Button {
+            pornhubPlaying = video
+        } label: {
+            ZStack(alignment: .topLeading) {
+                Color(white: 0.08)
+                if let thumb = BingeServerService.pornhubThumbUrl(
+                    video.thumbUrl
+                ), let url = URL(string: thumb) {
+                    AuthImageView(
+                        url: url,
+                        apiKey: "",
+                        contentMode: .fill,
+                        maxPixel: 512
+                    )
+                }
+                Text("PH")
+                    .font(.system(size: 9, weight: .heavy))
+                    .tracking(0.5)
+                    .foregroundStyle(.black)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(
+                        Capsule().fill(Color(
+                            red: 1.0, green: 0.565, blue: 0.0
+                        ))
+                    )
+                    .padding(6)
+            }
+            .containerRelativeFrame(
+                .horizontal,
+                count: 2,
+                span: 1,
+                spacing: 4
+            )
+            .aspectRatio(9.0 / 16.0, contentMode: .fit)
+            .clipped()
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            // Duration badge mirrors the library tile's sort badge slot.
+            .overlay(alignment: .bottomLeading) {
+                if video.duration > 0 {
+                    Text(Self.formatDuration(video.duration))
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .shadow(color: .black.opacity(0.7), radius: 2)
+                        .padding(.leading, 7)
+                        .padding(.bottom, 6)
+                        .allowsHitTesting(false)
+                }
+            }
+            .contentShape(RoundedRectangle(cornerRadius: 8))
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// "M:SS" / "H:MM:SS" from a seconds count.
+    static func formatDuration(_ secs: Int) -> String {
+        let h = secs / 3600
+        let m = (secs % 3600) / 60
+        let s = secs % 60
+        if h > 0 {
+            return String(format: "%d:%02d:%02d", h, m, s)
+        }
+        return String(format: "%d:%02d", m, s)
     }
 
     @ViewBuilder
@@ -1136,6 +1241,203 @@ extension Array {
         return stride(from: 0, to: count, by: size).map {
             Array(self[$0..<Swift.min($0 + size, count)])
         }
+    }
+}
+
+// Fullscreen PornHub player — streams the mp4 via binge-server's
+// proxy (the source URL is time/IP-locked to the daemon's exit, so it
+// can't play in the client directly). Mirrors the web's PornhubPlayer
+// overlay: video + title + an "Open on PornHub" link + a Save-to-Stash
+// action that hands the daemon the watch page to download.
+struct PornhubPlayerSheet: View {
+    let video: BingeServerService.PornhubVideo
+    let performerStashId: String
+
+    @Environment(\.dismiss) private var dismiss
+    @AppStorage("binge.muted") private var muted: Bool = true
+    @State private var player: AVPlayer?
+    @State private var loading = true
+    @State private var saveState: SaveState = .idle
+
+    enum SaveState: Equatable {
+        case idle, saving, saved, failed(String)
+    }
+
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            if let player {
+                VideoPlayerView(player: player).ignoresSafeArea()
+            }
+            if loading { BingeLoading() }
+            VStack {
+                HStack {
+                    Spacer()
+                    Button { muted.toggle(); player?.isMuted = muted } label: {
+                        Image(
+                            systemName: muted
+                                ? "speaker.slash.fill"
+                                : "speaker.wave.2.fill"
+                        )
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .padding(8)
+                        .background(.black.opacity(0.5), in: Circle())
+                    }
+                    Button { dismiss() } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(.white)
+                            .padding(8)
+                            .background(.black.opacity(0.5), in: Circle())
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.top, 8)
+                Spacer()
+                footer
+            }
+        }
+        .onAppear { start() }
+        .onDisappear { stop() }
+    }
+
+    @ViewBuilder
+    private var footer: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let title = video.title, !title.isEmpty {
+                Text(title)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .lineLimit(2)
+                    .shadow(color: .black.opacity(0.6), radius: 4, x: 0, y: 1)
+            }
+            HStack(spacing: 8) {
+                if let url = URL(string: video.sourceUrl) {
+                    Link(destination: url) {
+                        HStack(spacing: 5) {
+                            Text("Open on PornHub")
+                                .font(.system(size: 13, weight: .semibold))
+                            Image(systemName: "arrow.up.right.square")
+                                .font(.system(size: 11, weight: .semibold))
+                        }
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(
+                            Capsule().fill(Color.bingeLike.opacity(0.5))
+                        )
+                        .overlay(
+                            Capsule().stroke(
+                                Color.bingeLike.opacity(0.7), lineWidth: 1
+                            )
+                        )
+                    }
+                }
+                saveButton
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 16)
+        .padding(.bottom, 28)
+    }
+
+    @ViewBuilder
+    private var saveButton: some View {
+        switch saveState {
+        case .saved:
+            HStack(spacing: 5) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 12, weight: .semibold))
+                Text("Saved").font(.system(size: 13, weight: .semibold))
+            }
+            .foregroundStyle(.green)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(Capsule().fill(Color.white.opacity(0.10)))
+        case .failed(let msg):
+            Button { Task { await save() } } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 11, weight: .semibold))
+                    Text("Retry").font(.system(size: 13, weight: .semibold))
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(Capsule().fill(Color.red.opacity(0.45)))
+            }
+            .help(msg)
+        default:
+            Button { Task { await save() } } label: {
+                HStack(spacing: 5) {
+                    if saveState == .saving {
+                        ProgressView().controlSize(.small).tint(.white)
+                    } else {
+                        Image(systemName: "square.and.arrow.down")
+                            .font(.system(size: 12, weight: .semibold))
+                    }
+                    Text(saveState == .saving ? "Saving…" : "Save to Stash")
+                        .font(.system(size: 13, weight: .semibold))
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(Capsule().fill(Color.white.opacity(0.14)))
+                .overlay(
+                    Capsule().stroke(Color.white.opacity(0.25), lineWidth: 1)
+                )
+            }
+            .disabled(saveState == .saving)
+        }
+    }
+
+    private func save() async {
+        saveState = .saving
+        let req = BingeServerService.SaveToStashRequest(
+            performerStashId: performerStashId,
+            source: .pornhub,
+            handle: nil,
+            id: video.id,
+            mediaUrl: video.sourceUrl,
+            kind: "video",
+            sourceUrl: video.sourceUrl,
+            text: video.title,
+            createdUtc: video.createdUtc
+        )
+        switch await BingeServerService.saveToStash(req) {
+        case .ok: saveState = .saved
+        case .failure(let msg): saveState = .failed(msg)
+        }
+    }
+
+    private func start() {
+        guard let url = URL(
+            string: BingeServerService.pornhubStreamUrl(video.id)
+        ) else { return }
+        let item = AVPlayerItem(url: url)
+        item.preferredForwardBufferDuration = 2
+        let p = AVPlayer(playerItem: item)
+        p.isMuted = muted
+        player = p
+        // Clear the spinner once the first frame is ready.
+        Task { @MainActor in
+            for _ in 0..<200 {  // ~20s ceiling
+                if p.currentItem?.status == .readyToPlay {
+                    loading = false
+                    break
+                }
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+            loading = false
+        }
+        p.play()
+    }
+
+    private func stop() {
+        player?.pause()
+        player?.replaceCurrentItem(with: nil)
+        player = nil
     }
 }
 
