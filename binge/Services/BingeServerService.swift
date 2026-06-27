@@ -234,16 +234,30 @@ enum BingeServerService {
         "\(currentURL())/pornhub/stream/\(encode(videoId))"
     }
     static func pornhubThumbUrl(_ raw: String?) -> String? {
-        guard let raw, let enc = raw.addingPercentEncoding(
-            withAllowedCharacters: .urlQueryAllowed
-        ) else { return raw }
-        return "\(currentURL())/pornhub/thumb?url=\(enc)"
+        guard let raw else { return raw }
+        return "\(currentURL())/pornhub/thumb?url=\(queryEncode(raw))"
     }
 
     private static func encode(_ s: String) -> String {
         s.addingPercentEncoding(
             withAllowedCharacters: .urlPathAllowed
         ) ?? s
+    }
+
+    /// Percent-encode a string for use as a query-parameter VALUE.
+    /// `.urlQueryAllowed` is WRONG here: it leaves `&`, `=`, `?`, `+`
+    /// un-encoded, so a proxied URL that itself contains `&` (e.g. a
+    /// phncdn thumb's `&validto=…` or a reddit preview's `&s=…`) is
+    /// truncated at the daemon — the `url` param ends at the first
+    /// inner `&`, dropping the rest of the signature → upstream 403.
+    /// Encode everything except RFC 3986 unreserved chars (matches
+    /// JS encodeURIComponent, which the web client uses).
+    private static let queryValueAllowed = CharacterSet(
+        charactersIn:
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~"
+    )
+    private static func queryEncode(_ s: String) -> String {
+        s.addingPercentEncoding(withAllowedCharacters: queryValueAllowed) ?? s
     }
 
     // MARK: - Save to Stash
@@ -443,10 +457,7 @@ enum BingeServerService {
         if !(host.hasSuffix(".redd.it") || host.hasSuffix(".redditmedia.com")) {
             return url
         }
-        guard let encoded = url.addingPercentEncoding(
-            withAllowedCharacters: .urlQueryAllowed
-        ) else { return url }
-        return "\(currentURL())/reddit/proxy?url=\(encoded)"
+        return "\(currentURL())/reddit/proxy?url=\(queryEncode(url))"
     }
 
     /// Same proxy treatment for redgifs — they 403 cross-origin
@@ -458,10 +469,7 @@ enum BingeServerService {
         if !host.hasSuffix(".redgifs.com") {
             return url
         }
-        guard let encoded = url.addingPercentEncoding(
-            withAllowedCharacters: .urlQueryAllowed
-        ) else { return url }
-        return "\(currentURL())/redgifs/proxy?url=\(encoded)"
+        return "\(currentURL())/redgifs/proxy?url=\(queryEncode(url))"
     }
 
     /// Strip the host from a Stash-rooted URL so the iOS client
