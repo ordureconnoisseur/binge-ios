@@ -87,6 +87,10 @@ final class HomeViewModel {
     /// its slice so order doesn't matter.
     private var stashDBByLocalId: [String: [StashDBStoryScene]] = [:]
     private var redditByLocalId: [String: StoryBuilder.RedditEntry] = [:]
+    /// PornHub tail — same RedditEntry shape (pornhub videos map onto
+    /// reddit-shaped posts) so it merges into the reddit bucket in
+    /// rebuildStories() and needs no StoryBuilder changes.
+    private var pornhubByLocalId: [String: StoryBuilder.RedditEntry] = [:]
     /// Monotonic token bumped at the start of each fetch(). The
     /// detached discovery / Reddit tasks capture it and bail before
     /// assigning if a newer fetch has begun — otherwise a slow
@@ -281,6 +285,10 @@ final class HomeViewModel {
         UserDefaults.standard.object(forKey: "binge.includeReddit")
             as? Bool ?? true
     }
+    private var includePornhub: Bool {
+        UserDefaults.standard.object(forKey: "binge.includePornhub")
+            as? Bool ?? true
+    }
 
     /// Tokens for the NotificationCenter observers added in init.
     /// Stored so `deinit` can remove them — without this the
@@ -444,6 +452,7 @@ final class HomeViewModel {
             libraryStorySource = merged
             stashDBByLocalId = [:]
             redditByLocalId = [:]
+            pornhubByLocalId = [:]
             rebuildStories()
             let assembled = Self.assemblePacks(
                 merged.sorted {
@@ -495,10 +504,11 @@ final class HomeViewModel {
                 .filteringHidden()
             libraryStorySource = merged
             // Reset tails on a fresh load so refreshing drops
-            // stale StashDB / Reddit entries before the new
-            // fetches land.
+            // stale StashDB / Reddit / PornHub entries before the
+            // new fetches land.
             stashDBByLocalId = [:]
             redditByLocalId = [:]
+            pornhubByLocalId = [:]
             rebuildStories()
             let assembled = Self.assemblePacks(
                 merged.sorted {
@@ -524,6 +534,9 @@ final class HomeViewModel {
             }
             if includeReddit {
                 Task { await fetchReddit(generation: gen) }
+            }
+            if includePornhub {
+                Task { await fetchPornhub(generation: gen) }
             }
         } catch {
             let msg = (error as? LocalizedError)?.errorDescription
@@ -792,15 +805,101 @@ final class HomeViewModel {
         rebuildStories()
     }
 
-    /// Re-run StoryBuilder with the current library merge + both
-    /// tail maps. Cheap (pure transform on already-fetched data)
-    /// so callers can invoke this freely after either async
-    /// augmentation lands.
+    /// Best-effort fetch of PornHub-sourced story videos from the
+    /// daemon. Maps each performer's recent uploads onto reddit-shaped
+    /// video posts (so StoryBuilder treats them like the reddit tail)
+    /// and stores them in the pornhub tail map. Silently degrades on
+    /// every failure path. Playback uses the mp4 STREAM proxy, not the
+    /// webm preview — AVPlayer can't decode webm.
+    private func fetchPornhub(generation: Int) async {
+        let sinceUtc = Int(
+            Date().addingTimeInterval(
+                -Double(lookbackDays) * 86_400
+            ).timeIntervalSince1970
+        )
+        guard let digests = await BingeServerService.fetchPornhubStories(
+            sinceUtc: sinceUtc
+        ) else { return }
+        var bucket: [String: StoryBuilder.RedditEntry] = [:]
+        let iso = ISO8601DateFormatter()
+        for d in digests {
+            let localId = String(d.performerStashId)
+            let rewrittenImage =
+                BingeServerService.rewriteStashAssetUrl(
+                    d.performerImagePath
+                )
+            let fallback = BingeScene.Performer(
+                id: localId,
+                name: d.performerName,
+                imagePath: rewrittenImage,
+                favorite: d.performerFavorite
+            )
+            let posts: [RedditStoryPost] = d.videos.map { v in
+                let createdISO = iso.string(
+                    from: Date(
+                        timeIntervalSince1970: Double(v.createdUtc)
+                    )
+                )
+                return RedditStoryPost(
+                    id: "pornhub:\(v.id)",
+                    kind: .video,
+                    title: v.title,
+                    body: nil,
+                    mediaUrl: BingeServerService.pornhubStreamUrl(v.id),
+                    linkUrl: nil,
+                    thumbUrl: BingeServerService.pornhubThumbUrl(
+                        v.thumbUrl
+                    ),
+                    permalink: v.sourceUrl,
+                    domain: "pornhub.com",
+                    createdUtc: v.createdUtc,
+                    effectiveAt: createdISO,
+                    // Save hands the daemon the WATCH page; yt-dlp
+                    // downloads the full video from there.
+                    save: RedditStoryPost.SavePayload(
+                        source: "pornhub",
+                        mediaUrl: v.sourceUrl,
+                        handle: nil,
+                        id: v.id,
+                        kind: "video"
+                    )
+                )
+            }
+            bucket[localId] = StoryBuilder.RedditEntry(
+                posts: posts,
+                fallbackPerformer: fallback
+            )
+        }
+        guard generation == fetchGeneration else { return }
+        pornhubByLocalId = bucket
+        print(
+            "[binge] pornhub digests=\(digests.count) "
+                + "performers=\(bucket.count)"
+        )
+        rebuildStories()
+    }
+
+    /// Re-run StoryBuilder with the current library merge + the tail
+    /// maps. The PornHub tail merges into the Reddit bucket (both are
+    /// reddit-shaped) so StoryBuilder needs no changes. Cheap (pure
+    /// transform) so callers invoke it freely after any augmentation
+    /// lands.
     private func rebuildStories() {
+        var social = redditByLocalId
+        for (localId, entry) in pornhubByLocalId {
+            if let existing = social[localId] {
+                social[localId] = StoryBuilder.RedditEntry(
+                    posts: existing.posts + entry.posts,
+                    fallbackPerformer: existing.fallbackPerformer
+                )
+            } else {
+                social[localId] = entry
+            }
+        }
         stories = StoryBuilder.build(
             from: libraryStorySource,
             stashDBByLocalId: stashDBByLocalId,
-            redditByLocalId: redditByLocalId
+            redditByLocalId: social
         )
     }
 
