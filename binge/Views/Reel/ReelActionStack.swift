@@ -34,6 +34,12 @@ struct ReelActionStack: View {
     /// review-writing modal inside Stash) takes over. Only shown
     /// when stashScribe is detected by PluginContext.
     let onScribe: (() -> Void)?
+    /// Tap on the grid glyph — toggles this scene in the Multiview
+    /// queue. Only shown when the multiView plugin is installed.
+    let onMultiview: (() -> Void)?
+    /// Whether this scene is currently in the Multiview queue (fills
+    /// the grid glyph). Read from MultiviewQueueStore by the caller.
+    let isMultiviewQueued: Bool
 
     init(
         oCounter: Int,
@@ -42,7 +48,9 @@ struct ReelActionStack: View {
         onMore: @escaping () -> Void,
         onBookmark: @escaping () -> Void,
         onRate: (() -> Void)? = nil,
-        onScribe: (() -> Void)? = nil
+        onScribe: (() -> Void)? = nil,
+        onMultiview: (() -> Void)? = nil,
+        isMultiviewQueued: Bool = false
     ) {
         self.oCounter = oCounter
         self.onLike = onLike
@@ -51,6 +59,8 @@ struct ReelActionStack: View {
         self.onBookmark = onBookmark
         self.onRate = onRate
         self.onScribe = onScribe
+        self.onMultiview = onMultiview
+        self.isMultiviewQueued = isMultiviewQueued
     }
 
     @State private var likeBounce: Int = 0
@@ -70,9 +80,14 @@ struct ReelActionStack: View {
         VStack(spacing: 22) {
             heartButton
             rateButton
-            // Multiview slot intentionally omitted on mobile —
-            // the plugin's grid layout doesn't translate well
-            // to a portrait phone screen.
+            // Multiview: tap toggles this scene in the queue the
+            // Multiview player + multiview-ios read. Gated on the
+            // plugin being installed.
+            if PluginContext.shared.hasPlugin(PluginID.multiView)
+                && onMultiview != nil
+            {
+                multiviewButton
+            }
             if PluginContext.shared.hasPlugin(PluginID.scribe)
                 && onScribe != nil
             {
@@ -82,6 +97,22 @@ struct ReelActionStack: View {
             moreButton
         }
         .shadow(color: .black.opacity(0.55), radius: 6, x: 0, y: 2)
+        .task { await MultiviewQueueStore.shared.loadIfNeeded() }
+    }
+
+    @ViewBuilder
+    private var multiviewButton: some View {
+        Button {
+            onMultiview?()
+        } label: {
+            BingeIcon(
+                glyph: .grid(filled: isMultiviewQueued),
+                size: 30,
+                color: isMultiviewQueued ? Color.bingeLike : .white
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     @ViewBuilder

@@ -668,10 +668,11 @@ struct SceneFeedCard: View {
         HStack(spacing: 18) {
             likeButton
             rateButton
-            // Multiview slot intentionally omitted on mobile —
-            // the plugin's grid layout doesn't translate to a
-            // 1-column phone screen, so the row jumps straight
-            // from rating to scribe/bookmark.
+            // Multiview: tap toggles this scene in the queue read by
+            // the Multiview player + multiview-ios. Gated on the plugin.
+            if PluginContext.shared.hasPlugin(PluginID.multiView) {
+                multiviewButton
+            }
             if PluginContext.shared.hasPlugin(PluginID.scribe) {
                 scribeButton
             }
@@ -679,6 +680,7 @@ struct SceneFeedCard: View {
             Spacer()
             watchFullButton
         }
+        .task { await MultiviewQueueStore.shared.loadIfNeeded() }
         .sheet(isPresented: $rateOpen) {
             // Branch on plugin availability so users without
             // the advancedRating plugin still get the native
@@ -709,6 +711,24 @@ struct SceneFeedCard: View {
                 size: 22,
                 color: .white
             )
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// Grid (Multiview) button — toggles this scene in the Multiview
+    /// queue. Fills pink while queued; tap optimistically flips it.
+    @ViewBuilder
+    private var multiviewButton: some View {
+        let queued = MultiviewQueueStore.shared.isQueued(scene.id)
+        Button {
+            Task { await MultiviewQueueStore.shared.toggle(scene.id) }
+        } label: {
+            BingeIcon(
+                glyph: .grid(filled: queued),
+                size: 22,
+                color: queued ? Color.bingeLike : .white
+            )
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }

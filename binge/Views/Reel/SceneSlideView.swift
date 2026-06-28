@@ -241,7 +241,15 @@ struct SceneSlideView: View {
                         onRate: { rateOpen = true },
                         onScribe: {
                             ScribeContext.shared.openScene(scene.id)
-                        }
+                        },
+                        onMultiview: {
+                            Task {
+                                await MultiviewQueueStore.shared
+                                    .toggle(scene.id)
+                            }
+                        },
+                        isMultiviewQueued: MultiviewQueueStore.shared
+                            .isQueued(scene.id)
                     )
                 }
                 .padding(.trailing, 14)
