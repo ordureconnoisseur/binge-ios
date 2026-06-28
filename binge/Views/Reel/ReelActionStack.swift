@@ -97,7 +97,7 @@ struct ReelActionStack: View {
             moreButton
         }
         .shadow(color: .black.opacity(0.55), radius: 6, x: 0, y: 2)
-        .task { await MultiviewQueueStore.shared.loadIfNeeded() }
+        .task { await MultiviewQueueStore.shared.refresh() }
     }
 
     @ViewBuilder

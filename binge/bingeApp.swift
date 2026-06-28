@@ -7,6 +7,12 @@ import SwiftUI
 // RootView itself to keep this entry trivially short.
 @main
 struct BingeApp: App {
+    // Re-sync the Multiview queue whenever the app returns to the
+    // foreground — the queue can change from the web player or
+    // multiview-ios while binge is backgrounded, and a warm resume
+    // would otherwise keep showing the stale set.
+    @Environment(\.scenePhase) private var scenePhase
+
     init() {
         // Configure the audio session once at launch. Without this
         // call iOS defaults to .soloAmbient / .ambient which
@@ -40,6 +46,11 @@ struct BingeApp: App {
         WindowGroup {
             RootView()
                 .preferredColorScheme(.dark)
+                .onChange(of: scenePhase) { _, phase in
+                    if phase == .active {
+                        Task { await MultiviewQueueStore.shared.refresh(force: true) }
+                    }
+                }
         }
     }
 }

@@ -491,6 +491,8 @@ struct HomeView: View {
             .background(Color.black.ignoresSafeArea())
             .refreshable {
                 await vm?.refresh()
+                // Pull-to-refresh also force-syncs the Multiview queue.
+                await MultiviewQueueStore.shared.forceRefresh()
             }
             .navigationTitle("Home")
             .navigationBarTitleDisplayMode(.inline)

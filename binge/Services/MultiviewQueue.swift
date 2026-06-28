@@ -76,8 +76,18 @@ final class MultiviewQueueStore {
     private(set) var queuedIds: Set<String> = []
 
     @ObservationIgnored private var rawItems: [Any] = []
-    @ObservationIgnored private var loaded = false
     @ObservationIgnored private var loading = false
+    @ObservationIgnored private var lastLoadedAt: Date?
+    /// In-flight optimistic toggle writes. A refresh while > 0 would
+    /// risk reading a not-yet-committed server state and clobbering the
+    /// optimistic value, so refresh() backs off until writes drain.
+    @ObservationIgnored private var pendingWrites = 0
+
+    /// Auto-refresh throttle. A surface (reel/feed) appearing re-syncs
+    /// the queue, but not more often than this — so scrolling, which
+    /// mounts many cells, doesn't spam the config query. A forced
+    /// refresh (app foreground) bypasses it.
+    private static let autoRefreshInterval: TimeInterval = 4
 
     private var baseURL: String {
         UserDefaults.standard.string(forKey: "binge.stashUrl") ?? ""
@@ -92,15 +102,25 @@ final class MultiviewQueueStore {
     /// can't be added.
     var isFull: Bool { rawItems.count >= MultiviewService.maxQueue }
 
-    /// One-shot load (idempotent). Buttons call this so the first reel/
-    /// feed render that shows a multiview button populates the state.
-    func loadIfNeeded() async {
-        if loaded || loading { return }
+    /// Re-sync the queue from the server. Called when the reel/feed
+    /// appears (throttled) and on app foreground (`force`). Skips while
+    /// a write is in flight so it can't clobber an optimistic toggle,
+    /// and skips a fresh-enough auto-refresh so scrolling doesn't spam
+    /// Stash. This replaces the old once-only load — the queue can
+    /// change from the web player or multiview-ios, so binge must keep
+    /// re-reading it.
+    func refresh(force: Bool = false) async {
+        if DemoMode.isOn { return }
+        if loading || pendingWrites > 0 { return }
+        if !force, let t = lastLoadedAt,
+            Date().timeIntervalSince(t) < Self.autoRefreshInterval
+        {
+            return
+        }
         await reload()
     }
 
-    func reload() async {
-        if DemoMode.isOn { loaded = true; return }
+    private func reload() async {
         guard !baseURL.isEmpty else { return }
         loading = true
         defer { loading = false }
@@ -108,9 +128,11 @@ final class MultiviewQueueStore {
             let items = try await MultiviewService.fetchQueue(
                 baseURL: baseURL, apiKey: apiKey
             )
-            rawItems = items
-            queuedIds = Set(items.compactMap { $0 as? String })
-            loaded = true
+            // A toggle may have started while we were awaiting the
+            // fetch — don't overwrite the user's optimistic change with
+            // a stale read.
+            if pendingWrites > 0 { return }
+            syncState(from: items)
         } catch {
             print("[binge] multiview queue load failed: \(error)")
         }
@@ -118,42 +140,86 @@ final class MultiviewQueueStore {
 
     enum ToggleResult { case added, removed, full }
 
-    /// Toggle a scene in the queue. Optimistic: the local set updates
-    /// immediately (so the button flips without waiting on the network),
-    /// then the write-through lands; a failed write rolls back + reloads.
-    /// Adding at the 16-item cap is a no-op (.full) — the caller can
-    /// surface a "queue full" message.
+    /// Toggle a scene in the queue.
+    ///
+    /// CRITICAL: this is a READ-MODIFY-WRITE against the LIVE server
+    /// queue, not a write of our local snapshot. The queue is shared
+    /// with the web player and multiview-ios; writing a stale local copy
+    /// would wipe scenes added/removed elsewhere (it did — an 8-item
+    /// queue got clobbered down to 1). So we re-fetch, apply the user's
+    /// intent (queued→remove, else add), and write that back.
+    ///
+    /// The local set flips optimistically first (instant button
+    /// feedback), then reconciles to the server-consistent result. Intent
+    /// comes from what the user SAW (the optimistic/visible state), so an
+    /// add stays an add even if the scene turns out to already be on the
+    /// server. Adding at the 16-item cap reverts and returns .full.
     @discardableResult
     func toggle(_ sceneId: String) async -> ToggleResult {
-        let wasQueued = queuedIds.contains(sceneId)
-        var items = rawItems
-        let result: ToggleResult
-        if wasQueued {
-            items.removeAll { ($0 as? String) == sceneId }
-            queuedIds.remove(sceneId)
-            result = .removed
-        } else {
-            if items.count >= MultiviewService.maxQueue { return .full }
-            items.append(sceneId)
-            queuedIds.insert(sceneId)
-            result = .added
-        }
-        rawItems = items
-        if DemoMode.isOn { return result }
-        do {
-            try await MultiviewService.writeQueue(
-                items, baseURL: baseURL, apiKey: apiKey
-            )
-        } catch {
-            print("[binge] multiview queue write failed: \(error)")
-            // Roll back the optimistic flip + resync from the server.
-            if wasQueued {
-                queuedIds.insert(sceneId)
+        let wantAdd = !queuedIds.contains(sceneId)
+        // Optimistic flip for instant feedback.
+        if wantAdd { queuedIds.insert(sceneId) } else { queuedIds.remove(sceneId) }
+
+        if DemoMode.isOn {
+            if wantAdd {
+                if !(rawItems.contains { ($0 as? String) == sceneId }) {
+                    rawItems.append(sceneId)
+                }
             } else {
-                queuedIds.remove(sceneId)
+                rawItems.removeAll { ($0 as? String) == sceneId }
             }
-            await reload()
+            return wantAdd ? .added : .removed
         }
-        return result
+
+        pendingWrites += 1
+        defer { pendingWrites -= 1 }
+        do {
+            var items = try await MultiviewService.fetchQueue(
+                baseURL: baseURL, apiKey: apiKey
+            )
+            let present = items.contains { ($0 as? String) == sceneId }
+            var changed = false
+            if wantAdd, !present {
+                if items.count >= MultiviewService.maxQueue {
+                    // Server queue is full — revert the optimistic add and
+                    // resync to the real (full) queue.
+                    queuedIds.remove(sceneId)
+                    syncState(from: items)
+                    return .full
+                }
+                items.append(sceneId)
+                changed = true
+            } else if !wantAdd, present {
+                items.removeAll { ($0 as? String) == sceneId }
+                changed = true
+            }
+            if changed {
+                try await MultiviewService.writeQueue(
+                    items, baseURL: baseURL, apiKey: apiKey
+                )
+            }
+            // Reconcile local state to the server-consistent queue — this
+            // also surfaces scenes added elsewhere that we didn't know
+            // about.
+            syncState(from: items)
+            return wantAdd ? .added : .removed
+        } catch {
+            print("[binge] multiview queue toggle failed: \(error)")
+            // Revert the optimistic flip; leave the rest to the next refresh.
+            if wantAdd { queuedIds.remove(sceneId) } else { queuedIds.insert(sceneId) }
+            return wantAdd ? .removed : .added
+        }
+    }
+
+    private func syncState(from items: [Any]) {
+        rawItems = items
+        queuedIds = Set(items.compactMap { $0 as? String })
+        lastLoadedAt = Date()
+    }
+
+    /// Explicit user-driven re-sync (e.g. pull-to-refresh). Always
+    /// re-reads, bypassing the throttle.
+    func forceRefresh() async {
+        await refresh(force: true)
     }
 }

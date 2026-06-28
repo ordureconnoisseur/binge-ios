@@ -680,7 +680,7 @@ struct SceneFeedCard: View {
             Spacer()
             watchFullButton
         }
-        .task { await MultiviewQueueStore.shared.loadIfNeeded() }
+        .task { await MultiviewQueueStore.shared.refresh() }
         .sheet(isPresented: $rateOpen) {
             // Branch on plugin availability so users without
             // the advancedRating plugin still get the native
