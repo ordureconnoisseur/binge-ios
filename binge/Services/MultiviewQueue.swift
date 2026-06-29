@@ -58,6 +58,57 @@ enum MultiviewService {
             variables: ["input": ["queue": json]]
         )
     }
+
+    enum IntentOutcome {
+        /// The intent holds in the queue; carries the authoritative items.
+        case ok([Any])
+        /// Add rejected — the queue is at the 16-item cap.
+        case full([Any])
+        /// Network failure / gave up after retries — caller reverts.
+        case failed
+    }
+
+    /// Apply a set-membership intent (ensure `sceneId` present when
+    /// `add`, absent otherwise) to the LIVE config queue, with a
+    /// read-back verify and bounded retry. The queue is shared with the
+    /// web plugin/player + multiview-ios, and configurePlugin is
+    /// last-write-wins with no compare-and-swap, so a concurrent writer
+    /// can clobber us between write and read-back — we detect that
+    /// (our intent didn't stick) and re-apply against the now-current
+    /// queue. Idempotent set intents converge under this loop.
+    static func applyIntent(
+        sceneId: String, add: Bool, baseURL: String, apiKey: String
+    ) async -> IntentOutcome {
+        for _ in 0..<4 {
+            do {
+                var items = try await fetchQueue(
+                    baseURL: baseURL, apiKey: apiKey
+                )
+                let present = items.contains { ($0 as? String) == sceneId }
+                if add, present { return .ok(items) }      // already satisfied
+                if !add, !present { return .ok(items) }    // already satisfied
+                if add {
+                    if items.count >= maxQueue { return .full(items) }
+                    items.append(sceneId)
+                } else {
+                    items.removeAll { ($0 as? String) == sceneId }
+                }
+                try await writeQueue(items, baseURL: baseURL, apiKey: apiKey)
+                // Verify against a fresh read — did our intent stick?
+                let after = try await fetchQueue(
+                    baseURL: baseURL, apiKey: apiKey
+                )
+                let afterPresent = after.contains {
+                    ($0 as? String) == sceneId
+                }
+                if afterPresent == add { return .ok(after) }
+                // Clobbered by a concurrent write — loop + re-apply.
+            } catch {
+                return .failed
+            }
+        }
+        return .failed
+    }
 }
 
 /// Observable singleton holding the current Multiview queue so the
@@ -173,39 +224,24 @@ final class MultiviewQueueStore {
 
         pendingWrites += 1
         defer { pendingWrites -= 1 }
-        do {
-            var items = try await MultiviewService.fetchQueue(
-                baseURL: baseURL, apiKey: apiKey
-            )
-            let present = items.contains { ($0 as? String) == sceneId }
-            var changed = false
-            if wantAdd, !present {
-                if items.count >= MultiviewService.maxQueue {
-                    // Server queue is full — revert the optimistic add and
-                    // resync to the real (full) queue.
-                    queuedIds.remove(sceneId)
-                    syncState(from: items)
-                    return .full
-                }
-                items.append(sceneId)
-                changed = true
-            } else if !wantAdd, present {
-                items.removeAll { ($0 as? String) == sceneId }
-                changed = true
-            }
-            if changed {
-                try await MultiviewService.writeQueue(
-                    items, baseURL: baseURL, apiKey: apiKey
-                )
-            }
-            // Reconcile local state to the server-consistent queue — this
-            // also surfaces scenes added elsewhere that we didn't know
-            // about.
+        // Read-modify-write the LIVE queue with verify + retry so we
+        // never clobber concurrent changes from the web/multiview-ios.
+        let outcome = await MultiviewService.applyIntent(
+            sceneId: sceneId, add: wantAdd, baseURL: baseURL, apiKey: apiKey
+        )
+        switch outcome {
+        case .ok(let items):
+            // Reconcile to the server-consistent queue — also surfaces
+            // scenes added elsewhere that we didn't know about.
             syncState(from: items)
             return wantAdd ? .added : .removed
-        } catch {
-            print("[binge] multiview queue toggle failed: \(error)")
-            // Revert the optimistic flip; leave the rest to the next refresh.
+        case .full(let items):
+            queuedIds.remove(sceneId)  // revert the optimistic add
+            syncState(from: items)
+            return .full
+        case .failed:
+            print("[binge] multiview queue toggle failed")
+            // Revert the optimistic flip; the next refresh reconciles.
             if wantAdd { queuedIds.remove(sceneId) } else { queuedIds.insert(sceneId) }
             return wantAdd ? .removed : .added
         }
