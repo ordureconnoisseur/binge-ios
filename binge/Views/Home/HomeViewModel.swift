@@ -539,10 +539,39 @@ final class HomeViewModel {
                 Task { await fetchPornhub(generation: gen) }
             }
         } catch {
+            // A cancellation is not a real failure. SwiftUI cancels the
+            // in-flight .task whenever Home leaves and re-enters the nav
+            // stack, a fullScreenCover appears over it, the tab switches
+            // away, or a pull-to-refresh interrupts a load already
+            // running. Each of those starts a fresh fetch right after,
+            // so surfacing "Network: cancelled" as the fatal
+            // "Couldn't load home" banner is a false alarm — swallow it
+            // and leave state for the successor run to populate.
+            if Task.isCancelled || Self.isCancellation(error) {
+                return
+            }
             let msg = (error as? LocalizedError)?.errorDescription
                 ?? "\(error)"
             loadState = .error(msg)
         }
+    }
+
+    /// True when `error` is a task/URL cancellation — either a bare
+    /// `CancellationError`, a `URLError.cancelled`, or one of those
+    /// wrapped inside `StashClientError.network` (how StashClient
+    /// surfaces URLSession failures).
+    private static func isCancellation(_ error: Error) -> Bool {
+        if error is CancellationError { return true }
+        if let urlErr = error as? URLError, urlErr.code == .cancelled {
+            return true
+        }
+        if case StashClientError.network(let inner) = error {
+            if inner is CancellationError { return true }
+            if let urlErr = inner as? URLError, urlErr.code == .cancelled {
+                return true
+            }
+        }
+        return false
     }
 
     /// Displayed O-counter for a scene — override map first,
