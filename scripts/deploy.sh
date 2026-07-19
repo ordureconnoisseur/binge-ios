@@ -23,9 +23,12 @@ xcodebuild \
   -allowProvisioningUpdates \
   build
 
-# First connected physical device; override with BINGE_DEVICE=<udid>
+# First reachable physical device; override with BINGE_DEVICE=<udid>.
+# Wi-Fi devices report "available (paired)" rather than "connected", so take
+# either; "unavailable" has to be filtered out first since it contains
+# "available".
 DEVICE="${BINGE_DEVICE:-$(xcrun devicectl list devices --hide-headers 2>/dev/null \
-  | awk '/connected/ {for (i = 1; i <= NF; i++) if ($i ~ /^[0-9A-Fa-f-]{36}$/) { print $i; exit }}')}"
+  | awk '!/unavailable/ && /connected|available/ {for (i = 1; i <= NF; i++) if ($i ~ /^[0-9A-Fa-f-]{36}$/) { print $i; exit }}')}"
 if [ -z "$DEVICE" ]; then
   echo "No connected iPhone found (is it awake and on the same network?)" >&2
   xcrun devicectl list devices >&2
