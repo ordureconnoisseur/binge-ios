@@ -56,21 +56,11 @@ enum AllowedGendersStore {
     }
 
     /// As string-set for direct comparison with StashDB enum
-    /// strings on raw performer records.
+    /// strings on raw performer records. This is the authoritative
+    /// set surfaced in discovery + the Discover Performers bar — the
+    /// "Genders to surface" setting is the only gate.
     static func currentStrings() -> Set<String> {
         Set(current().map(\.rawValue))
-    }
-
-    /// Genders silently hidden everywhere (trans), regardless of the
-    /// "Genders to surface" setting — mirrors web's HIDDEN_GENDERS.
-    static let hiddenStrings: Set<String> = [
-        "TRANSGENDER_FEMALE", "TRANSGENDER_MALE",
-    ]
-
-    /// currentStrings() minus the hidden genders — the set actually
-    /// surfaced in discovery + the Discover Performers bar.
-    static func visibleStrings() -> Set<String> {
-        currentStrings().subtracting(hiddenStrings)
     }
 
     static func write(_ values: Set<AllowedGender>) {

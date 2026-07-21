@@ -238,7 +238,7 @@ final class DiscoverPerformersBarViewModel {
             loaded = true  // mark loaded so we don't retry on every tab return
             return
         }
-        let genders = Array(AllowedGendersStore.visibleStrings())
+        let genders = Array(AllowedGendersStore.currentStrings())
         async let trendingTask = svc.cachedTrendingPerformers(
             apiKey: box.apiKey, perPage: 30, genders: genders
         )
