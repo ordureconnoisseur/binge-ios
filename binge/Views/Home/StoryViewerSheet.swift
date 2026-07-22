@@ -27,7 +27,8 @@ struct StoryViewerSheet: View {
         nil
 
     @Environment(\.dismiss) private var dismiss
-    @AppStorage("binge.muted") private var muted: Bool = true
+    // Mute functionality removed for now — playback is always unmuted.
+    private let muted = false
 
     @State private var storyIndex: Int
     @State private var sceneIndex: Int = 0
@@ -655,24 +656,6 @@ struct StoryViewerSheet: View {
             }
             .buttonStyle(.plain)
             Spacer()
-            // Mute toggle only visible when on a library scene —
-            // stashdb scenes have no audio.
-            if case .library = currentScene {
-                Button {
-                    muted.toggle()
-                    player?.isMuted = muted
-                } label: {
-                    Image(
-                        systemName: muted
-                            ? "speaker.slash.fill"
-                            : "speaker.wave.2.fill"
-                    )
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .padding(8)
-                    .background(.black.opacity(0.5), in: Circle())
-                }
-            }
             Button { dismiss() } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 13, weight: .bold))

@@ -82,7 +82,8 @@ struct SceneFeedCard: View {
     /// button. Reuses the same SaveToCollectionSheet the reel
     /// rail's bookmark uses.
     @State private var saveOpen: Bool = false
-    @AppStorage("binge.muted") private var muted: Bool = true
+    // Mute functionality removed for now — playback is always unmuted.
+    private let muted = false
     /// Card-local AVPlayer for the inline preview. Created on
     /// .onAppear, torn down on .onDisappear so off-screen cards
     /// in the LazyVStack don't keep AVFoundation sessions hot.
@@ -369,30 +370,6 @@ struct SceneFeedCard: View {
                     .padding(20)
                     .background(.black.opacity(0.4), in: Circle())
                     .transition(.opacity)
-            }
-            // Mute toggle in the bottom-right of the video
-            // surface. Matches the web inline preview chrome.
-            VStack {
-                Spacer()
-                HStack {
-                    Spacer()
-                    Button {
-                        muted.toggle()
-                        player?.isMuted = muted
-                    } label: {
-                        Image(
-                            systemName: muted
-                                ? "speaker.slash.fill"
-                                : "speaker.wave.2.fill"
-                        )
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .padding(8)
-                        .background(.black.opacity(0.55), in: Circle())
-                    }
-                    .buttonStyle(.plain)
-                    .padding(8)
-                }
             }
         }
         .aspectRatio(16 / 9, contentMode: .fit)

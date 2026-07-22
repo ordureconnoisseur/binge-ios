@@ -38,7 +38,8 @@ struct SceneSlideView: View {
     /// alongside the top-right filter pill.
     var chromeVisible: Bool = true
 
-    @AppStorage("binge.muted") private var muted: Bool = true
+    // Mute functionality removed for now — playback is always unmuted.
+    private let muted = false
     @AppStorage("binge.autoScroll") private var autoScroll: Bool = false
 
     @State private var tour = TourDirector.shared

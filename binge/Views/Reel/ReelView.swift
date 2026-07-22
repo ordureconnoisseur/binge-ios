@@ -206,7 +206,7 @@ struct ReelView: View {
                     scene: scenes[warmIdx],
                     baseURL: stashUrl,
                     apiKey: stashApiKey,
-                    muted: true
+                    muted: false
                 )
             }
         }

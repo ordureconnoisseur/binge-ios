@@ -27,7 +27,8 @@ struct SceneVideoSheet: View {
     let apiKey: String
 
     @Environment(\.dismiss) private var dismiss
-    @AppStorage("binge.muted") private var muted: Bool = true
+    // Mute functionality removed for now — playback is always unmuted.
+    private let muted = false
     @State private var player: AVQueuePlayer?
     // Retained so the looper doesn't get deallocated mid-playback.
     @State private var looper: AVPlayerLooper?
@@ -49,20 +50,6 @@ struct SceneVideoSheet: View {
                             .background(.black.opacity(0.55), in: Circle())
                     }
                     Spacer()
-                    Button {
-                        muted.toggle()
-                        player?.isMuted = muted
-                    } label: {
-                        Image(
-                            systemName: muted
-                                ? "speaker.slash.fill"
-                                : "speaker.wave.2.fill"
-                        )
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .padding(10)
-                        .background(.black.opacity(0.55), in: Circle())
-                    }
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 8)
