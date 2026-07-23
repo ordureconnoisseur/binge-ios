@@ -14,6 +14,13 @@ struct BingeApp: App {
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
+        // Restore the Stash URL from its Keychain mirror before
+        // RootView decides between the setup screen and the app.
+        // UserDefaults is wiped by an app reinstall; the Keychain
+        // isn't, so this keeps a redeploy from logging the user out
+        // of their own server.
+        KeychainStore.syncStashUrlBackup()
+
         // Configure the audio session once at launch. Without this
         // call iOS defaults to .soloAmbient / .ambient which
         // doesn't reliably play audio when the device is locked

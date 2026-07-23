@@ -14,6 +14,13 @@ cd "$REPO"
 git pull --ff-only
 xcodegen generate
 
+# ENABLE_DEBUG_DYLIB=NO builds a single self-contained binary rather
+# than Xcode 16+'s split app + __preview.dylib. The split layout has
+# to install its embedded profile for each nested binary, which iOS
+# rejects over a wireless connection with a misleading
+# "ApplicationVerificationFailed / provisioning profile cannot be
+# installed on this device" — even when the profile is valid and does
+# list the device. Costs a little build time, buys reliable installs.
 xcodebuild \
   -project binge.xcodeproj \
   -scheme binge \
@@ -21,6 +28,7 @@ xcodebuild \
   -destination 'generic/platform=iOS' \
   -derivedDataPath "$DERIVED" \
   -allowProvisioningUpdates \
+  ENABLE_DEBUG_DYLIB=NO \
   build
 
 # First reachable physical device; override with BINGE_DEVICE=<udid>.
@@ -36,6 +44,16 @@ if [ -z "$DEVICE" ]; then
 fi
 
 APP="$DERIVED/Build/Products/Debug-iphoneos/binge.app"
-xcrun devicectl device install app --device "$DEVICE" "$APP"
+# iOS sometimes refuses to install OVER an existing copy when the
+# signature/profile generation has moved on (ApplicationVerificationFailed).
+# A clean install always works, so fall back to uninstall-then-install.
+# Safe to automate: the Stash URL is mirrored into the Keychain and the
+# API key already lives there, so both survive the wipe (KeychainStore).
+# Other in-app settings (lookback, genders, toggles) DO reset.
+if ! xcrun devicectl device install app --device "$DEVICE" "$APP"; then
+  echo "install failed; retrying with a clean install" >&2
+  xcrun devicectl device uninstall app --device "$DEVICE" "$BUNDLE_ID" || true
+  xcrun devicectl device install app --device "$DEVICE" "$APP"
+fi
 xcrun devicectl device process launch --device "$DEVICE" "$BUNDLE_ID"
 echo "Deployed $BUNDLE_ID to $DEVICE"

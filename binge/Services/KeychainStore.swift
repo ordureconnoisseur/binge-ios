@@ -27,6 +27,14 @@ final class KeychainStore {
     private let service = "com.ordureconnoisseur.binge"
     private let stashApiKeyAccount = "stashApiKey"
     private let legacyUserDefaultsKey = "binge.stashApiKey"
+    /// Keychain mirror of the `binge.stashUrl` UserDefaults value.
+    /// Not a secret — kept here purely because the Keychain SURVIVES
+    /// app uninstall while UserDefaults does not. Reinstalling (which
+    /// the ad-hoc deploy flow needs whenever iOS rejects an update
+    /// install) would otherwise wipe the server URL and drop the user
+    /// back on the setup screen with no way back in.
+    private static let stashUrlAccount = "stashUrlBackup"
+    static let stashUrlDefaultsKey = "binge.stashUrl"
 
     private var _stashApiKey: String
 
@@ -54,6 +62,49 @@ final class KeychainStore {
                 )
             }
         }
+    }
+
+    /// Mirror the current `binge.stashUrl` into the Keychain, or —
+    /// when UserDefaults has no URL but the Keychain does — restore
+    /// it. Call once at launch BEFORE RootView reads the value, so a
+    /// post-reinstall cold start comes up already configured instead
+    /// of showing the setup screen.
+    ///
+    /// Deliberately a UserDefaults mirror rather than a migration:
+    /// ~24 views read `binge.stashUrl` via @AppStorage and keeping
+    /// that the single read path avoids touching all of them.
+    nonisolated static func syncStashUrlBackup() {
+        let defaults = UserDefaults.standard
+        let current = defaults.string(forKey: stashUrlDefaultsKey) ?? ""
+        if current.isEmpty {
+            guard
+                let saved = Keychain.read(
+                    service: "com.ordureconnoisseur.binge",
+                    account: stashUrlAccount
+                ),
+                !saved.isEmpty
+            else { return }
+            defaults.set(saved, forKey: stashUrlDefaultsKey)
+            print("[KeychainStore] restored stashUrl from Keychain")
+            return
+        }
+        Keychain.write(
+            service: "com.ordureconnoisseur.binge",
+            account: stashUrlAccount,
+            value: current
+        )
+    }
+
+    /// Persist a newly-entered URL immediately (Settings' onChange),
+    /// so it survives a reinstall even if the app never cold-starts
+    /// again before the next deploy.
+    nonisolated static func backUpStashUrl(_ url: String) {
+        guard !url.isEmpty else { return }
+        Keychain.write(
+            service: "com.ordureconnoisseur.binge",
+            account: stashUrlAccount,
+            value: url
+        )
     }
 
     private init() {

@@ -898,6 +898,9 @@ struct SettingsView: View {
                 in: CharacterSet(charactersIn: "/ \n\r\t")
             )
             stashApiKey = draftApiKey
+            // Mirror the URL into the Keychain so it survives an app
+            // reinstall (UserDefaults doesn't) — see KeychainStore.
+            KeychainStore.backUpStashUrl(stashUrl)
         } catch {
             probeState = .failure(
                 (error as? LocalizedError)?.errorDescription
