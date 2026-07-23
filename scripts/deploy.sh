@@ -42,10 +42,27 @@ APP="$DERIVED/Build/Products/Debug-iphoneos/binge.app"
 # Safe to automate: the Stash URL is mirrored into the Keychain and the
 # API key already lives there, so both survive the wipe (KeychainStore).
 # Other in-app settings (lookback, genders, toggles) DO reset.
+#
+# IMPORTANT: the iPhone must be UNLOCKED. iOS refuses to install an
+# app's embedded provisioning profile on a locked device and reports
+# it as "0xe8008012 / ApplicationVerificationFailed / this provisioning
+# profile cannot be installed on this device" — which reads like a
+# signing problem but is just the lock screen. Uninstall is NOT
+# blocked by the lock, so never uninstall before a plain install has
+# been given a fair chance, or a locked phone ends up with no app.
 if ! xcrun devicectl device install app --device "$DEVICE" "$APP"; then
-  echo "install failed; retrying with a clean install" >&2
-  xcrun devicectl device uninstall app --device "$DEVICE" "$BUNDLE_ID" || true
-  xcrun devicectl device install app --device "$DEVICE" "$APP"
+  echo "install failed - is the iPhone unlocked? retrying in 15s" >&2
+  sleep 15
+  if ! xcrun devicectl device install app --device "$DEVICE" "$APP"; then
+    echo "still failing; falling back to a clean install" >&2
+    xcrun devicectl device uninstall app --device "$DEVICE" "$BUNDLE_ID" || true
+    if ! xcrun devicectl device install app --device "$DEVICE" "$APP"; then
+      echo "" >&2
+      echo "DEPLOY FAILED - binge is now UNINSTALLED from the device." >&2
+      echo "Unlock the iPhone and re-run this script to restore it." >&2
+      exit 1
+    fi
+  fi
 fi
 xcrun devicectl device process launch --device "$DEVICE" "$BUNDLE_ID"
 echo "Deployed $BUNDLE_ID to $DEVICE"
