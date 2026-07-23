@@ -14,13 +14,6 @@ cd "$REPO"
 git pull --ff-only
 xcodegen generate
 
-# ENABLE_DEBUG_DYLIB=NO builds a single self-contained binary rather
-# than Xcode 16+'s split app + __preview.dylib. The split layout has
-# to install its embedded profile for each nested binary, which iOS
-# rejects over a wireless connection with a misleading
-# "ApplicationVerificationFailed / provisioning profile cannot be
-# installed on this device" — even when the profile is valid and does
-# list the device. Costs a little build time, buys reliable installs.
 xcodebuild \
   -project binge.xcodeproj \
   -scheme binge \
@@ -28,7 +21,6 @@ xcodebuild \
   -destination 'generic/platform=iOS' \
   -derivedDataPath "$DERIVED" \
   -allowProvisioningUpdates \
-  ENABLE_DEBUG_DYLIB=NO \
   build
 
 # First reachable physical device; override with BINGE_DEVICE=<udid>.
