@@ -30,17 +30,26 @@ xcodebuild \
   -allowProvisioningUpdates \
   build
 
-# First reachable physical device; override with BINGE_DEVICE=<udid>.
+# First reachable iPhone; override with BINGE_DEVICE=<udid>.
+#
 # Wi-Fi devices report "available (paired)" rather than "connected", so take
 # either; "unavailable" has to be filtered out first since it contains
 # "available".
+#
+# The /iPhone/ term is load-bearing. Accepting "available" (fb22e6c) also
+# made the paired iPad eligible, and devicectl lists it FIRST, so the
+# picker silently switched targets: every deploy went at a locked iPad and
+# failed with kAMDMobileImageMounterDeviceLocked while the iPhone sat
+# unlocked and untouched. Matching on iPhone keeps this honest without
+# hardcoding a UDID that a phone upgrade would invalidate.
 DEVICE="${BINGE_DEVICE:-$(xcrun devicectl list devices --hide-headers 2>/dev/null \
-  | awk '!/unavailable/ && /connected|available/ {for (i = 1; i <= NF; i++) if ($i ~ /^[0-9A-Fa-f-]{36}$/) { print $i; exit }}')}"
+  | awk '!/unavailable/ && /connected|available/ && /iPhone/ {for (i = 1; i <= NF; i++) if ($i ~ /^[0-9A-Fa-f-]{36}$/) { print $i; exit }}')}"
 if [ -z "$DEVICE" ]; then
-  echo "No connected iPhone found (is it awake and on the same network?)" >&2
+  echo "No reachable iPhone found (is it awake and on the same network?)" >&2
   xcrun devicectl list devices >&2
   exit 1
 fi
+echo "Deploying to device $DEVICE"
 
 APP="$DERIVED/Build/Products/Debug-iphoneos/binge.app"
 
