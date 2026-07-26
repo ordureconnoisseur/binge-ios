@@ -19,13 +19,27 @@ xcodegen generate
 # ANY iOS device destination ("iOS 26.5 is not installed"), because the
 # downloadable iOS platform component is missing even though the device
 # SDK itself is present and builds fine. Naming the SDK skips destination
-# resolution entirely. It also avoids installing a simulator runtime we
-# have no use for - binge only ever runs on the physical iPhone.
+# resolution. It also avoids -downloadPlatform iOS, which would pull a
+# simulator runtime we have no use for - binge only runs on the iPhone.
+#
+# The SDK must be named with its VERSION. Bare "-sdk iphoneos" still dies
+# with "Found no destinations for the scheme", even though it resolves
+# SDKROOT to the same iphoneos26.5; only the fully-qualified form builds.
+# Resolve the newest installed one rather than hardcoding, so an Xcode
+# update doesn't silently break this again.
+IOS_SDK="$(xcodebuild -showsdks 2>/dev/null \
+  | awk '/-sdk iphoneos[0-9]/ {sdk = $NF} END {print sdk}')"
+if [ -z "$IOS_SDK" ]; then
+  echo "No iphoneos SDK found in: xcodebuild -showsdks" >&2
+  exit 1
+fi
+echo "Building against SDK $IOS_SDK"
+
 xcodebuild \
   -project binge.xcodeproj \
   -scheme binge \
   -configuration Debug \
-  -sdk iphoneos \
+  -sdk "$IOS_SDK" \
   -derivedDataPath "$DERIVED" \
   -allowProvisioningUpdates \
   build
