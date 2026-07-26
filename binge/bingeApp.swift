@@ -21,6 +21,8 @@ struct BingeApp: App {
         // of their own server.
         KeychainStore.syncStashUrlBackup()
 
+        Self.migrateSettingsKeys()
+
         // Configure the audio session once at launch. Without this
         // call iOS defaults to .soloAmbient / .ambient which
         // doesn't reliably play audio when the device is locked
@@ -49,10 +51,36 @@ struct BingeApp: App {
         }
     }
 
+    /// Rename settings keys that drifted from the web plugin's, carrying
+    /// the user's existing value across. binge and the web plugin
+    /// deliberately share key names so a preference means the same thing
+    /// on both clients (see AllowedGendersStore); these are the ones that
+    /// got out of step. Runs before any @AppStorage view reads the key.
+    private static func migrateSettingsKeys() {
+        let defaults = UserDefaults.standard
+        // `binge.profileStashDB` → `binge.includeStashDBInProfile`
+        // (web's name). Only migrate when the new key is untouched, so a
+        // value set since the rename always wins.
+        let old = "binge.profileStashDB"
+        let new = "binge.includeStashDBInProfile"
+        if defaults.object(forKey: new) == nil,
+            let legacy = defaults.object(forKey: old) as? Bool
+        {
+            defaults.set(legacy, forKey: new)
+        }
+        defaults.removeObject(forKey: old)
+    }
+
     var body: some Scene {
         WindowGroup {
             RootView()
                 .preferredColorScheme(.dark)
+                .task {
+                    // Let Stash's plugin config supply the binge-server
+                    // URL when the user hasn't set one — the loopback
+                    // default is never the daemon on a phone.
+                    await BingeServerService.ensureURLSeeded()
+                }
                 .onChange(of: scenePhase) { _, phase in
                     if phase == .active {
                         Task { await MultiviewQueueStore.shared.refresh(force: true) }

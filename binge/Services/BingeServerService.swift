@@ -81,9 +81,72 @@ struct BingeServerConfigPayload: Encodable {
 enum BingeServerService {
     /// AppStorage key for the daemon URL. Mirrors the web
     /// `binge.bingeServerUrl` localStorage key — same default,
-    /// same trim-trailing-slash rules.
+    /// same trim-trailing-slash rules, same plugin-config seeding
+    /// (see `ensureURLSeeded`).
     static let urlStorageKey = "binge.bingeServerUrl"
     static let defaultURL = "http://localhost:7878"
+
+    /// One-time seed of the daemon URL from Stash's server-side plugin
+    /// config (`configuration.plugins.binge.serverUrl`), mirroring web's
+    /// `ensureBingeServerUrlSeeded`.
+    ///
+    /// The default above is loopback, which in a browser on the Stash
+    /// box is often right but on a phone means the phone itself — never
+    /// the daemon. Rather than bake a deployment-specific address into
+    /// the app, let Stash hand it over: set `serverUrl` once in the
+    /// binge plugin's config and every client picks it up. A value the
+    /// user typed in Settings always wins, and this runs at most once
+    /// per launch. `fetchJSON` awaits it so the first daemon call on a
+    /// cold launch can't race the seed.
+    @MainActor
+    static func ensureURLSeeded() async {
+        if let inFlight = seedTask {
+            await inFlight.value
+            return
+        }
+        let task = Task { @MainActor in await seedFromPluginConfig() }
+        seedTask = task
+        await task.value
+    }
+
+    @MainActor private static var seedTask: Task<Void, Never>?
+
+    @MainActor
+    private static func seedFromPluginConfig() async {
+        let existing = (
+            UserDefaults.standard.string(forKey: urlStorageKey) ?? ""
+        ).trimmingCharacters(in: .whitespacesAndNewlines)
+        if !existing.isEmpty { return }  // user set it
+        let baseURL = UserDefaults.standard.string(forKey: "binge.stashUrl")
+            ?? ""
+        if baseURL.isEmpty { return }  // not configured yet
+        let apiKey = KeychainStore.shared.stashApiKey
+
+        struct Resp: Decodable {
+            let configuration: Cfg
+            struct Cfg: Decodable {
+                let plugins: Plugins
+                struct Plugins: Decodable {
+                    let binge: Binge?
+                    struct Binge: Decodable { let serverUrl: String? }
+                }
+            }
+        }
+        do {
+            let client = StashClient(baseURL: baseURL, apiKey: apiKey)
+            let r: Resp = try await client.gql(
+                "{ configuration { plugins } }"
+            )
+            let url = (r.configuration.plugins.binge?.serverUrl ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if !url.isEmpty {
+                UserDefaults.standard.set(url, forKey: urlStorageKey)
+            }
+        } catch {
+            // Stash unreachable / no config — keep the default.
+            print("[bingeServer] URL seed skipped: \(error)")
+        }
+    }
 
     static func currentURL() -> String {
         let raw = UserDefaults.standard.string(forKey: urlStorageKey) ?? ""
@@ -495,6 +558,9 @@ enum BingeServerService {
         path: String,
         timeout: TimeInterval = 8
     ) async -> T? {
+        // Pick up a server-side configured URL before the first call
+        // resolves it (no-op after the first launch-time seed).
+        await ensureURLSeeded()
         guard let url = URL(string: currentURL() + path) else {
             return nil
         }
