@@ -85,6 +85,15 @@ final class PerformerProfileViewModel {
     /// Active grid sort. Changing it via `setSort` resets pagination
     /// and reloads from page 1 under the new order.
     var sort: PerformerSceneSort = .recent
+    /// "recent" = release date with a created_at fallback. Stash can't
+    /// sort by that effective date server-side (it sorts by `date`
+    /// alone, which dumps date-less scenes last regardless of when they
+    /// were added — an undated scene added yesterday landed at the very
+    /// end of the grid). So for "recent" we pull the whole set in one
+    /// page and let `mergedSceneTiles`' effectiveAt comparator order it.
+    /// Other sorts key off a real server-side column and paginate
+    /// normally. Mirrors the web plugin's findScenesByPerformer.
+    private var fetchesAllScenes: Bool { sort == .recent }
 
     // Same 30-day lookback as the Home stories row.
     private let storyLookbackDays = 30
@@ -144,7 +153,9 @@ final class PerformerProfileViewModel {
                 variables: [
                     "performerId": performerId,
                     "page": page,
-                    "perPage": pageSize,
+                    // per_page -1 = the whole set in one response, so the
+                    // client-side effectiveAt sort sees every scene.
+                    "perPage": fetchesAllScenes ? -1 : pageSize,
                     "sort": sort.stashKey,
                 ]
             )
@@ -154,8 +165,10 @@ final class PerformerProfileViewModel {
                 favourite = p.favorite
             }
             self.scenes = scenesData.findScenes.scenes
+            // Nothing left to page through when we asked for everything.
             self.hasMore =
-                scenesData.findScenes.scenes.count == pageSize
+                !fetchesAllScenes
+                && scenesData.findScenes.scenes.count == pageSize
                 && scenes.count < scenesData.findScenes.count
             self.story = buildStory(from: scenes)
         } catch {
@@ -172,6 +185,8 @@ final class PerformerProfileViewModel {
     /// is in flight (or after exhaustion) is a no-op.
     func loadMore() async {
         if loadingMore || !hasMore || loading { return }
+        // "recent" loads the full set up front — there is no page 2.
+        if fetchesAllScenes { return }
         loadingMore = true
         defer { loadingMore = false }
         let nextPage = page + 1
