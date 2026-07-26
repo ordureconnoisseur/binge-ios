@@ -43,27 +43,56 @@ if [ -z "$DEVICE" ]; then
 fi
 
 APP="$DERIVED/Build/Products/Debug-iphoneos/binge.app"
-# iOS sometimes refuses to install OVER an existing copy when the
-# signature/profile generation has moved on (ApplicationVerificationFailed).
-# A clean install always works, so fall back to uninstall-then-install.
-# Safe to automate: the Stash URL is mirrored into the Keychain and the
-# API key already lives there, so both survive the wipe (KeychainStore).
-# Other in-app settings (lookback, genders, toggles) DO reset.
+
+# Two install failure modes must be told apart, because only one of them
+# may ever reach the uninstall fallback:
 #
-# IMPORTANT: the iPhone must be UNLOCKED. iOS refuses to install an
-# app's embedded provisioning profile on a locked device and reports
-# it as "0xe8008012 / ApplicationVerificationFailed / this provisioning
-# profile cannot be installed on this device" — which reads like a
-# signing problem but is just the lock screen. Uninstall is NOT
-# blocked by the lock, so never uninstall before a plain install has
-# been given a fair chance, or a locked phone ends up with no app.
-if ! xcrun devicectl device install app --device "$DEVICE" "$APP"; then
-  echo "install failed - is the iPhone unlocked? retrying in 15s" >&2
+#   LOCKED PHONE - iOS cannot mount the developer disk image on a locked
+#   device, and reports kAMDMobileImageMounterDeviceLocked / 0xe80000e2
+#   (older/other paths surface the same lock as 0xe8008012
+#   ApplicationVerificationFailed, which reads like a signing problem but
+#   is just the lock screen). Uninstall is NOT blocked by the lock, so
+#   letting this fall through strands a locked phone with no app at all -
+#   which is exactly what happened on 2026-07-26. Detect it and bail out
+#   with the installed copy untouched.
+#
+#   STALE SIGNATURE - iOS sometimes refuses to install OVER an existing
+#   copy once the profile generation has moved on. A clean install always
+#   works, so uninstall and retry. Safe to automate: the Stash URL is
+#   mirrored into the Keychain and the API key already lives there, so
+#   both survive the wipe (KeychainStore). Other in-app settings
+#   (lookback, genders, toggles) DO reset.
+install_app() {
+  set +e
+  INSTALL_OUT="$(xcrun devicectl device install app --device "$DEVICE" "$APP" 2>&1)"
+  INSTALL_RC=$?
+  set -e
+  printf '%s\n' "$INSTALL_OUT"
+  return "$INSTALL_RC"
+}
+
+# Never destructive: call after every failed install, before any fallback.
+abort_if_locked() {
+  if printf '%s' "$INSTALL_OUT" \
+    | grep -qiE 'DeviceLocked|0xe80000e2|0xe8008012|device is locked'; then
+    echo "" >&2
+    echo "The iPhone is LOCKED - iOS will not mount the developer disk image." >&2
+    echo "binge is still installed and untouched on the device." >&2
+    echo "Unlock the phone, keep it awake, then re-run this script." >&2
+    exit 1
+  fi
+}
+
+if ! install_app; then
+  abort_if_locked
+  echo "install failed - retrying in 15s" >&2
   sleep 15
-  if ! xcrun devicectl device install app --device "$DEVICE" "$APP"; then
+  if ! install_app; then
+    abort_if_locked
     echo "still failing; falling back to a clean install" >&2
     xcrun devicectl device uninstall app --device "$DEVICE" "$BUNDLE_ID" || true
-    if ! xcrun devicectl device install app --device "$DEVICE" "$APP"; then
+    if ! install_app; then
+      abort_if_locked
       echo "" >&2
       echo "DEPLOY FAILED - binge is now UNINSTALLED from the device." >&2
       echo "Unlock the iPhone and re-run this script to restore it." >&2
