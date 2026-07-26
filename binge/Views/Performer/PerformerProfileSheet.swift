@@ -34,8 +34,11 @@ struct PerformerProfileSheet: View {
     /// Per-profile (but globally persisted) toggle for the
     /// StashDB scene mix-in. Off by default — surface in the
     /// pill next to the SCENES header. Matches the web's
-    /// useIncludeStashDBInProfile semantics.
-    @AppStorage("binge.profileStashDB") private var showStashDB: Bool = false
+    /// useIncludeStashDBInProfile semantics, and now its storage
+    /// key too (was `binge.profileStashDB`; migrated at launch in
+    /// BingeApp.migrateSettingsKeys).
+    @AppStorage("binge.includeStashDBInProfile")
+    private var showStashDB: Bool = false
 
     @State private var vm: PerformerProfileViewModel?
     @State private var tour = TourDirector.shared
