@@ -14,11 +14,18 @@ cd "$REPO"
 git pull --ff-only
 xcodegen generate
 
+# Target the device SDK directly rather than -destination
+# 'generic/platform=iOS'. Xcode 26.5 on this machine refuses to resolve
+# ANY iOS device destination ("iOS 26.5 is not installed"), because the
+# downloadable iOS platform component is missing even though the device
+# SDK itself is present and builds fine. Naming the SDK skips destination
+# resolution entirely. It also avoids installing a simulator runtime we
+# have no use for - binge only ever runs on the physical iPhone.
 xcodebuild \
   -project binge.xcodeproj \
   -scheme binge \
   -configuration Debug \
-  -destination 'generic/platform=iOS' \
+  -sdk iphoneos \
   -derivedDataPath "$DERIVED" \
   -allowProvisioningUpdates \
   build
