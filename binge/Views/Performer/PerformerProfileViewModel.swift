@@ -81,7 +81,11 @@ final class PerformerProfileViewModel {
     var hasMore: Bool = false
     var loadingMore: Bool = false
     private var page: Int = 1
-    private let pageSize: Int = 24
+    // 24 was barely 8 rows on a 3-up grid, so the pager fired constantly
+    // and the grid visibly stalled while scrolling a large performer. 60
+    // is ~20 rows and still one comfortable query. (Matches the web
+    // plugin's PAGE_SIZE.)
+    private let pageSize: Int = 60
     /// Active grid sort. Changing it via `setSort` resets pagination
     /// and reloads from page 1 under the new order.
     var sort: PerformerSceneSort = .recent

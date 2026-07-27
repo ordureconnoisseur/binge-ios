@@ -839,13 +839,14 @@ struct PerformerProfileSheet: View {
                     }
                 }
                 .onAppear {
-                    // Trigger when within the last 3 rows of the
-                    // current grid. loadMore() short-circuits if
-                    // already loading or exhausted, so multi-fire
-                    // (several rows mounting at once) is harmless.
-                    // Only the library pager is fed here; stashdb
-                    // tiles capped at 100 in one shot.
-                    if idx >= rows.count - 3 {
+                    // Trigger when within the last 6 rows of the
+                    // current grid — far enough out that the next page
+                    // has usually landed before the user gets there.
+                    // loadMore() short-circuits if already loading or
+                    // exhausted, so multi-fire (several rows mounting
+                    // at once) is harmless. Only the library pager is
+                    // fed here; stashdb tiles capped at 100 in one shot.
+                    if idx >= rows.count - 6 {
                         Task { await vm?.loadMore() }
                     }
                 }
