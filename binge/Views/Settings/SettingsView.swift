@@ -798,7 +798,7 @@ struct SettingsView: View {
     private var forageSection: some View {
         Section {
             HStack {
-                TextField(ForageService.defaultURL, text: $forageUrl)
+                TextField(ForageService.urlPlaceholder, text: $forageUrl)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .keyboardType(.URL)
@@ -815,8 +815,8 @@ struct SettingsView: View {
         } footer: {
             Text(
                 "\"Send to forage\" on a discovery scene adds it to your "
-                    + "forage daemon's watchlist. Default is "
-                    + "\(ForageService.defaultURL). Authentication is "
+                    + "forage daemon's watchlist. Optional — leave blank "
+                    + "and the action stays hidden. Authentication is "
                     + "automatic — binge presents your Stash API key, which "
                     + "forage already trusts; nothing to paste. The action "
                     + "only appears when the daemon is reachable."

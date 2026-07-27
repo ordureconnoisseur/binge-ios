@@ -29,8 +29,15 @@ enum ForageService {
     /// `binge.forageUrl` localStorage key.
     static let urlStorageKey = "binge.forageUrl"
     static let targetStorageKey = "binge.forageWatchTarget"
-    static let defaultURL = "https://forage.tailf01ca.ts.net"
+    /// EMPTY by default — no deployment-specific host baked in. (It used
+    /// to default to the maintainer's own Tailscale URL.) Empty means the
+    /// feature is simply off: the probe short-circuits and "Send to
+    /// forage" never appears. Matches the web plugin.
+    static let defaultURL = ""
     static let defaultTarget = "any"
+    /// Placeholder shown in Settings — an illustrative shape, not a real
+    /// host to fall back to.
+    static let urlPlaceholder = "https://forage.example.ts.net"
 
     static func currentURL() -> String {
         let raw = UserDefaults.standard.string(forKey: urlStorageKey) ?? ""
@@ -40,6 +47,59 @@ enum ForageService {
         return trimmed.trimmingCharacters(in: .init(charactersIn: "/"))
     }
 
+    /// One-time seed of the forage URL from Stash's plugin config
+    /// (`configuration.plugins.binge.forageUrl`), so a deployment can be
+    /// configured once server-side. Mirrors BingeServerService's seed:
+    /// a user-entered value always wins, runs at most once per launch.
+    @MainActor
+    static func ensureURLSeeded() async {
+        if let inFlight = seedTask {
+            await inFlight.value
+            return
+        }
+        let task = Task { @MainActor in await seedFromPluginConfig() }
+        seedTask = task
+        await task.value
+    }
+
+    @MainActor private static var seedTask: Task<Void, Never>?
+
+    @MainActor
+    private static func seedFromPluginConfig() async {
+        let existing = (
+            UserDefaults.standard.string(forKey: urlStorageKey) ?? ""
+        ).trimmingCharacters(in: .whitespacesAndNewlines)
+        if !existing.isEmpty { return }  // user set it
+        let baseURL = UserDefaults.standard.string(forKey: "binge.stashUrl")
+            ?? ""
+        if baseURL.isEmpty { return }
+        let apiKey = KeychainStore.shared.stashApiKey
+
+        struct Resp: Decodable {
+            let configuration: Cfg
+            struct Cfg: Decodable {
+                let plugins: Plugins
+                struct Plugins: Decodable {
+                    let binge: Binge?
+                    struct Binge: Decodable { let forageUrl: String? }
+                }
+            }
+        }
+        do {
+            let client = StashClient(baseURL: baseURL, apiKey: apiKey)
+            let r: Resp = try await client.gql(
+                "{ configuration { plugins } }"
+            )
+            let url = (r.configuration.plugins.binge?.forageUrl ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if !url.isEmpty {
+                UserDefaults.standard.set(url, forKey: urlStorageKey)
+            }
+        } catch {
+            // Stash unreachable / no config — feature stays off.
+        }
+    }
+
     static func currentTarget() -> String {
         let t = UserDefaults.standard.string(forKey: targetStorageKey) ?? ""
         return t.isEmpty ? defaultTarget : t
@@ -47,7 +107,11 @@ enum ForageService {
 
     /// Probe /healthz (public, no auth). True when the daemon answers ok.
     static func probeReachable() async -> Bool {
-        guard let url = URL(string: currentURL() + "/healthz") else {
+        await ensureURLSeeded()
+        let base = currentURL()
+        // Not configured — don't build a relative URL out of "/healthz".
+        if base.isEmpty { return false }
+        guard let url = URL(string: base + "/healthz") else {
             return false
         }
         var req = URLRequest(url: url)
@@ -81,7 +145,11 @@ enum ForageService {
 
     /// POST /watches. Authenticates with the Stash API key as Bearer.
     static func addWatch(_ payload: WatchRequest) async -> WatchResult {
+        await ensureURLSeeded()
         let base = currentURL()
+        if base.isEmpty {
+            return .failure("Add your forage server URL in Settings first.")
+        }
         // The Stash API key is a powerful secret — never transmit it in
         // cleartext to a public host. (Reuses binge-server's allowlist.)
         guard BingeServerService.isTrustedURL(base) else {
