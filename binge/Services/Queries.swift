@@ -353,7 +353,6 @@ enum Queries {
     static let findScenesRandom = """
         query FindScenes($page: Int!, $perPage: Int!, $sort: String!) {
           findScenes(
-            scene_filter: { \(HiddenContent.tagsExcludeClause) },
             filter: {
               page: $page,
               per_page: $perPage,
@@ -405,8 +404,7 @@ enum Queries {
         query RecentScenes($since: String!, $perPage: Int!) {
           findScenes(
             scene_filter: {
-              created_at: { value: $since, modifier: GREATER_THAN },
-              \(HiddenContent.tagsExcludeClause)
+              created_at: { value: $since, modifier: GREATER_THAN }
             },
             filter: {
               page: 1,
@@ -991,8 +989,7 @@ enum Queries {
         query ScenesByDate($since: String!, $perPage: Int!) {
           findScenes(
             scene_filter: {
-              date: { value: $since, modifier: GREATER_THAN },
-              \(HiddenContent.tagsExcludeClause)
+              date: { value: $since, modifier: GREATER_THAN }
             },
             filter: {
               page: 1,

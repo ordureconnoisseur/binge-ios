@@ -153,7 +153,7 @@ final class ExploreViewModel {
                 Queries.findScenesExplore,
                 variables: vars
             )
-            let chunk = resp.findScenes.scenes.filteringHidden()
+            let chunk = resp.findScenes.scenes
             let fresh = chunk.filter { !seenIds.contains($0.id) }
             for s in fresh { seenIds.insert(s.id) }
             if replace {

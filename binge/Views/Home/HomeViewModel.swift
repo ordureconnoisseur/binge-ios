@@ -504,7 +504,6 @@ final class HomeViewModel {
             // performers.
             let merged = raw
                 .filter { !$0.performers.isEmpty }
-                .filteringHidden()
             libraryStorySource = merged
             // Reset tails on a fresh load so refreshing drops
             // stale StashDB / Reddit / PornHub entries before the
