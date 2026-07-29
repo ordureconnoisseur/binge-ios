@@ -293,12 +293,39 @@ enum BingeServerService {
     /// extracts + relays them from its Mullvad exit. Stream is a
     /// progressive mp4 (AVPlayer-friendly); preview is a webm
     /// (browser-only — iOS uses the stream for playback instead).
+
+    // ── auth ─────────────────────────────────────────────────────────
+    //
+    // The daemon authenticates with the Stash API key: the same secret the
+    // app already holds in the Keychain, so there is nothing extra for the
+    // user to configure. Mirrors Stash's own scheme (ApiKey header, or an
+    // `apikey` query parameter where headers can't travel).
+    //
+    // Cached because the URL builders below are synchronous — AVPlayer and
+    // AsyncImage take a URL, not a request, so the key has to be in the
+    // query string and available without awaiting. Primed on the first
+    // daemon call, which always precedes any media URL being built.
+    nonisolated(unsafe) private static var cachedKey = ""
+
+    @MainActor
+    static func primeKey() {
+        cachedKey = KeychainStore.shared.stashApiKey
+    }
+
+    /// Adds the key as a query parameter, for URLs handed to AVPlayer /
+    /// AsyncImage. No key configured (Stash auth off) returns it unchanged.
+    private static func withKey(_ url: String) -> String {
+        if cachedKey.isEmpty { return url }
+        let sep = url.contains("?") ? "&" : "?"
+        return "\(url)\(sep)apikey=\(queryEncode(cachedKey))"
+    }
+
     static func pornhubStreamUrl(_ videoId: String) -> String {
-        "\(currentURL())/pornhub/stream/\(encode(videoId))"
+        withKey("\(currentURL())/pornhub/stream/\(encode(videoId))")
     }
     static func pornhubThumbUrl(_ raw: String?) -> String? {
         guard let raw else { return raw }
-        return "\(currentURL())/pornhub/thumb?url=\(queryEncode(raw))"
+        return withKey("\(currentURL())/pornhub/thumb?url=\(queryEncode(raw))")
     }
 
     private static func encode(_ s: String) -> String {
@@ -366,6 +393,7 @@ enum BingeServerService {
                 "Won't talk to an untrusted binge-server URL — use https:// or a local/tailnet address."
             )
         }
+        await primeKey()
         guard let url = URL(string: currentURL() + "/save") else {
             return .failure("Invalid binge-server URL")
         }
@@ -374,6 +402,9 @@ enum BingeServerService {
         request.addValue(
             "application/json", forHTTPHeaderField: "Content-Type"
         )
+        if !cachedKey.isEmpty {
+            request.addValue(cachedKey, forHTTPHeaderField: "ApiKey")
+        }
         // Save shells out server-side (gallery-dl / yt-dlp + ffmpeg)
         // then waits on Stash's scan — generous budget like the web's
         // 30s.
@@ -471,12 +502,16 @@ enum BingeServerService {
                 "Won't send credentials to an untrusted binge-server URL — use https:// or a local/tailnet address."
             )
         }
+        await primeKey()
         guard let url = URL(string: currentURL() + "/config") else {
             return .failure("Invalid binge-server URL")
         }
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
         req.addValue("application/json", forHTTPHeaderField: "Content-Type")
+        if !cachedKey.isEmpty {
+            req.addValue(cachedKey, forHTTPHeaderField: "ApiKey")
+        }
         req.timeoutInterval = 15
         do {
             req.httpBody = try JSONEncoder().encode(payload)
@@ -520,7 +555,7 @@ enum BingeServerService {
         if !(host.hasSuffix(".redd.it") || host.hasSuffix(".redditmedia.com")) {
             return url
         }
-        return "\(currentURL())/reddit/proxy?url=\(queryEncode(url))"
+        return withKey("\(currentURL())/reddit/proxy?url=\(queryEncode(url))")
     }
 
     /// Same proxy treatment for redgifs — they 403 cross-origin
@@ -532,7 +567,7 @@ enum BingeServerService {
         if !host.hasSuffix(".redgifs.com") {
             return url
         }
-        return "\(currentURL())/redgifs/proxy?url=\(queryEncode(url))"
+        return withKey("\(currentURL())/redgifs/proxy?url=\(queryEncode(url))")
     }
 
     /// Strip the host from a Stash-rooted URL so the iOS client
@@ -561,10 +596,14 @@ enum BingeServerService {
         // Pick up a server-side configured URL before the first call
         // resolves it (no-op after the first launch-time seed).
         await ensureURLSeeded()
+        await primeKey()
         guard let url = URL(string: currentURL() + path) else {
             return nil
         }
         var req = URLRequest(url: url)
+        if !cachedKey.isEmpty {
+            req.addValue(cachedKey, forHTTPHeaderField: "ApiKey")
+        }
         // Tailscale Funnel + Mullvad NL adds latency vs a LAN
         // daemon. 8s is enough for the fast DB-backed paths without
         // making Home mount feel sluggish when the daemon is off;
