@@ -48,6 +48,10 @@ struct HomeView: View {
     /// entry id and only autoplays when it matches — IG-style
     /// "only the focused post plays".
     @State private var activeFeedEntryId: String?
+    /// Settings presented straight from the error banner, so a
+    /// wrong server address is fixable without hunting through the
+    /// menu while the app is visibly broken.
+    @State private var showSettingsFromError = false
     /// (stashId, fallbackName, fallbackImage) for the StashDB-only
     /// profile sheet. Set when the user taps a discovery card's
     /// primary performer that has no localId.
@@ -465,8 +469,8 @@ struct HomeView: View {
                             BingeLoading(minHeight: 220)
                                 .padding(.vertical, 24)
                         }
-                        if case .error(let msg) = vm.loadState {
-                            errorBanner(msg)
+                        if case .error(let diagnosis) = vm.loadState {
+                            errorBanner(diagnosis)
                         }
                         if case .loaded = vm.loadState, vm.feed.isEmpty {
                             emptyState
@@ -600,19 +604,69 @@ struct HomeView: View {
         }
     }
 
+    /// A failure the user can act on: what's unreachable, what to try, and
+    /// the two buttons that actually fix it. The previous version printed
+    /// "Couldn't load home" over a raw error string, which for the common
+    /// case (a stale server address) meant staring at "The request timed
+    /// out" with nothing to press.
     @ViewBuilder
-    private func errorBanner(_ message: String) -> some View {
-        VStack(spacing: 6) {
-            Text("Couldn't load home")
+    private func errorBanner(_ diagnosis: ConnectionDiagnosis) -> some View {
+        VStack(spacing: 10) {
+            Text(diagnosis.title)
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(.white)
-            Text(message)
-                .font(.system(size: 12))
-                .foregroundStyle(.white.opacity(0.6))
                 .multilineTextAlignment(.center)
+            if !diagnosis.detail.isEmpty {
+                Text(diagnosis.detail)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.white.opacity(0.6))
+                    .multilineTextAlignment(.center)
+            }
+            HStack(spacing: 10) {
+                Button {
+                    Task { await vm?.refresh() }
+                } label: {
+                    Text("Try again")
+                        .font(.system(size: 13, weight: .semibold))
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .background(
+                            Capsule().fill(.white.opacity(0.14))
+                        )
+                        .foregroundStyle(.white)
+                }
+                .buttonStyle(.plain)
+
+                // Only when settings is plausibly the fix — offering it on
+                // a transient blip trains people to go fiddle with a URL
+                // that was never wrong.
+                if diagnosis.suggestsSettings {
+                    Button {
+                        showSettingsFromError = true
+                    } label: {
+                        Text("Open settings")
+                            .font(.system(size: 13, weight: .semibold))
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                            .background(
+                                Capsule()
+                                    .stroke(.white.opacity(0.22), lineWidth: 1)
+                            )
+                            .foregroundStyle(.white.opacity(0.85))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.top, 2)
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 18)
+        .sheet(isPresented: $showSettingsFromError) {
+            NavigationStack {
+                SettingsView(mode: .normal)
+            }
+            .preferredColorScheme(.dark)
+        }
     }
 
     @ViewBuilder

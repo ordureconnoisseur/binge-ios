@@ -36,7 +36,10 @@ final class HomeViewModel {
         case idle
         case loading
         case loaded
-        case error(String)
+        /// Carries a diagnosis rather than a raw message so the banner can
+        /// say which thing is unreachable and offer the right action. The
+        /// raw error text lives in `detail` when we can't do better.
+        case error(ConnectionDiagnosis)
     }
 
     var stories: [Story] = [] {
@@ -550,9 +553,9 @@ final class HomeViewModel {
             if Task.isCancelled || Self.isCancellation(error) {
                 return
             }
-            let msg = (error as? LocalizedError)?.errorDescription
-                ?? "\(error)"
-            loadState = .error(msg)
+            loadState = .error(
+                ConnectionDiagnosis.of(error, stashURL: baseURL)
+            )
         }
     }
 
