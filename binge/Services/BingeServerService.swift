@@ -157,6 +157,27 @@ enum BingeServerService {
         return trimmed.trimmingCharacters(in: .init(charactersIn: "/"))
     }
 
+    /// Loopback, unique-local (fc00::/7) and link-local (fe80::/10) only.
+    /// Anything else, including an address with an embedded IPv4 part, is
+    /// treated as public.
+    private static func isPrivateIPv6(_ addr: String) -> Bool {
+        if addr == "::1" { return true }
+        // Keep empty pieces, or a leading "::" would hand back the wrong
+        // hextet: "::1" would look like it starts with "1".
+        let pieces = addr.split(
+            separator: ":",
+            omittingEmptySubsequences: false
+        )
+        guard let first = pieces.first, !first.isEmpty else { return false }
+        if first.hasPrefix("fc") || first.hasPrefix("fd") { return true }
+        // fe80::/10 spans fe80 through febf.
+        if first.hasPrefix("fe"), first.count >= 3 {
+            let third = first[first.index(first.startIndex, offsetBy: 2)]
+            return "89ab".contains(third)
+        }
+        return false
+    }
+
     /// Whether it's safe to transmit credentials (Stash API key / Reddit
     /// cookie) to this daemon URL. https is always fine; plain http is
     /// allowed only to loopback / private / tailnet hosts — never a public
@@ -166,7 +187,12 @@ enum BingeServerService {
         else { return false }
         if scheme == "https" { return true }
         if scheme != "http" { return false }
-        guard let host = u.host?.lowercased() else { return false }
+        guard var host = u.host?.lowercased() else { return false }
+        // Foundation hands IPv6 back without brackets, unlike the web URL
+        // parser, but strip them anyway so both shapes behave the same.
+        if host.hasPrefix("["), host.hasSuffix("]") {
+            host = String(host.dropFirst().dropLast())
+        }
         if host == "localhost" || host == "127.0.0.1" || host == "::1" {
             return true
         }
@@ -175,6 +201,11 @@ enum BingeServerService {
         {
             return true
         }
+        // IPv6 literal. This has to be settled BEFORE the bare-hostname
+        // rule below: an IPv6 address contains no dots, so "no dot means
+        // LAN name" would wave a public address like 2001:4860:4860::8888
+        // straight through and post the credentials to it in cleartext.
+        if host.contains(":") { return isPrivateIPv6(host) }
         // Bare hostname (no dot) is a LAN/tailnet machine name, not public.
         if !host.contains(".") { return true }
         // RFC1918 private + Tailscale CGNAT (100.64/10) IPv4 literals.
