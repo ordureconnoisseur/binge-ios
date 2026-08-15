@@ -45,6 +45,8 @@ struct SceneFeedCard: View {
     let onUnlike: () -> Void
     let onTap: () -> Void
     let onPerformerTap: (String) -> Void
+    /// A StashDB-matched performer, who has no local id to route on.
+    let onMatchedPerformerTap: (MatchedPerformer) -> Void
     /// Per-performer story lookup. When a performer on this
     /// scene has a current story, their avatar bubble gets the
     /// gradient ring and tapping it opens the story instead of
@@ -204,6 +206,14 @@ struct SceneFeedCard: View {
                     pickerOpen = true
                 } else if let id = primary?.id {
                     onPerformerTap(id)
+                } else if let matched = matchedPerformers.first,
+                    matchedPerformers.count == 1
+                {
+                    // Names with nobody linked. One matched performer
+                    // routes to her StashDB profile; several are
+                    // ambiguous, so the tap does nothing rather than
+                    // guessing which one the user meant.
+                    onMatchedPerformerTap(matched)
                 }
             } label: {
                 VStack(alignment: .leading, spacing: 2) {
@@ -340,6 +350,35 @@ struct SceneFeedCard: View {
     /// - else single-performer scene → that profile
     @ViewBuilder
     private var avatarStackRow: some View {
+        if scene.performers.isEmpty {
+            // Nobody linked locally, so the library stack has nothing to
+            // draw and the card would show names with no faces. StashDB
+            // knows who these people are and hosts their images
+            // publicly, so the stack is built from the matched cast
+            // instead. No API key: these come off StashDB's CDN, not
+            // Stash. No story ring either, since a story belongs to a
+            // performer in the library and these are not.
+            AvatarStack(
+                items: matchedPerformers,
+                size: 36,
+                overlap: 14,
+                visibleLimit: 3,
+                resolveImage: { perf in
+                    guard let raw = perf.image, let url = URL(string: raw)
+                    else { return (nil, "") }
+                    return (url, "")
+                },
+                initial: { String($0.name.prefix(1)) },
+                onTap: { onMatchedPerformerTap($0) },
+                hasStory: { _ in false }
+            )
+        } else {
+            libraryAvatarStackRow
+        }
+    }
+
+    @ViewBuilder
+    private var libraryAvatarStackRow: some View {
         AvatarStack(
             items: scene.performers,
             size: 36,

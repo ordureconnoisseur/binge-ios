@@ -207,20 +207,29 @@ struct HomeView: View {
             presentedPerformerId = lid
             return
         }
+        routeStashDBPerformer(
+            stashId: perf.stashId, name: perf.name, image: perf.image
+        )
+    }
+
+    /// Open a performer known only by StashDB id. Prefers her local
+    /// profile when the library turns out to have her: a scene can name
+    /// someone through a StashDB match while she is already followed,
+    /// and sending that tap to the read-only StashDB profile would hide
+    /// the library she is in.
+    private func routeStashDBPerformer(
+        stashId: String, name: String, image: String?
+    ) {
         Task {
             let svc = StashDBService(
                 baseURL: stashUrl, apiKey: stashApiKey
             )
             let linked = await svc.cachedLinkedPerformers()
-            if let match = linked.first(where: {
-                $0.stashId == perf.stashId
-            }) {
+            if let match = linked.first(where: { $0.stashId == stashId }) {
                 presentedPerformerId = match.localId
             } else {
                 presentedStashDBPerformer = StashDBPerformerKey(
-                    stashId: perf.stashId,
-                    name: perf.name,
-                    image: perf.image
+                    stashId: stashId, name: name, image: image
                 )
             }
         }
@@ -287,6 +296,13 @@ struct HomeView: View {
             onTap: { presented = .scene(scene) },
             onPerformerTap: { id in
                 presentedPerformerId = id
+            },
+            onMatchedPerformerTap: { perf in
+                routeStashDBPerformer(
+                    stashId: perf.stashId,
+                    name: perf.name,
+                    image: perf.image
+                )
             },
             // VM caches the full performerId → Story map; we
             // pass it whole rather than per-card-filtered. The
