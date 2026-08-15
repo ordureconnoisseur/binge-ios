@@ -71,35 +71,47 @@ struct PackFeedCard: View {
 
     @ViewBuilder
     private var header: some View {
-        let story = storiesByPerformerId[pack.primaryPerformer.id]
+        // A batch with nobody linked locally has no profile to open and
+        // no story to drop into, so the taps are inert for it.
+        let story = pack.primaryPerformer
+            .flatMap { storiesByPerformerId[$0.id] }
         HStack(spacing: 10) {
             Button {
                 if let story {
                     onStoryTap(story)
                 } else {
-                    presentedPerformerId = pack.primaryPerformer.id
+                    presentedPerformerId = pack.primaryPerformer?.id
                 }
             } label: {
                 avatarBubble(hasStory: story != nil)
             }
             .buttonStyle(.plain)
+            .disabled(pack.primaryPerformer == nil && story == nil)
 
             Button {
-                presentedPerformerId = pack.primaryPerformer.id
+                presentedPerformerId = pack.primaryPerformer?.id
             } label: {
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(
                         alignment: .firstTextBaseline, spacing: 0
                     ) {
-                        Text(pack.primaryPerformer.name)
+                        Text(pack.label)
                             .font(.system(size: 14, weight: .semibold))
                             .foregroundStyle(.white)
                             .lineLimit(1)
-                        VerifiedBadge(
-                            favorite: pack.primaryPerformer.favorite,
-                            size: 12
-                        )
-                        .padding(.leading, 3)
+                        if let primary = pack.primaryPerformer {
+                            VerifiedBadge(
+                                favorite: primary.favorite,
+                                size: 12
+                            )
+                            .padding(.leading, 3)
+                        } else {
+                            // Named by StashDB, not in the library. Says
+                            // the identity is missing locally rather
+                            // than implying a profile that is not there.
+                            NotInLibraryBadge(size: 12)
+                                .padding(.leading, 3)
+                        }
                     }
                     HStack(spacing: 6) {
                         Text(
@@ -127,7 +139,7 @@ struct PackFeedCard: View {
     private func avatarBubble(hasStory: Bool) -> some View {
         ZStack {
             Circle().fill(Color(white: 0.18))
-            if let path = pack.primaryPerformer.imagePath,
+            if let path = pack.primaryPerformer?.imagePath,
                 let url = URL(string: absolute(path))
             {
                 AuthImageView(
@@ -137,9 +149,21 @@ struct PackFeedCard: View {
                     maxPixel: 256,
                     alignment: .top
                 )
+            } else if let remote = pack.matchedPerformer?.image,
+                let url = URL(string: remote)
+            {
+                // StashDB's own image. It is not proxied through Stash,
+                // so it needs no api key.
+                AuthImageView(
+                    url: url,
+                    apiKey: "",
+                    contentMode: .fill,
+                    maxPixel: 256,
+                    alignment: .top
+                )
             } else {
                 Text(
-                    String(pack.primaryPerformer.name.prefix(1))
+                    String(pack.label.prefix(1))
                 )
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(.white)
