@@ -510,3 +510,25 @@ extension StashDBPerformerDetail {
         }
     }
 }
+
+/// A performer StashDB says is in a scene the user owns but has not
+/// linked anyone to locally.
+///
+/// Deliberately not `StashDBPerformer`: that shape carries birth date
+/// and scene count, which would have to be selected for every scene in
+/// the feed to satisfy the decoder, and neither is shown on a card.
+///
+/// These are held apart from `BingeScene.performers` because that array
+/// means "in your library" and drives the profile link. Someone who has
+/// not been added has no local profile to open.
+struct MatchedPerformer: Codable, Hashable, Identifiable {
+    let stashId: String
+    let name: String
+    /// StashDB gender enum, or nil when the record has none. The
+    /// "genders to surface" gate treats nil as not passing, matching
+    /// the discovery feed.
+    let gender: String?
+    let image: String?
+
+    var id: String { stashId }
+}

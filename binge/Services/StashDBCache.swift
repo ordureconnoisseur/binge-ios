@@ -76,6 +76,12 @@ final class StashDBCache: @unchecked Sendable {
         static let performerDetail: TimeInterval = 24 * 60 * 60
         static let ownership: TimeInterval = 60 * 60
         static let stashBox: TimeInterval = 7 * 24 * 60 * 60
+        /// Who is in a given StashDB scene. Effectively permanent: a
+        /// released scene's cast does not change, and re-asking costs a
+        /// request per twenty scenes on a surface that already has to
+        /// stay quick. A year rather than forever only so a decade-old
+        /// entry eventually lapses.
+        static let sceneCast: TimeInterval = 365 * 24 * 60 * 60
     }
 
     /// Read an entry. Returns nil on any miss path:

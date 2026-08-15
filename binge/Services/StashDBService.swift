@@ -395,6 +395,22 @@ final class StashDBService {
         variables: [String: Any],
         apiKey: String
     ) async -> QueryScenesResponse? {
+        await stashDBPost(
+            query, variables: variables, apiKey: apiKey,
+            as: QueryScenesResponse.self
+        )
+    }
+
+    /// The same transport for a response that is not a queryScenes
+    /// payload. The batched scene-cast document returns one aliased
+    /// findScene per id, so its shape is a dictionary rather than a
+    /// fixed struct.
+    private func stashDBPost<T: Decodable>(
+        _ query: String,
+        variables: [String: Any],
+        apiKey: String,
+        as: T.Type
+    ) async -> T? {
         guard let url = URL(string: stashDBEndpoint) else { return nil }
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
@@ -423,13 +439,10 @@ final class StashDBService {
                 )
                 return nil
             }
-            // Wire shape: { data: { queryScenes: {...} }, errors: [...] }
-            struct Envelope: Decodable {
-                let data: QueryScenesResponse?
-                let errors: [GQLError]?
-                struct GQLError: Decodable { let message: String }
-            }
-            let env = try JSONDecoder().decode(Envelope.self, from: data)
+            // Wire shape: { data: { ... }, errors: [...] }
+            let env = try JSONDecoder().decode(
+                StashDBEnvelope<T>.self, from: data
+            )
             if let errs = env.errors, !errs.isEmpty {
                 print(
                     "[binge] stashdb gql errors: "
@@ -442,6 +455,131 @@ final class StashDBService {
             print("[binge] stashdb post failed: \(error)")
             return nil
         }
+    }
+
+    // MARK: - Scene casts
+
+    /// StashDB ids per request. Aliases let one document ask about
+    /// twenty scenes at once, which turns hundreds of round trips into
+    /// a handful.
+    private static let castBatchSize = 20
+    /// Ceiling per call, so a first run on a large library cannot fire
+    /// an unbounded number of requests. Anything past it goes without a
+    /// cast until a later visit, by which point the earlier ones are
+    /// cached.
+    private static let castMaxFetch = 1500
+    private static let castCacheKey = "sceneCast.v1"
+
+    /// A stash id comes from Stash's own database, but it is spliced
+    /// into the text of a GraphQL document rather than passed as a
+    /// variable, so its shape is checked before it goes anywhere near
+    /// the query.
+    private static func isPlausibleStashID(_ id: String) -> Bool {
+        !id.isEmpty && id.count <= 64
+            && id.allSatisfy { $0.isHexDigit || $0 == "-" }
+    }
+
+    /// Who StashDB says is in each of these scenes, keyed by stash id.
+    ///
+    /// This is what lets a scene with nobody linked locally still carry
+    /// a name on its card. Cached near-permanently because a released
+    /// scene's cast does not change.
+    func fetchSceneCasts(
+        sceneStashIDs: [String],
+        apiKey stashDBKey: String
+    ) async -> [String: [MatchedPerformer]] {
+        var cache =
+            StashDBCache.shared.read(
+                Self.castCacheKey,
+                ttl: StashDBCache.TTL.sceneCast,
+                as: [String: [MatchedPerformer]].self
+            ) ?? [:]
+
+        var out: [String: [MatchedPerformer]] = [:]
+        var missing: [String] = []
+        var seen = Set<String>()
+        for id in sceneStashIDs where Self.isPlausibleStashID(id) {
+            guard seen.insert(id).inserted else { continue }
+            if let hit = cache[id] {
+                out[id] = hit
+            } else {
+                missing.append(id)
+            }
+        }
+        guard !missing.isEmpty else { return out }
+
+        let chunks = Array(missing.prefix(Self.castMaxFetch))
+            .chunked(into: Self.castBatchSize)
+        // Together rather than one after another. Sequentially this is
+        // the difference between a fraction of a second and several, on
+        // a surface that has just finished being made quick.
+        let fetched = await withTaskGroup(
+            of: [String: [MatchedPerformer]].self
+        ) { group in
+            for chunk in chunks {
+                group.addTask {
+                    await self.fetchCastChunk(chunk, apiKey: stashDBKey)
+                }
+            }
+            var acc: [String: [MatchedPerformer]] = [:]
+            for await part in group {
+                acc.merge(part) { existing, _ in existing }
+            }
+            return acc
+        }
+
+        guard !fetched.isEmpty else { return out }
+        for (id, cast) in fetched {
+            out[id] = cast
+            cache[id] = cast
+        }
+        StashDBCache.shared.write(Self.castCacheKey, value: cache)
+        return out
+    }
+
+    private func fetchCastChunk(
+        _ ids: [String],
+        apiKey stashDBKey: String
+    ) async -> [String: [MatchedPerformer]] {
+        let aliases = ids.enumerated()
+            .map { index, id in
+                """
+                  s\(index): findScene(id: "\(id)") {
+                    performers { performer { id name gender images { url } } }
+                  }
+                """
+            }
+            .joined(separator: "\n")
+        let query = """
+            query BatchSceneCasts {
+            \(aliases)
+            }
+            """
+
+        guard
+            let map = await stashDBPost(
+                query,
+                variables: [:],
+                apiKey: stashDBKey,
+                as: [String: SceneCastPayload?].self
+            )
+        else { return [:] }
+
+        var out: [String: [MatchedPerformer]] = [:]
+        for (index, id) in ids.enumerated() {
+            // A scene StashDB no longer has decodes as null. Recorded as
+            // an empty cast so it is not asked for again on every load.
+            let cast = map["s\(index)"] ?? nil
+            out[id] = (cast?.performers ?? []).map { entry in
+                MatchedPerformer(
+                    stashId: entry.performer.id,
+                    name: entry.performer.name,
+                    gender: entry.performer.gender,
+                    image: entry.performer.images.first?.url
+                )
+            }
+        }
+        return out
     }
 
     // MARK: - Query strings
@@ -522,6 +660,31 @@ final class StashDBService {
           }
         }
         """
+}
+
+/// GraphQL wire envelope. At file scope because a generic type cannot be
+/// declared inside a function.
+private struct StashDBEnvelope<D: Decodable>: Decodable {
+    let data: D?
+    let errors: [GQLError]?
+    struct GQLError: Decodable { let message: String }
+}
+
+/// One aliased `findScene` in the batched cast document. Null when
+/// StashDB no longer has the scene.
+private struct SceneCastPayload: Decodable {
+    let performers: [Entry]
+
+    struct Entry: Decodable {
+        let performer: Performer
+        struct Performer: Decodable {
+            let id: String
+            let name: String
+            let gender: String?
+            let images: [Image]
+            struct Image: Decodable { let url: String }
+        }
+    }
 }
 
 private extension Array {
