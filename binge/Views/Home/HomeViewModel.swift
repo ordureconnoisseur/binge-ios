@@ -645,8 +645,8 @@ final class HomeViewModel {
             print(
                 "[binge] home first paint \(ms)ms "
                     + "(fetch \(fetchedMs)ms, assemble \(ms - fetchedMs)ms, "
-                    + "\(raw.count) in window, \(feed.count) scenes, "
-                    + "\(packs.count) packs, \(unidentifiedCount) held back)"
+                    + "\(raw.count) fetched, \(feed.count) scenes, "
+                    + "\(packs.count) packs)"
             )
             // Discovery + Reddit are best-effort augmentations —
             // they run AFTER the main feed is rendered so the user
