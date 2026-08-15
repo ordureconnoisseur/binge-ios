@@ -42,6 +42,17 @@ enum AllowedGendersStore {
     /// in Settings → Genders to surface to taste.
     static let defaults: Set<AllowedGender> = Set(AllowedGender.allCases)
 
+    /// The same default as a CSV, for the `@AppStorage` binding in
+    /// Settings. That binding needs a literal default and used to carry
+    /// its own, which disagreed with `defaults`: before the user ever
+    /// opened Settings the feed surfaced every gender while the screen
+    /// showed two as active, and the first toggle silently narrowed the
+    /// feed to whatever was on display. One source, so they cannot drift
+    /// apart again.
+    static let defaultsRaw: String = AllowedGender.allCases
+        .map(\.rawValue)
+        .joined(separator: ",")
+
     /// Imperative reader used by call sites that aren't SwiftUI
     /// views (DiscoveryFeedBuilder / HomeViewModel.fetchDiscovery
     /// / DiscoverPerformersBar's loader).

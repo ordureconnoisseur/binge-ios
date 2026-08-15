@@ -588,7 +588,7 @@ struct SettingsView: View {
     /// in the section body so toggles re-render on @AppStorage
     /// updates (the raw String is what triggers SwiftUI's diff).
     @AppStorage(AllowedGendersStore.storageKey)
-    private var allowedGendersRaw: String = "FEMALE,TRANSGENDER_FEMALE"
+    private var allowedGendersRaw: String = AllowedGendersStore.defaultsRaw
 
 
     @ViewBuilder
