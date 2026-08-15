@@ -514,6 +514,23 @@ final class HomeViewModel {
         await fetch()
     }
 
+    /// Scenes the identification rule held back. A failure here costs
+    /// the empty state a number, nothing more, so it returns zero
+    /// rather than propagating.
+    private func countUnidentified(
+        client: StashClient, since: String
+    ) async -> Int {
+        do {
+            let r: SceneCountResponse = try await client.gql(
+                Queries.countUnidentifiedScenes,
+                variables: ["since": since]
+            )
+            return r.findScenes.count
+        } catch {
+            return 0
+        }
+    }
+
     private func fetch() async {
         loadState = .loading
         // First-paint timing. Home is the surface most worth keeping
@@ -575,8 +592,20 @@ final class HomeViewModel {
             //
             // This used to drop every performerless scene outright,
             // which also threw away the ones binge can name.
+            // The query applies this too, so the filter below normally
+            // removes nothing. It stays because the query can only ask
+            // whether SOME stashdb.org id exists while the rule is about
+            // this scene's own id, and because a rule this load-bearing
+            // should not live in one place only.
             let merged = raw.filter { $0.isIdentified }
-            unidentifiedCount = raw.count - merged.count
+            // Asked for only when there is nothing to show, which is the
+            // only place it is read. A normal load pays nothing for it.
+            unidentifiedCount = 0
+            if merged.isEmpty {
+                unidentifiedCount = await countUnidentified(
+                    client: client, since: sinceIso
+                )
+            }
             // Stories stay performer-only. A story is one performer's
             // strip, so a scene with nobody linked has no strip to
             // belong to however well StashDB knows it.

@@ -471,3 +471,13 @@ struct FindScenesResponse: Decodable {
         let scenes: [BingeScene]
     }
 }
+
+/// Count-only response. Used where the number matters and the rows do
+/// not, so the query does not have to carry a selection set it will
+/// throw away.
+struct SceneCountResponse: Decodable {
+    let findScenes: Payload
+    struct Payload: Decodable {
+        let count: Int
+    }
+}

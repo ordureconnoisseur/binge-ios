@@ -400,11 +400,51 @@ enum Queries {
     ///
     /// `since` is ISO 8601 ("yyyy-MM-ddTHH:mm:ssZ"). 30-day lookback
     /// is computed in HomeViewModel.
+    /// How many scenes the identification rule held back: the
+    /// complement of what the feed queries keep, inside the same
+    /// window. Counted rather than listed, and asked only when the feed
+    /// came back empty, which is the only place the number is shown.
+    static let countUnidentifiedScenes = """
+        query CountUnidentified($since: String!) {
+          findScenes(
+            scene_filter: {
+              created_at: { value: $since, modifier: GREATER_THAN }
+              performer_count: { value: 0, modifier: EQUALS }
+              stash_id_endpoint: {
+                endpoint: "https://stashdb.org/graphql"
+                modifier: IS_NULL
+              }
+            },
+            filter: { page: 1, per_page: 1 }
+          ) {
+            count
+          }
+        }
+        """
+
+    /// The identification rule lives in the filter, not only in the
+    /// client. Home discards every scene with nobody linked and no
+    /// StashDB match, and fetching them first was 96% of a 3.4s first
+    /// paint spent on rows thrown away a millisecond later: 9,327
+    /// scenes downloaded to show 2,073.
+    ///
+    /// Stash ORs the sub-filter against the whole conjunction at this
+    /// level, so the window bound is repeated inside it. Without that
+    /// repetition the branch is unbounded and matches the entire
+    /// library: measured, 23,925 rows for a window holding 9,327.
     static let findRecentScenes = """
         query RecentScenes($since: String!, $perPage: Int!) {
           findScenes(
             scene_filter: {
               created_at: { value: $since, modifier: GREATER_THAN }
+              performer_count: { value: 0, modifier: GREATER_THAN }
+              OR: {
+                created_at: { value: $since, modifier: GREATER_THAN }
+                stash_id_endpoint: {
+                  endpoint: "https://stashdb.org/graphql"
+                  modifier: NOT_NULL
+                }
+              }
             },
             filter: {
               page: 1,
@@ -999,6 +1039,14 @@ enum Queries {
           findScenes(
             scene_filter: {
               date: { value: $since, modifier: GREATER_THAN }
+              performer_count: { value: 0, modifier: GREATER_THAN }
+              OR: {
+                date: { value: $since, modifier: GREATER_THAN }
+                stash_id_endpoint: {
+                  endpoint: "https://stashdb.org/graphql"
+                  modifier: NOT_NULL
+                }
+              }
             },
             filter: {
               page: 1,
