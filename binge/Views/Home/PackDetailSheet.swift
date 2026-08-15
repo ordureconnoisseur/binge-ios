@@ -44,7 +44,7 @@ struct PackDetailSheet: View {
             .toolbar {
                 ToolbarItem(placement: .principal) {
                     VStack(spacing: 1) {
-                        Text(pack.primaryPerformer.name)
+                        Text(pack.label)
                             .font(.system(size: 16, weight: .semibold))
                             .foregroundStyle(.white)
                         Text("\(pack.sceneCount) new scenes")
