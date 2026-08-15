@@ -123,8 +123,17 @@ func computeRating100(
     if den == 0 { return nil }
     let final05 = num / den
     let safePrecision = precision > 0 ? precision : 20
+    // Half-to-even, twice, exactly as the plugin's Python does it. A bare
+    // `.rounded()` is half-AWAY-from-zero, which disagrees on every exact
+    // half: two criteria scored 2 and 3 average to 2.5, and the modal
+    // would preview 60 while the hook stored 40. The second rounding is
+    // mathematically a no-op on an integer product, but it stops float
+    // error from truncating 59.999... to 59 on the way through Int().
     let raw = (final05 * 20.0) / Double(safePrecision)
-    var rating100 = Int((raw.rounded()) * Double(safePrecision))
+    let scaled = raw.rounded(.toNearestOrEven) * Double(safePrecision)
+    var rating100 = Int(scaled.rounded(.toNearestOrEven))
+    // Floor at one step, not zero. That is the plugin's behaviour and web
+    // matches it; a rated scene never reads as unrated.
     rating100 = max(safePrecision, min(100, rating100))
     return rating100
 }
