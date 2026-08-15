@@ -21,6 +21,10 @@ struct SceneFeedCard: View {
     let scene: BingeScene
     let baseURL: String
     let apiKey: String
+    /// Who StashDB says is in this scene, for scenes with nobody linked
+    /// locally. Already gender-filtered by HomeViewModel. Defaulted so
+    /// the reel and other call sites stay as they are.
+    var matchedPerformers: [MatchedPerformer] = []
     /// True when this scene is back-catalog you just re-added (old
     /// scraped date, recent created_at). Shows a "reposted" glyph and
     /// reads the relative time off the import date, not the old one.
@@ -263,11 +267,37 @@ struct SceneFeedCard: View {
     @ViewBuilder
     private var nameRow: some View {
         if scene.performers.isEmpty {
-            Text("Unknown")
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(.white)
-                .lineLimit(2)
-                .multilineTextAlignment(.leading)
+            // Nobody linked locally. The scene only reached the feed at
+            // all because StashDB matched it, so StashDB usually knows
+            // the cast: name them, and mark them as not in the library
+            // rather than as missing.
+            if matchedPerformers.isEmpty {
+                Text("Unknown")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+            } else {
+                HStack(alignment: .firstTextBaseline, spacing: 0) {
+                    ForEach(
+                        Array(matchedPerformers.enumerated()),
+                        id: \.element.id
+                    ) { idx, p in
+                        if idx > 0 {
+                            Text(", ")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(.white)
+                        }
+                        Text(p.name)
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .lineLimit(1)
+                    }
+                    NotInLibraryBadge(size: 12)
+                        .padding(.leading, 3)
+                    Spacer(minLength: 0)
+                }
+            }
         } else {
             // Per-performer name + badge run. Each performer's
             // verified mark inherits its own favourite/in-library

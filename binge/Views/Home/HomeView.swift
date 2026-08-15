@@ -270,6 +270,7 @@ struct HomeView: View {
             scene: scene,
             baseURL: stashUrl,
             apiKey: stashApiKey,
+            matchedPerformers: vm.matchedPerformers[scene.id] ?? [],
             isRepost: HomeViewModel.isRepost(
                 scene, repostCutoff: vm.repostCutoff
             ),
