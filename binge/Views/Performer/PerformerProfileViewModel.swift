@@ -385,7 +385,10 @@ final class PerformerProfileViewModel {
         defer { stashDBLoading = false }
         let svc = StashDBService(baseURL: baseURL, apiKey: apiKey)
         guard let box = await svc.fetchBoxConfig() else { return }
-        let owned = await svc.fetchOwnedStashIds()
+        // Through the cache, not around it. This is a sweep of every
+        // scene in the library, and the uncached call re-ran it on every
+        // profile open while Home's copy sat cached beside it.
+        let owned = await svc.cachedOwnedStashIds()
         let raw = await svc.fetchScenesForStashDBPerformer(
             stashId: stashId,
             apiKey: box.apiKey

@@ -68,12 +68,28 @@ extension StashDBService {
             StashDBCache.shared.memoWrite(key, value: cached)
             return Set(cached)
         }
-        let fresh = await fetchOwnedStashIds()
+        // Share one sweep across callers. The memo is only written after
+        // the await returns, so without this two callers racing on a
+        // cold cache each run a whole-library query for the same answer
+        // — Home's discovery pass and a profile opened straight after it
+        // will do exactly that. The task is static because every call
+        // site builds its own StashDBService instance, so an
+        // instance-level guard would not see the other one.
+        if let inFlight = Self.ownedIdsInFlight {
+            return await inFlight.value
+        }
+        let task = Task { await self.fetchOwnedStashIds() }
+        Self.ownedIdsInFlight = task
+        let fresh = await task.value
+        Self.ownedIdsInFlight = nil
         let asArray = Array(fresh)
         StashDBCache.shared.write(key, value: asArray)
         StashDBCache.shared.memoWrite(key, value: asArray)
         return fresh
     }
+
+    /// In-flight owned-ids sweep, shared across service instances.
+    private static var ownedIdsInFlight: Task<Set<String>, Never>?
 
     func cachedTrendingScenes(
         apiKey stashDBKey: String

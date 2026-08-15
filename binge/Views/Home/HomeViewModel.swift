@@ -516,6 +516,10 @@ final class HomeViewModel {
 
     private func fetch() async {
         loadState = .loading
+        // First-paint timing. Home is the surface most worth keeping
+        // quick and the hardest to eyeball, so it reports how long it
+        // took rather than leaving it to impressions.
+        let startedAt = Date()
         fetchGeneration &+= 1
         let gen = fetchGeneration
         repostCutoff = Self.repostCutoffDate(recentWindowDays: lookbackDays)
@@ -607,6 +611,12 @@ final class HomeViewModel {
             impliedSources = sources
             reassembleFeed()
             loadState = .loaded
+            let ms = Int(Date().timeIntervalSince(startedAt) * 1000)
+            print(
+                "[binge] home first paint \(ms)ms "
+                    + "(\(feed.count) scenes, \(packs.count) packs, "
+                    + "\(unidentifiedCount) held back)"
+            )
             // Discovery + Reddit are best-effort augmentations —
             // they run AFTER the main feed is rendered so the user
             // never waits on StashDB / binge-server latency to see
