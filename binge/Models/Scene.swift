@@ -30,6 +30,15 @@ struct BingeScene: Decodable, Identifiable, Hashable {
     let performers: [Performer]
     let studio: Studio?
     let tags: [Tag]
+    /// Stash-box matches for this scene. Optional because only the two
+    /// Home queries select it; every other scene query decodes with it
+    /// absent. Home needs it because a scene with nobody linked earns a
+    /// place in the feed only if StashDB has identified it.
+    ///
+    /// `var`, not `let`: an optional `var` gets an implicit nil default
+    /// in the memberwise init, so the hand-built scenes in DemoContent
+    /// keep compiling without naming it. A `let` would not.
+    var stashIds: [StashID]?
 
     struct Paths: Decodable, Hashable {
         let stream: String?
@@ -111,6 +120,16 @@ struct BingeScene: Decodable, Identifiable, Hashable {
         let name: String
     }
 
+    struct StashID: Decodable, Hashable {
+        let endpoint: String
+        let stashId: String
+
+        enum CodingKeys: String, CodingKey {
+            case endpoint
+            case stashId = "stash_id"
+        }
+    }
+
     enum CodingKeys: String, CodingKey {
         case id
         case title
@@ -126,6 +145,7 @@ struct BingeScene: Decodable, Identifiable, Hashable {
         case performers
         case studio
         case tags
+        case stashIds = "stash_ids"
     }
 
     // The URL the AVPlayer hits.
@@ -414,6 +434,33 @@ struct BingeScene: Decodable, Identifiable, Hashable {
         guard let preview = paths.preview else { return nil }
         if preview.hasPrefix("http") { return URL(string: preview) }
         return URL(string: "\(base.trimmingCharacters(in: CharacterSet(charactersIn: "/")))\(preview)")
+    }
+}
+
+extension BingeScene {
+    /// The one stash-box binge can ask who is in a scene. A match
+    /// against any other box is not the identification the Home rule is
+    /// about, because nothing can be looked up from it.
+    ///
+    /// Declared here rather than reused from StashDBService so it stays
+    /// free of actor isolation; AddSceneService and FollowService each
+    /// keep their own private copy of the same literal.
+    static let stashDBEndpoint = "https://stashdb.org/graphql"
+
+    /// This scene's StashDB id, if StashDB has matched it. Nil for a
+    /// scene binge cannot identify, which is the whole test the Home
+    /// feed applies to a scene with no performers linked.
+    var stashDBSceneID: String? {
+        stashIds?.first { $0.endpoint == BingeScene.stashDBEndpoint }?
+            .stashId
+    }
+
+    /// Whether this scene may appear in the Home feed on its own
+    /// merits. A linked performer is identification enough; failing
+    /// that, StashDB must have matched it, and then its cast can be
+    /// looked up and put on the card.
+    var isIdentified: Bool {
+        !performers.isEmpty || stashDBSceneID != nil
     }
 }
 

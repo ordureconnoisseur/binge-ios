@@ -427,6 +427,7 @@ enum Queries {
               performers { id name image_path favorite gender }
               studio { name }
               tags { id name }
+              stash_ids { endpoint stash_id }
             }
           }
         }
@@ -1012,6 +1013,7 @@ enum Queries {
               performers { id name image_path favorite gender }
               studio { name }
               tags { id name }
+              stash_ids { endpoint stash_id }
             }
           }
         }

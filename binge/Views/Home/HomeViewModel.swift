@@ -71,6 +71,12 @@ final class HomeViewModel {
     /// into FeedEntry rows.
     var packs: [SceneFeedPack] = []
     var discovery: [DiscoveryItem] = []
+    /// How many recent scenes were left out for having neither a linked
+    /// performer nor a StashDB match. The empty state needs it: on a
+    /// library that has been scanned but not tagged there IS plenty new
+    /// and none of it is identified, and "nothing new" would send the
+    /// reader looking for a bug that is not there.
+    private(set) var unidentifiedCount: Int = 0
     /// StashDB stash_id → new local scene id, for scenes the
     /// user added to their library in this session. Drives the
     /// discovery cards' "in library" chrome (badge + the menu's
@@ -488,23 +494,22 @@ final class HomeViewModel {
             // results with this stale window.
             guard gen == fetchGeneration else { return }
 
-            // Drop scenes with no performers — matches the web
-            // client's home filter. Untagged scenes don't belong in
-            // a "what's new" surface that's organized around
-            // performers; they'd also produce zero story buckets
-            // and just bloat the feed.
             let raw = mergeById(a.findScenes.scenes, b.findScenes.scenes)
-            // Drop scenes with no performers — untagged scenes don't
-            // belong in a performer-organized "what's new" surface
-            // (they'd also produce zero story buckets and just bloat
-            // the feed).
-            // Drop silently-hidden scenes (trans/scat tags + trans
-            // performers). The recent/byDate queries already exclude the
-            // hidden TAGS server-side; this also catches untagged trans
-            // performers.
-            let merged = raw
-                .filter { !$0.performers.isEmpty }
-            libraryStorySource = merged
+            // A scene earns a place in the feed by being identifiable.
+            // A linked performer is identification enough; failing that,
+            // StashDB must have matched it, and then its cast can be
+            // looked up and put on the card. A scene with neither is an
+            // unidentified file with no title, no studio and no cast,
+            // and a feed is the wrong place for it.
+            //
+            // This used to drop every performerless scene outright,
+            // which also threw away the ones binge can name.
+            let merged = raw.filter { $0.isIdentified }
+            unidentifiedCount = raw.count - merged.count
+            // Stories stay performer-only. A story is one performer's
+            // strip, so a scene with nobody linked has no strip to
+            // belong to however well StashDB knows it.
+            libraryStorySource = merged.filter { !$0.performers.isEmpty }
             // Reset tails on a fresh load so refreshing drops
             // stale StashDB / Reddit / PornHub entries before the
             // new fetches land.
