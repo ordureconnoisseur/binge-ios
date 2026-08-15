@@ -102,9 +102,14 @@ final class StashDBCache: @unchecked Sendable {
             try? FileManager.default.removeItem(at: url)
             return nil
         }
-        if Date().timeIntervalSince1970 - entry.fetchedAt > ttl {
-            return nil
-        }
+        // A negative age means the entry is stamped in the future, which
+        // happens when the clock moves back: a daylight-saving or NTP
+        // correction, restoring a backup, or a device whose date was
+        // wrong when it wrote. Treating that as fresh would serve the
+        // entry until the clock caught up, which for the year-long
+        // scene-cast TTL is indefinitely.
+        let age = Date().timeIntervalSince1970 - entry.fetchedAt
+        if age < 0 || age > ttl { return nil }
         return entry.value
     }
 

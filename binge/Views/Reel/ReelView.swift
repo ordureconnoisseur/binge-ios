@@ -457,11 +457,12 @@ struct ReelView: View {
             // include it when the saved filter actually carries
             // object_filter criteria, otherwise pass null so the
             // server uses defaults.
-            if let dict = sf.objectFilter?.asObject {
-                vars["sceneFilter"] = dict
-            } else {
-                vars["sceneFilter"] = NSNull()
-            }
+            // Stash stores criteria in its UI's shape, which is not the
+            // shape scene_filter expects, and one bad criterion fails
+            // the whole query rather than part of it.
+            let transformed = SavedFilterTransform.transform(sf.objectFilter)
+            vars["sceneFilter"] =
+                transformed.isEmpty ? NSNull() : transformed
             return try await client.gql(
                 Queries.findScenesWithFilter,
                 variables: vars
