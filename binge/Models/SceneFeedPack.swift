@@ -11,7 +11,17 @@ import Foundation
 /// Mirrors web's `PackFeedItem` in src/home/useFeed.ts.
 struct SceneFeedPack: Identifiable, Hashable {
     let id: String
-    let primaryPerformer: BingeScene.Performer
+    /// The library performer the whole batch shares, or nil when the
+    /// batch has nobody linked locally and was grouped by whoever
+    /// StashDB says is in it instead.
+    let primaryPerformer: BingeScene.Performer?
+    /// Set when there is no local performer but StashDB knows who is in
+    /// the batch. They have no local profile to open, so the card names
+    /// them and marks them as not in the library.
+    let matchedPerformer: MatchedPerformer?
+    /// What the card is titled with. Always non-empty, so the card
+    /// never has to invent a heading.
+    let label: String
     let scenes: [BingeScene]
     let sceneCount: Int
     /// Drives the merged Home-feed sort. Matches the newest

@@ -77,6 +77,16 @@ final class HomeViewModel {
     /// and none of it is identified, and "nothing new" would send the
     /// reader looking for a bug that is not there.
     private(set) var unidentifiedCount: Int = 0
+    /// Who StashDB says is in a scene nobody is linked to locally,
+    /// keyed by local scene id. Held apart from `BingeScene.performers`
+    /// because that array means "in your library" and drives the
+    /// profile link; these people have no local profile to open.
+    /// Already filtered to the user's surfaced genders.
+    private(set) var matchedPerformers: [String: [MatchedPerformer]] = [:]
+    /// Every scene that passed the identification rule, newest first.
+    /// Kept so the feed can be reassembled when the casts land without
+    /// refetching anything.
+    private var identifiedSource: [BingeScene] = []
     /// StashDB stash_id → new local scene id, for scenes the
     /// user added to their library in this session. Drives the
     /// discovery cards' "in library" chrome (badge + the menu's
@@ -192,9 +202,31 @@ final class HomeViewModel {
     /// Returns the kept individual scenes (in their original
     /// order) plus the detected packs. The caller merges these
     /// into the FeedEntry list and re-sorts by effectiveAt.
+    /// What a scene groups under, or nil when it groups under nothing
+    /// and can only ever appear as its own card.
+    ///
+    /// The prefixes keep the namespaces apart. Without them a library
+    /// performer whose id is "12" would absorb a StashDB performer of
+    /// the same id, and the batch would be titled with whichever was
+    /// seen first.
+    static func packGroupKey(
+        _ scene: BingeScene,
+        matchedPerformers: [String: [MatchedPerformer]]
+    ) -> String? {
+        if let pid = scene.performers.first?.id { return "p:\(pid)" }
+        // A StashDB match is a real identity, so it beats nothing at
+        // all: two scenes of the same performer belong together even
+        // when neither is linked locally.
+        if let mid = matchedPerformers[scene.id]?.first?.stashId {
+            return "m:\(mid)"
+        }
+        return nil
+    }
+
     static func assemblePacks(
         _ scenes: [BingeScene],
-        recentWindowDays: Int
+        recentWindowDays: Int,
+        matchedPerformers: [String: [MatchedPerformer]] = [:]
     ) -> (scenes: [BingeScene], packs: [SceneFeedPack]) {
         // A pack is a "repost" (back-catalog re-added) when even its
         // newest scene's scraped release date is older than the
@@ -204,18 +236,21 @@ final class HomeViewModel {
             recentWindowDays: recentWindowDays
         )
 
-        // Group by primary performer.
+        // Group by whatever identifies the scene: the library performer
+        // when there is one, otherwise whoever StashDB says is in it.
         var byPrimary: [String: [BingeScene]] = [:]
         for s in scenes {
-            guard let pid = s.performers.first?.id else { continue }
-            byPrimary[pid, default: []].append(s)
+            guard
+                let key = packGroupKey(s, matchedPerformers: matchedPerformers)
+            else { continue }
+            byPrimary[key, default: []].append(s)
         }
 
         var packs: [SceneFeedPack] = []
-        var packPerformers: Set<String> = []
+        var packedKeys: Set<String> = []
         let iso = ISO8601DateFormatter()
 
-        for (pid, list) in byPrimary {
+        for (groupKey, list) in byPrimary {
             let sortedByCreated = list.sorted {
                 ($0.createdAt ?? "") > ($1.createdAt ?? "")
             }
@@ -231,8 +266,17 @@ final class HomeViewModel {
                 return newest.timeIntervalSince(dt) <= Self.packWindow
             }
             if inWindow.count < Self.packMinSize { continue }
-            guard let primary = sortedByCreated.first?.performers.first
-            else { continue }
+            // Everything in the group shares whichever of the two
+            // produced the key, so reading it off the newest is safe.
+            let newestScene = sortedByCreated[0]
+            let primary = newestScene.performers.first
+            let matched =
+                primary == nil
+                ? matchedPerformers[newestScene.id]?.first : nil
+            // Unreachable: a group only forms when one of these exists.
+            guard let label = primary?.name ?? matched?.name else {
+                continue
+            }
             // Newest scraped release date across the batch. If even
             // that is older than the cutoff, the pack is back-catalog
             // → "reposted". Scenes with no date aren't evidence.
@@ -244,8 +288,10 @@ final class HomeViewModel {
             let isRepost = newestDate != nil && newestDate! < repostCutoff
             packs.append(
                 SceneFeedPack(
-                    id: "pack:\(pid):\(newestStr)",
+                    id: "pack:\(groupKey):\(newestStr)",
                     primaryPerformer: primary,
+                    matchedPerformer: matched,
+                    label: label,
                     scenes: inWindow,
                     sceneCount: inWindow.count,
                     // Sort by IMPORT time (newest created_at), NOT the
@@ -258,7 +304,7 @@ final class HomeViewModel {
                     isRepost: isRepost
                 )
             )
-            packPerformers.insert(pid)
+            packedKeys.insert(groupKey)
         }
 
         // A performer who formed a pack is represented by that pack
@@ -268,11 +314,15 @@ final class HomeViewModel {
         // all their scenes in the window (no per-performer cap).
         var out: [BingeScene] = []
         for s in scenes {
-            guard let pid = s.performers.first?.id else {
+            guard
+                let key = packGroupKey(s, matchedPerformers: matchedPerformers)
+            else {
+                // Nothing identifies it well enough to group, so it can
+                // only ever stand on its own.
                 out.append(s)
                 continue
             }
-            if packPerformers.contains(pid) { continue }
+            if packedKeys.contains(key) { continue }
             out.append(s)
         }
         return (out, packs)
@@ -517,15 +567,11 @@ final class HomeViewModel {
             redditByLocalId = [:]
             pornhubByLocalId = [:]
             rebuildStories()
-            let assembled = Self.assemblePacks(
-                merged.sorted {
-                    Story.effectiveAt(for: $0)
-                        > Story.effectiveAt(for: $1)
-                },
-                recentWindowDays: lookbackDays
-            )
-            feed = assembled.scenes
-            packs = assembled.packs
+            identifiedSource = merged.sorted {
+                Story.effectiveAt(for: $0) > Story.effectiveAt(for: $1)
+            }
+            matchedPerformers = [:]
+            reassembleFeed()
             loadState = .loaded
             // Discovery + Reddit are best-effort augmentations —
             // they run AFTER the main feed is rendered so the user
@@ -538,6 +584,10 @@ final class HomeViewModel {
                         sinceDate: sinceDate, generation: gen
                     )
                 }
+                // Names for the scenes nobody is linked to. Deliberately
+                // not awaited above: the feed is already on screen, and
+                // this only changes what those cards are titled with.
+                Task { await fetchMatchedCasts(generation: gen) }
             }
             if includeReddit {
                 Task { await fetchReddit(generation: gen) }
@@ -649,6 +699,62 @@ final class HomeViewModel {
     ///      StoryBuilder so the stories row picks up new releases
     ///      for linked performers.
     ///
+    /// Rebuild the feed from the scenes that passed the identification
+    /// rule. Separate from `fetch()` so the matched-cast pass can redo
+    /// it when names arrive, without another round trip.
+    private func reassembleFeed() {
+        let assembled = Self.assemblePacks(
+            identifiedSource,
+            recentWindowDays: lookbackDays,
+            matchedPerformers: matchedPerformers
+        )
+        feed = assembled.scenes
+        packs = assembled.packs
+    }
+
+    /// Ask StashDB who is in the scenes nobody is linked to locally.
+    ///
+    /// Runs after the feed is on screen, like discovery and the
+    /// off-site tails, so the library's own scenes never wait on
+    /// stashdb.org. When it lands the feed is reassembled, because a
+    /// matched performer is also what such a scene groups under.
+    private func fetchMatchedCasts(generation: Int) async {
+        let needing = identifiedSource.filter { $0.performers.isEmpty }
+        guard !needing.isEmpty else { return }
+        let ids = needing.compactMap(\.stashDBSceneID)
+        guard !ids.isEmpty else { return }
+
+        let service = StashDBService(baseURL: baseURL, apiKey: apiKey)
+        guard let box = await service.cachedBoxConfig() else { return }
+        let casts = await service.fetchSceneCasts(
+            sceneStashIDs: ids,
+            apiKey: box.apiKey
+        )
+        guard generation == fetchGeneration, !casts.isEmpty else { return }
+
+        // "Genders to surface" applies here too. StashDB naming everyone
+        // in a scene is exactly the case where a hidden gender would
+        // otherwise end up on the front of a card, and this has to
+        // happen before anything reads the list: the first entry is what
+        // titles a batch.
+        let allowed = AllowedGendersStore.currentStrings()
+        var bySceneId: [String: [MatchedPerformer]] = [:]
+        for scene in needing {
+            guard
+                let sid = scene.stashDBSceneID,
+                let cast = casts[sid]
+            else { continue }
+            let visible = cast.filter { p in
+                guard let g = p.gender else { return false }
+                return allowed.contains(g)
+            }
+            if !visible.isEmpty { bySceneId[scene.id] = visible }
+        }
+        guard !bySceneId.isEmpty else { return }
+        matchedPerformers = bySceneId
+        reassembleFeed()
+    }
+
     /// Silently degrades when the user has no stashbox configured,
     /// no linked performers, or any StashDB call fails.
     private func fetchDiscovery(sinceDate: String, generation: Int) async {
