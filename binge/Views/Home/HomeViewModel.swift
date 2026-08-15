@@ -559,6 +559,7 @@ final class HomeViewModel {
                 variables: ["since": sinceDate, "perPage": perPage]
             )
             let (a, b) = try await (recent, byDate)
+            let fetchedMs = Int(Date().timeIntervalSince(startedAt) * 1000)
             // A newer fetch started while we awaited (e.g. the lookback
             // setting changed) — bail so we don't clobber its fresher
             // results with this stale window.
@@ -614,8 +615,9 @@ final class HomeViewModel {
             let ms = Int(Date().timeIntervalSince(startedAt) * 1000)
             print(
                 "[binge] home first paint \(ms)ms "
-                    + "(\(feed.count) scenes, \(packs.count) packs, "
-                    + "\(unidentifiedCount) held back)"
+                    + "(fetch \(fetchedMs)ms, assemble \(ms - fetchedMs)ms, "
+                    + "\(raw.count) in window, \(feed.count) scenes, "
+                    + "\(packs.count) packs, \(unidentifiedCount) held back)"
             )
             // Discovery + Reddit are best-effort augmentations —
             // they run AFTER the main feed is rendered so the user
