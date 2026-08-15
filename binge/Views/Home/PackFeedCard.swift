@@ -105,13 +105,11 @@ struct PackFeedCard: View {
                                 size: 12
                             )
                             .padding(.leading, 3)
-                        } else {
-                            // Named by StashDB, not in the library. Says
-                            // the identity is missing locally rather
-                            // than implying a profile that is not there.
-                            NotInLibraryBadge(size: 12)
-                                .padding(.leading, 3)
                         }
+                        // Nothing in the else branch on purpose. A pack
+                        // named by StashDB simply carries no verified
+                        // mark, and that absence is the difference from
+                        // one named by a performer in the library.
                     }
                     HStack(spacing: 6) {
                         Text(

@@ -38,25 +38,3 @@ struct VerifiedBadge: View {
             .alignmentGuide(.firstTextBaseline) { d in d.height * 0.85 }
     }
 }
-
-/// The fourth state the badge above deliberately does not draw: named,
-/// but not in your library.
-///
-/// This appears on scenes nobody is linked to locally, where StashDB
-/// supplied the names. Deliberately not the verified mark in another
-/// colour, because those two claim something about a person and this one
-/// only reports that they have not been added. A dashed outline reads as
-/// a slot waiting to be filled, which is exactly the state.
-struct NotInLibraryBadge: View {
-    var size: CGFloat = 12
-
-    var body: some View {
-        Image(systemName: "questionmark.circle.dashed")
-            .resizable()
-            .scaledToFit()
-            .frame(width: size, height: size)
-            .foregroundStyle(.white.opacity(0.42))
-            .accessibilityLabel("Not in your library")
-            .alignmentGuide(.firstTextBaseline) { d in d.height * 0.85 }
-    }
-}

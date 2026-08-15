@@ -47,6 +47,11 @@ struct SceneFeedCard: View {
     let onPerformerTap: (String) -> Void
     /// A StashDB-matched performer, who has no local id to route on.
     let onMatchedPerformerTap: (MatchedPerformer) -> Void
+
+    /// How many performers are named before the row switches to a
+    /// count. Two, because the badges do not shrink and a third name
+    /// already truncates to an ellipsis on a phone-width card.
+    private static let nameLimit = 2
     /// Per-performer story lookup. When a performer on this
     /// scene has a current story, their avatar bubble gets the
     /// gradient ring and tapping it opens the story instead of
@@ -292,9 +297,17 @@ struct SceneFeedCard: View {
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
             } else {
+                // No badge on these. A library performer carries her
+                // verified mark and a StashDB match does not, so the
+                // absence is the signal and nothing has to be added to
+                // say so. The marker that used to sit here was a
+                // question mark whose meaning lived in a web tooltip
+                // that a phone has no way to show.
+                let visible = Array(matchedPerformers.prefix(Self.nameLimit))
+                let overflow = matchedPerformers.count - visible.count
                 HStack(alignment: .firstTextBaseline, spacing: 0) {
                     ForEach(
-                        Array(matchedPerformers.enumerated()),
+                        Array(visible.enumerated()),
                         id: \.element.id
                     ) { idx, p in
                         if idx > 0 {
@@ -307,8 +320,13 @@ struct SceneFeedCard: View {
                             .foregroundStyle(.white)
                             .lineLimit(1)
                     }
-                    NotInLibraryBadge(size: 12)
-                        .padding(.leading, 3)
+                    if overflow > 0 {
+                        Text(" +\(overflow)")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(.white.opacity(0.55))
+                            .lineLimit(1)
+                            .layoutPriority(1)
+                    }
                     Spacer(minLength: 0)
                 }
             }
@@ -316,12 +334,20 @@ struct SceneFeedCard: View {
             // Per-performer name + badge run. Each performer's
             // verified mark inherits its own favourite/in-library
             // colour so a comma-joined "Alice ✓, Bob ✓, Carol ✓"
-            // accurately reflects all three. Truncates to a single
-            // line when long — SwiftUI doesn't reliably wrap text
-            // mid-run around inline images.
+            // accurately reflects all three.
+            //
+            // Only the first few are named. Every badge holds its
+            // fixed size while the names are the only part that can
+            // give way, so laying out a whole cast squeezed the names
+            // to nothing and left a bare line of badges — a fourteen
+            // performer scene rendered as fourteen ticks and no words.
+            // The avatar stack above already solved this with the same
+            // "+N" overflow, so the two now agree.
+            let visible = Array(scene.performers.prefix(Self.nameLimit))
+            let overflow = scene.performers.count - visible.count
             HStack(alignment: .firstTextBaseline, spacing: 0) {
                 ForEach(
-                    Array(scene.performers.enumerated()),
+                    Array(visible.enumerated()),
                     id: \.element.id
                 ) { idx, p in
                     if idx > 0 {
@@ -335,6 +361,16 @@ struct SceneFeedCard: View {
                         .lineLimit(1)
                     VerifiedBadge(favorite: p.favorite, size: 12)
                         .padding(.leading, 3)
+                }
+                if overflow > 0 {
+                    // Priority so the count keeps its width: it is the
+                    // part that says the cast is bigger than what is
+                    // shown, and truncating it undoes the whole point.
+                    Text(" +\(overflow)")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.55))
+                        .lineLimit(1)
+                        .layoutPriority(1)
                 }
                 Spacer(minLength: 0)
             }
