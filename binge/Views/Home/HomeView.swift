@@ -105,13 +105,14 @@ struct HomeView: View {
     /// funnel menu. Mirrors web's FeedCategory. (iOS feed has no
     /// gallery cards, so every entry maps to one of these.)
     enum FeedCategory: String, CaseIterable, Hashable {
-        case discover, trending, posts, reposts
+        case discover, trending, posts, reposts, unidentified
         var label: String {
             switch self {
             case .discover: return "Discover"
             case .trending: return "Trending"
             case .posts: return "Posts"
             case .reposts: return "Reposts"
+            case .unidentified: return "Unidentified"
             }
         }
     }
@@ -139,9 +140,14 @@ struct HomeView: View {
     ) -> FeedCategory {
         switch entry {
         case .library(let s):
+            // Nobody linked locally: its own category, so a library
+            // full of unidentified imports can be turned off without
+            // also losing everything else.
+            if s.performers.isEmpty { return .unidentified }
             return HomeViewModel.isRepost(s, repostCutoff: repostCutoff)
                 ? .reposts : .posts
         case .pack(let p):
+            if p.primaryPerformer == nil { return .unidentified }
             return p.isRepost ? .reposts : .posts
         case .discovery(let d):
             return d.source == .trending ? .trending : .discover
@@ -271,6 +277,7 @@ struct HomeView: View {
             baseURL: stashUrl,
             apiKey: stashApiKey,
             matchedPerformers: vm.matchedPerformers[scene.id] ?? [],
+            impliedSource: vm.impliedSources[scene.id],
             isRepost: HomeViewModel.isRepost(
                 scene, repostCutoff: vm.repostCutoff
             ),
@@ -670,6 +677,27 @@ struct HomeView: View {
         }
     }
 
+    /// What to say when there is nothing to show. The distinction
+    /// matters on a library that has been scanned but not tagged: there
+    /// IS plenty new, none of it is identified, and "nothing added or
+    /// released" would send the reader looking for a bug that is not
+    /// there.
+    private var emptyDetail: String {
+        let held = vm?.unidentifiedCount ?? 0
+        guard held > 0 else {
+            return "Nothing added or released in the last \(lookbackDays) days."
+        }
+        if held == 1 {
+            return
+                "1 recent scene has no performer and no StashDB match, "
+                + "so it is not shown. Identify it in Stash to see it here."
+        }
+        return
+            "\(held) recent scenes have no performer and no StashDB "
+            + "match, so they are not shown. Identify them in Stash to "
+            + "see them here."
+    }
+
     @ViewBuilder
     private var emptyState: some View {
         VStack(spacing: 8) {
@@ -679,7 +707,7 @@ struct HomeView: View {
             Text("No recent scenes")
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(.white)
-            Text("Nothing added or released in the last 30 days.")
+            Text(emptyDetail)
                 .font(.system(size: 12))
                 .foregroundStyle(.white.opacity(0.55))
                 .multilineTextAlignment(.center)

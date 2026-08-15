@@ -87,6 +87,10 @@ final class HomeViewModel {
     /// Kept so the feed can be reassembled when the casts land without
     /// refetching anything.
     private var identifiedSource: [BingeScene] = []
+    /// What an unattributed scene appears to belong to, keyed by local
+    /// scene id. A guess at a file layout, used only to group and label
+    /// a card and never written back to Stash.
+    private(set) var impliedSources: [String: String] = [:]
     /// StashDB stash_id → new local scene id, for scenes the
     /// user added to their library in this session. Drives the
     /// discovery cards' "in library" chrome (badge + the menu's
@@ -211,22 +215,25 @@ final class HomeViewModel {
     /// seen first.
     static func packGroupKey(
         _ scene: BingeScene,
-        matchedPerformers: [String: [MatchedPerformer]]
+        matchedPerformers: [String: [MatchedPerformer]],
+        impliedSources: [String: String] = [:]
     ) -> String? {
         if let pid = scene.performers.first?.id { return "p:\(pid)" }
-        // A StashDB match is a real identity, so it beats nothing at
-        // all: two scenes of the same performer belong together even
-        // when neither is linked locally.
+        // A StashDB match is a real identity, so it beats a folder:
+        // two scenes of the same performer belong together even when
+        // they were imported into different directories.
         if let mid = matchedPerformers[scene.id]?.first?.stashId {
             return "m:\(mid)"
         }
+        if let source = impliedSources[scene.id] { return "s:\(source)" }
         return nil
     }
 
     static func assemblePacks(
         _ scenes: [BingeScene],
         recentWindowDays: Int,
-        matchedPerformers: [String: [MatchedPerformer]] = [:]
+        matchedPerformers: [String: [MatchedPerformer]] = [:],
+        impliedSources: [String: String] = [:]
     ) -> (scenes: [BingeScene], packs: [SceneFeedPack]) {
         // A pack is a "repost" (back-catalog re-added) when even its
         // newest scene's scraped release date is older than the
@@ -241,7 +248,11 @@ final class HomeViewModel {
         var byPrimary: [String: [BingeScene]] = [:]
         for s in scenes {
             guard
-                let key = packGroupKey(s, matchedPerformers: matchedPerformers)
+                let key = packGroupKey(
+                    s,
+                    matchedPerformers: matchedPerformers,
+                    impliedSources: impliedSources
+                )
             else { continue }
             byPrimary[key, default: []].append(s)
         }
@@ -274,9 +285,10 @@ final class HomeViewModel {
                 primary == nil
                 ? matchedPerformers[newestScene.id]?.first : nil
             // Unreachable: a group only forms when one of these exists.
-            guard let label = primary?.name ?? matched?.name else {
-                continue
-            }
+            guard
+                let label = primary?.name ?? matched?.name
+                    ?? impliedSources[newestScene.id]
+            else { continue }
             // Newest scraped release date across the batch. If even
             // that is older than the cutoff, the pack is back-catalog
             // → "reposted". Scenes with no date aren't evidence.
@@ -315,7 +327,11 @@ final class HomeViewModel {
         var out: [BingeScene] = []
         for s in scenes {
             guard
-                let key = packGroupKey(s, matchedPerformers: matchedPerformers)
+                let key = packGroupKey(
+                    s,
+                    matchedPerformers: matchedPerformers,
+                    impliedSources: impliedSources
+                )
             else {
                 // Nothing identifies it well enough to group, so it can
                 // only ever stand on its own.
@@ -571,6 +587,24 @@ final class HomeViewModel {
                 Story.effectiveAt(for: $0) > Story.effectiveAt(for: $1)
             }
             matchedPerformers = [:]
+            // Built from every path in this batch, because what the
+            // paths share is the library root and only what is below it
+            // names a source. Resolved for the scenes with nobody
+            // linked, which are the only ones that read it.
+            let resolver = ImpliedSource(
+                paths: identifiedSource.compactMap { $0.files.first?.path },
+                libraryFolderNames: LibraryFolderNamesStore.current()
+            )
+            var sources: [String: String] = [:]
+            for scene in identifiedSource where scene.performers.isEmpty {
+                if let name = resolver.resolve(
+                    studioName: scene.studio?.name,
+                    filePath: scene.files.first?.path
+                ) {
+                    sources[scene.id] = name
+                }
+            }
+            impliedSources = sources
             reassembleFeed()
             loadState = .loaded
             // Discovery + Reddit are best-effort augmentations —
@@ -706,7 +740,8 @@ final class HomeViewModel {
         let assembled = Self.assemblePacks(
             identifiedSource,
             recentWindowDays: lookbackDays,
-            matchedPerformers: matchedPerformers
+            matchedPerformers: matchedPerformers,
+            impliedSources: impliedSources
         )
         feed = assembled.scenes
         packs = assembled.packs

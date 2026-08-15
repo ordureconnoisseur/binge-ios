@@ -590,6 +590,13 @@ struct SettingsView: View {
     @AppStorage(AllowedGendersStore.storageKey)
     private var allowedGendersRaw: String = AllowedGendersStore.defaultsRaw
 
+    /// Folder names treated as containers rather than as the name of
+    /// whatever an unattributed scene came from. Which words those are
+    /// is a property of one person's disk, so it is theirs to set.
+    @AppStorage(LibraryFolderNamesStore.storageKey)
+    private var libraryFolderNamesRaw: String =
+        LibraryFolderNamesStore.defaultsRaw
+
 
     @ViewBuilder
     private var gendersSection: some View {
@@ -739,6 +746,21 @@ struct SettingsView: View {
             Toggle("Discover from Reddit", isOn: $includeReddit)
             Toggle("Discover from PornHub", isOn: $includePornhub)
             Toggle("X media on profiles", isOn: $includeX)
+            HStack {
+                TextField(
+                    LibraryFolderNamesStore.defaultsRaw,
+                    text: $libraryFolderNamesRaw
+                )
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                Button("Reset") {
+                    libraryFolderNamesRaw =
+                        LibraryFolderNamesStore.defaultsRaw
+                }
+                .font(.system(size: 13, weight: .semibold))
+                .buttonStyle(.plain)
+                .foregroundStyle(Color.bingeVerified)
+            }
         } header: {
             Text("Home")
         } footer: {
@@ -752,7 +774,13 @@ struct SettingsView: View {
                     + "posts/uploads for performers' configured URLs "
                     + "via binge-server (configure below). X media "
                     + "loads on demand when you open a performer's "
-                    + "profile and folds into their story."
+                    + "profile and folds into their story. "
+                    + "Folder names to ignore: when a scene has no "
+                    + "performer, binge names it after the folder it "
+                    + "was imported into, and folders listed here are "
+                    + "skipped as containers rather than treated as a "
+                    + "name. The library root itself is worked out "
+                    + "automatically and does not need listing."
             )
         }
     }

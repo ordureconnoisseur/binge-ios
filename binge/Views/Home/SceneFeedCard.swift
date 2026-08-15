@@ -25,6 +25,10 @@ struct SceneFeedCard: View {
     /// locally. Already gender-filtered by HomeViewModel. Defaulted so
     /// the reel and other call sites stay as they are.
     var matchedPerformers: [MatchedPerformer] = []
+    /// What this scene appears to belong to when nobody at all could be
+    /// named: its studio, or the folder it was imported into. Better
+    /// than "Unknown", and honest about being a guess.
+    var impliedSource: String? = nil
     /// True when this scene is back-catalog you just re-added (old
     /// scraped date, recent created_at). Shows a "reposted" glyph and
     /// reads the relative time off the import date, not the old one.
@@ -272,7 +276,7 @@ struct SceneFeedCard: View {
             // the cast: name them, and mark them as not in the library
             // rather than as missing.
             if matchedPerformers.isEmpty {
-                Text("Unknown")
+                Text(impliedSource ?? "Unknown")
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(.white)
                     .lineLimit(2)

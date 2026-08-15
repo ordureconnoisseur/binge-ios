@@ -605,9 +605,17 @@ enum Queries {
     /// Scene stash_ids the user already has imported locally —
     /// used to filter discovered StashDB scenes so we don't
     /// surface ones the user already owns.
+    ///
+    /// Filtered to scenes that HAVE a stash id. Without the filter
+    /// Stash serialises an empty array for every other scene in the
+    /// library, which on a 131k-scene library measured 4.47 MB in 12.0s
+    /// against 2.64 MB in 1.19s for exactly the same answer.
     static let findOwnedStashIds = """
         query OwnedStashIds {
-          findScenes(filter: { per_page: -1 }) {
+          findScenes(
+            scene_filter: { stash_id_endpoint: { modifier: NOT_NULL } },
+            filter: { per_page: -1 }
+          ) {
             scenes {
               stash_ids { endpoint stash_id }
             }
