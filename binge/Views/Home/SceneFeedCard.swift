@@ -106,6 +106,13 @@ struct SceneFeedCard: View {
     @State private var looper: AVPlayerLooper?
     @State private var posterVisible: Bool = true
     @State private var isPlaying: Bool = false
+    /// Watches the item so a source that cannot play is noticed rather
+    /// than left as a still frame.
+    @State private var statusObserver: NSKeyValueObservation?
+    /// Set once this scene's preview has proved unplayable, so the
+    /// stream is used directly on every later attach instead of
+    /// failing over again each time the card scrolls back.
+    @State private var previewFailed: Bool = false
 
     // First N tags shown inline; the rest hide behind "+M more"
     // until the user taps the row. Matches the web's collapsed
@@ -519,9 +526,15 @@ struct SceneFeedCard: View {
             applyActiveState(isActive)
             return
         }
-        guard
-            let url = scene.previewURL(base: baseURL)
-                ?? scene.streamURL(base: baseURL)
+        // Stash hands back a preview URL for every scene whether or not
+        // the preview was ever generated, so previewURL is almost never
+        // nil and the ?? below was effectively dead: an ungenerated
+        // preview 404s and the card sat on its poster forever. Measured
+        // on the maintainer's library, 15% of scenes with performers and
+        // 80% of the StashDB-matched ones have no preview file, which is
+        // most of a feed that cannot play.
+        let preferred = previewFailed ? nil : scene.previewURL(base: baseURL)
+        guard let url = preferred ?? scene.streamURL(base: baseURL)
         else { return }
         let asset = AVURLAsset(
             url: url,
@@ -536,13 +549,37 @@ struct SceneFeedCard: View {
         q.automaticallyWaitsToMinimizeStalling = false
         looper = AVPlayerLooper(player: q, templateItem: item)
         player = q
+        statusObserver = item.observe(\.status) { observed, _ in
+            Task { @MainActor in
+                switch observed.status {
+                case .failed:
+                    // The preview is missing. Fall back to the stream,
+                    // which is what the card should have been playing
+                    // all along for these scenes.
+                    guard !previewFailed else { return }
+                    previewFailed = true
+                    detachPlayer()
+                    attachPlayer()
+                case .readyToPlay:
+                    // Only the centered card mounts a video layer, so
+                    // an inactive card keeps its poster or it would
+                    // uncover black. Waiting for ready also replaces a
+                    // blind 300ms hide that uncovered the poster
+                    // whether or not anything had started.
+                    guard isActive else { return }
+                    // Same brief hold applyActiveState uses, covering
+                    // first-frame decode so the poster does not lift
+                    // onto a black frame.
+                    try? await Task.sleep(for: .milliseconds(300))
+                    posterVisible = false
+                default:
+                    break
+                }
+            }
+        }
         if isActive {
             q.play()
             isPlaying = true
-            Task { @MainActor in
-                try? await Task.sleep(for: .milliseconds(300))
-                posterVisible = false
-            }
         } else {
             // Pre-mounted but waiting — keep the poster visible
             // and stay paused until scroll centers this card.
@@ -578,6 +615,8 @@ struct SceneFeedCard: View {
     }
 
     private func detachPlayer() {
+        statusObserver?.invalidate()
+        statusObserver = nil
         player?.pause()
         looper = nil
         player?.removeAllItems()
