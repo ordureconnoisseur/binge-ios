@@ -84,6 +84,10 @@ struct SceneSlideView: View {
     /// The message the toast is currently showing, and a counter that
     /// restarts its dismissal timer. Cleared 2s after the last change.
     @State private var speedToast: String?
+    /// SF Symbol shown beside the message, when the message is about
+    /// the latch rather than the speed. Nil for a plain hold, which is
+    /// a moment rather than a state and needs no badge.
+    @State private var speedToastIcon: String?
     @State private var speedToastTick = 0
 
 
@@ -203,15 +207,24 @@ struct SceneSlideView: View {
             // legible whatever the video is doing underneath.
             if let text = speedToast {
                 VStack {
-                    Text(text)
-                        .font(
-                            .system(
-                                size: 15,
-                                weight: .semibold,
-                                design: .rounded
+                    HStack(spacing: 7) {
+                        if let icon = speedToastIcon {
+                            Image(systemName: icon)
+                                // A shade heavier than the text: a
+                                // glyph of this size reads lighter than
+                                // letterforms at the same weight.
+                                .font(.system(size: 13, weight: .bold))
+                        }
+                        Text(text)
+                            .font(
+                                .system(
+                                    size: 15,
+                                    weight: .semibold,
+                                    design: .rounded
+                                )
                             )
-                        )
-                        .kerning(0.2)
+                            .kerning(0.2)
+                    }
                         .foregroundStyle(.white)
                         .padding(.horizontal, 18)
                         .padding(.vertical, 11)
@@ -777,12 +790,18 @@ struct SceneSlideView: View {
         turboLocked.toggle()
         applyRate(turboLocked ? 2 : 1, to: player)
         lockHaptic += 1
-        announce(turboLocked ? "2X speed" : "1X speed")
+        announce(
+            turboLocked ? "2X speed" : "1X speed",
+            icon: turboLocked ? "lock.fill" : "lock.open.fill"
+        )
     }
 
     /// Show a message and restart its two-second life.
-    private func announce(_ text: String) {
-        withAnimation(.easeOut(duration: 0.16)) { speedToast = text }
+    private func announce(_ text: String, icon: String? = nil) {
+        withAnimation(.easeOut(duration: 0.16)) {
+            speedToast = text
+            speedToastIcon = icon
+        }
         speedToastTick += 1
     }
 
@@ -790,7 +809,10 @@ struct SceneSlideView: View {
     /// second: long enough not to blink out, short enough that it is
     /// never in the way.
     private func dismissToast() {
-        withAnimation(.easeInOut(duration: 0.28)) { speedToast = nil }
+        withAnimation(.easeInOut(duration: 0.28)) {
+            speedToast = nil
+            speedToastIcon = nil
+        }
     }
 
     private func endTurbo(_ player: AVPlayer) {
