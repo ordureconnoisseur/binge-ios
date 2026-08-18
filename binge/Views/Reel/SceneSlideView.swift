@@ -81,6 +81,21 @@ struct SceneSlideView: View {
     /// without looking at the screen.
     @State private var turboHaptic = 0
     @State private var lockHaptic = 0
+    /// The message the toast is currently showing, and a counter that
+    /// restarts its dismissal timer. Cleared 2s after the last change.
+    @State private var speedToast: String?
+    @State private var speedToastTick = 0
+
+    /// What the toast should say right now. While the finger is down it
+    /// reflects live state, including the hint for the pull, since that
+    /// is the moment the hint is useful. Otherwise it is whatever was
+    /// last announced, until the timer clears it.
+    private var speedToastText: String? {
+        if turboHolding {
+            return turboLocked ? "Pull down to unlock" : "2X speed"
+        }
+        return speedToast
+    }
     @State private var presentedPerformerId: String?
     @State private var moreOpen: Bool = false
     @State private var saveOpen: Bool = false
@@ -177,69 +192,29 @@ struct SceneSlideView: View {
                 HeartBurst().id(id)
             }
 
-            // Speed badge. Shown whenever playback is not 1x, so a
-            // locked 2x stays visible after the finger lifts — the
-            // whole point of locking is that there is no finger on the
-            // screen to remind you.
-            if turboHolding || turboLocked {
+            // Speed toast. Transient on purpose: a badge parked in
+            // the corner for as long as the video is fast becomes
+            // furniture, and the speed is audible anyway. It says what
+            // just changed, then gets out of the way. While the finger
+            // is down it stays up, because that is when the hint about
+            // pulling is worth reading.
+            if let text = speedToastText {
                 VStack {
-                    HStack {
-                        Spacer()
-                        HStack(spacing: 5) {
-                            Image(
-                                systemName: turboLocked && turboHolding
-                                    ? "arrow.down"
-                                    : turboLocked
-                                        ? "lock.fill"
-                                        : "forward.fill"
-                            )
-                            .font(.system(size: 11, weight: .bold))
-                            Text(
-                                turboLocked && turboHolding
-                                    ? "pull to unlock"
-                                    : "2x"
-                            )
-                                .font(
-                                    .system(
-                                        size: 13,
-                                        weight: .heavy,
-                                        design: .rounded
-                                    )
-                                )
-                        }
+                    Text(text)
+                        .font(.system(size: 17, weight: .semibold))
                         .foregroundStyle(.white)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(.black.opacity(0.55), in: Capsule())
-                        // Tapping the badge drops back to 1x. The hold
-                        // and pull is the gesture people know from
-                        // elsewhere, but it is a gesture with a timing
-                        // window, and being stuck at 2x with no obvious
-                        // way out is a bad place to leave someone. The
-                        // badge is the one thing on screen that is
-                        // unambiguously about speed, so it is where a
-                        // tap should work.
-                        .contentShape(Capsule())
-                        .onTapGesture {
-                            guard turboLocked, !turboHolding else { return }
-                            turboLocked = false
-                            applyRate(1, to: player)
-                            lockHaptic += 1
-                        }
-                        .padding(.trailing, 14)
-                    }
-                    .padding(.top, 60)
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 14)
+                        .background(
+                            Color(white: 0.18).opacity(0.94),
+                            in: RoundedRectangle(cornerRadius: 20)
+                        )
+                        .padding(.top, 96)
                     Spacer()
                 }
-                // Spacers draw nothing and so take no hits; this only
-                // ever exposes the capsule above, and only while the
-                // lock is idle.
-                .allowsHitTesting(turboLocked && !turboHolding)
+                .allowsHitTesting(false)
                 .transition(.opacity)
-                .animation(
-                    .easeOut(duration: 0.14),
-                    value: turboHolding || turboLocked
-                )
+                .animation(.easeOut(duration: 0.18), value: text)
             }
 
             // Centered play glyph while the user is holding to
@@ -387,6 +362,12 @@ struct SceneSlideView: View {
                     }
                 )
             }
+        }
+        .task(id: speedToastTick) {
+            guard speedToast != nil else { return }
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled else { return }
+            speedToast = nil
         }
         .bingeHaptic(.impact, trigger: turboHaptic)
         .bingeHaptic(.success, trigger: lockHaptic)
@@ -746,12 +727,27 @@ struct SceneSlideView: View {
         turboLocked.toggle()
         applyRate(turboLocked ? 2 : 1, to: player)
         lockHaptic += 1
+        announce(turboLocked ? "Locked at 2X speed" : "Speed reset to 1X")
+    }
+
+    /// Show a message and restart its two-second life.
+    private func announce(_ text: String) {
+        speedToast = text
+        speedToastTick += 1
     }
 
     private func endTurbo(_ player: AVPlayer) {
         turboHolding = false
         pullConsumed = false
-        if !turboLocked { applyRate(1, to: player) }
+        if turboLocked {
+            // Restart the countdown on release: the message spent the
+            // hold hidden behind the live text, so this is the first
+            // moment it is actually being read.
+            announce("Locked at 2X speed")
+        } else {
+            applyRate(1, to: player)
+            speedToast = nil
+        }
     }
 
     /// Set the playback rate without starting a paused player.
