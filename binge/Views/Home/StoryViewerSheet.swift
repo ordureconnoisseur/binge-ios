@@ -32,6 +32,13 @@ struct StoryViewerSheet: View {
 
     @State private var storyIndex: Int
     @State private var sceneIndex: Int = 0
+    /// Horizontal travel of an in-progress swipe between performers.
+    /// Drives the fold, so the page turns under the finger rather than
+    /// waiting for it to lift.
+    @State private var dragX: CGFloat = 0
+    /// True while the commit animation runs, so a second swipe cannot
+    /// start mid-turn and leave the index and the offset disagreeing.
+    @State private var turning = false
     @State private var player: AVPlayer?
     @State private var endObserver: NSObjectProtocol?
     @State private var timeObserver: Any?
@@ -108,6 +115,175 @@ struct StoryViewerSheet: View {
     }
 
     var body: some View {
+        GeometryReader { geo in
+            bodyStack(width: geo.size.width)
+                .gesture(performerSwipe(width: geo.size.width))
+        }
+        .ignoresSafeArea()
+    }
+
+    /// A swipe between people, drawn as a fold rather than a slide.
+    ///
+    /// Two panels hinge on the edge between them: the one you are
+    /// leaving rotates away around its far edge while the one arriving
+    /// rotates in around the near one, both under perspective, so the
+    /// pair reads as two faces of a turning solid. It matches what a
+    /// swipe between people does everywhere else, and unlike a slide it
+    /// says which direction you came from.
+    ///
+    /// The arriving panel is a still, not a live story: it is on screen
+    /// for a quarter of a second, and standing up a second video player
+    /// for that would cost far more than it shows.
+    @ViewBuilder
+    private func bodyStack(width: CGFloat) -> some View {
+        let progressX = width > 0 ? dragX / width : 0
+        ZStack {
+            Color.black.ignoresSafeArea()
+            if let neighbour = neighbourStory {
+                storyCover(neighbour)
+                    .rotation3DEffect(
+                        .degrees(Double(progressX) * 90 + (dragX < 0 ? 90 : -90)),
+                        axis: (x: 0, y: 1, z: 0),
+                        anchor: dragX < 0 ? .leading : .trailing,
+                        perspective: 0.55
+                    )
+                    .offset(x: dragX + (dragX < 0 ? width : -width))
+            }
+            currentPanel
+                .rotation3DEffect(
+                    .degrees(Double(progressX) * 90),
+                    axis: (x: 0, y: 1, z: 0),
+                    anchor: dragX < 0 ? .trailing : .leading,
+                    perspective: 0.55
+                )
+                .offset(x: dragX)
+        }
+    }
+
+    private var neighbourStory: Story? {
+        if dragX < 0 {
+            return stories.indices.contains(storyIndex + 1)
+                ? stories[storyIndex + 1] : nil
+        }
+        if dragX > 0 {
+            return stories.indices.contains(storyIndex - 1)
+                ? stories[storyIndex - 1] : nil
+        }
+        return nil
+    }
+
+    /// A still of the performer being swiped towards. Their avatar and
+    /// name over the first cover in their set, which is enough to know
+    /// who is coming.
+    @ViewBuilder
+    private func storyCover(_ story: Story) -> some View {
+        ZStack {
+            Color.black
+            if let url = coverURL(for: story) {
+                AuthImageView(
+                    url: url,
+                    apiKey: apiKey,
+                    contentMode: .fill,
+                    maxPixel: 512
+                )
+            }
+            LinearGradient(
+                colors: [.black.opacity(0.7), .clear],
+                startPoint: .top,
+                endPoint: .center
+            )
+            VStack {
+                HStack(spacing: 10) {
+                    ZStack {
+                        Circle().fill(Color.gray.opacity(0.3))
+                        if let img = story.performer.imagePath,
+                            let url = URL(string: absolute(img))
+                        {
+                            AuthImageView(
+                                url: url,
+                                apiKey: apiKey,
+                                contentMode: .fill,
+                                maxPixel: 256
+                            )
+                            .clipShape(Circle())
+                        }
+                    }
+                    .frame(width: 28, height: 28)
+                    Text(story.performer.name)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.white)
+                    Spacer()
+                }
+                .padding(.horizontal, 14)
+                .padding(.top, 58)
+                Spacer()
+            }
+        }
+        .clipped()
+    }
+
+    /// First cover in a performer's set, whatever kind of story it is.
+    private func coverURL(for story: Story) -> URL? {
+        switch story.scenes.first {
+        case .library(let scene):
+            return scene.screenshotURL(base: baseURL)
+        case .stashDB(let s):
+            return URL(string: s.coverUrl ?? "")
+        case .reddit(let p):
+            return URL(string: p.thumbUrl ?? p.mediaUrl ?? "")
+        case .none:
+            return nil
+        }
+    }
+
+    private func performerSwipe(width: CGFloat) -> some Gesture {
+        DragGesture(minimumDistance: 18)
+            .onChanged { v in
+                guard !turning else { return }
+                // Vertical drags belong to dismissal, not to this.
+                guard abs(v.translation.width) > abs(v.translation.height)
+                else { return }
+                // Resist at the ends so the set has edges you can feel
+                // rather than a fold that opens onto nothing.
+                let raw = v.translation.width
+                let atStart = storyIndex == 0 && raw > 0
+                let atEnd = storyIndex == stories.count - 1 && raw < 0
+                dragX = (atStart || atEnd) ? raw * 0.25 : raw
+            }
+            .onEnded { v in
+                guard !turning else { return }
+                let raw = v.translation.width
+                let flung = abs(v.predictedEndTranslation.width) > width * 0.4
+                let far = abs(raw) > width * 0.28
+                let forward = raw < 0
+                let canGo =
+                    forward
+                    ? storyIndex < stories.count - 1
+                    : storyIndex > 0
+                guard (far || flung), canGo, abs(raw) > 0 else {
+                    withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
+                        dragX = 0
+                    }
+                    return
+                }
+                turning = true
+                withAnimation(.easeOut(duration: 0.26)) {
+                    dragX = forward ? -width : width
+                } completion: {
+                    // Swap the page only once the fold has closed, then
+                    // drop the offset with no animation. Doing both at
+                    // once would jump: the content would become the new
+                    // performer while still rotated away.
+                    storyIndex += forward ? 1 : -1
+                    sceneIndex = 0
+                    dragX = 0
+                    turning = false
+                }
+            }
+    }
+
+    @ViewBuilder
+    private var currentPanel: some View {
         ZStack {
             Color.black.ignoresSafeArea()
             content
