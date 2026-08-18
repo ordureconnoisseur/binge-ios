@@ -65,6 +65,22 @@ struct SceneSlideView: View {
     @State private var burstIds: [UUID] = []
     // Bumped on like → drives the haptic tap (see .sensoryFeedback).
     @State private var likeHaptic = 0
+
+    // ── Hold-right-for-2x ───────────────────────────────────────────
+    /// Finger is down on the right half and the hold has been
+    /// recognised: playback runs at 2x for as long as that lasts.
+    @State private var turboHolding = false
+    /// 2x survives the finger lifting, until it is pulled down again.
+    @State private var turboLocked = false
+    /// One lock (or unlock) per hold. Without it the drag keeps
+    /// reporting a translation past the threshold and the state would
+    /// flip on every update for as long as the finger stayed down.
+    @State private var pullConsumed = false
+    /// Haptic triggers. Separate counters so entering 2x and locking
+    /// it feel different, which is the only way to tell them apart
+    /// without looking at the screen.
+    @State private var turboHaptic = 0
+    @State private var lockHaptic = 0
     @State private var presentedPerformerId: String?
     @State private var moreOpen: Bool = false
     @State private var saveOpen: Bool = false
@@ -114,25 +130,40 @@ struct SceneSlideView: View {
             if let player {
                 VideoPlayerView(player: player)
                     .padding(.vertical, 22)
-                    // Double-tap → like. Hold to pause; release
-                    // resumes. Pause MUST happen in `perform`
-                    // (fires once, AFTER minimumDuration), NOT
-                    // in onPressingChanged(true) which fires on
-                    // every touch-down — quick taps would
-                    // pause/resume the player instantly, exactly
-                    // the AVPlayer state churn that killed
-                    // snappiness in the previous regression.
-                    .onTapGesture(count: 2) { triggerLike() }
-                    .onLongPressGesture(
-                        minimumDuration: 0.2,
-                        maximumDistance: 60
-                    ) {
-                        player.pause()
-                        isHolding = true
-                    } onPressingChanged: { pressing in
-                        if !pressing && isHolding {
-                            isHolding = false
-                            if isActive { player.play() }
+                    // The video is split down the middle, because hold
+                    // means two different things now. Left holds to
+                    // pause, which is what it has always done; right
+                    // holds for 2x. Both halves keep double-tap to
+                    // like, so that still works wherever you tap.
+                    .overlay {
+                        HStack(spacing: 0) {
+                            Color.clear
+                                .contentShape(Rectangle())
+                                .onTapGesture(count: 2) { triggerLike() }
+                                // Pause MUST happen in `perform`
+                                // (fires once, AFTER minimumDuration),
+                                // NOT in onPressingChanged(true) which
+                                // fires on every touch-down — quick
+                                // taps would pause/resume the player
+                                // instantly, exactly the AVPlayer state
+                                // churn that killed snappiness in the
+                                // previous regression.
+                                .onLongPressGesture(
+                                    minimumDuration: 0.2,
+                                    maximumDistance: 60
+                                ) {
+                                    player.pause()
+                                    isHolding = true
+                                } onPressingChanged: { pressing in
+                                    if !pressing && isHolding {
+                                        isHolding = false
+                                        if isActive { player.play() }
+                                    }
+                                }
+                            Color.clear
+                                .contentShape(Rectangle())
+                                .onTapGesture(count: 2) { triggerLike() }
+                                .gesture(turboGesture(player))
                         }
                     }
             }
@@ -144,6 +175,47 @@ struct SceneSlideView: View {
             // HeartBurst per UUID so concurrent bursts can overlap.
             ForEach(burstIds, id: \.self) { id in
                 HeartBurst().id(id)
+            }
+
+            // Speed badge. Shown whenever playback is not 1x, so a
+            // locked 2x stays visible after the finger lifts — the
+            // whole point of locking is that there is no finger on the
+            // screen to remind you.
+            if turboHolding || turboLocked {
+                VStack {
+                    HStack {
+                        Spacer()
+                        HStack(spacing: 5) {
+                            Image(
+                                systemName: turboLocked
+                                    ? "lock.fill"
+                                    : "forward.fill"
+                            )
+                            .font(.system(size: 11, weight: .bold))
+                            Text("2x")
+                                .font(
+                                    .system(
+                                        size: 13,
+                                        weight: .heavy,
+                                        design: .rounded
+                                    )
+                                )
+                        }
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(.black.opacity(0.55), in: Capsule())
+                        .padding(.trailing, 14)
+                    }
+                    .padding(.top, 60)
+                    Spacer()
+                }
+                .allowsHitTesting(false)
+                .transition(.opacity)
+                .animation(
+                    .easeOut(duration: 0.14),
+                    value: turboHolding || turboLocked
+                )
             }
 
             // Centered play glyph while the user is holding to
@@ -292,6 +364,8 @@ struct SceneSlideView: View {
                 )
             }
         }
+        .bingeHaptic(.impact, trigger: turboHaptic)
+        .bingeHaptic(.success, trigger: lockHaptic)
         .onChange(of: isActive) { _, nowActive in
             if nowActive {
                 let ready =
@@ -310,9 +384,15 @@ struct SceneSlideView: View {
                 // for the most common case (scroll into a
                 // pre-mounted slide). Wire it up here too.
                 kickIfStuck(player)
+                applyRate(turboLocked ? 2 : 1, to: player)
                 onActivate?(scene)
             } else {
                 player?.pause()
+                // Leave the flag alone: scrolling back to this slide
+                // should return to the speed it was left at.
+                turboHolding = false
+                pullConsumed = false
+                applyRate(1, to: player)
             }
         }
         // Auto-scroll advance — decided HERE, not inside the periodic
@@ -584,6 +664,84 @@ struct SceneSlideView: View {
     /// the dead player from the LRU pool. The `didRebuildPlayer`
     /// guard caps it at one retry so a permanently broken stream
     /// doesn't loop.
+    // MARK: - Hold right for 2x
+
+    /// How far down the finger travels, after the hold is recognised,
+    /// to latch 2x on (or off again). Comfortably past a thumb's idle
+    /// wobble, comfortably short of a deliberate scroll.
+    private static let lockPullDistance: CGFloat = 55
+
+    /// Hold, then optionally pull down. Sequencing the drag *after* the
+    /// long press is what keeps the reel scrollable: an ordinary swipe
+    /// never satisfies the press, so it reaches the scroll view
+    /// untouched. Only once 2x has engaged does the drag take over,
+    /// which is also correct, since pulling down then means "lock this"
+    /// rather than "scroll away".
+    private func turboGesture(_ player: AVPlayer) -> some Gesture {
+        LongPressGesture(minimumDuration: 0.22, maximumDistance: 40)
+            .sequenced(before: DragGesture(minimumDistance: 0))
+            .onChanged { value in
+                switch value {
+                case .first(true):
+                    beginTurbo(player)
+                case .second(true, let drag):
+                    beginTurbo(player)
+                    if let drag,
+                        drag.translation.height >= Self.lockPullDistance
+                    {
+                        pullDown(player)
+                    }
+                default:
+                    break
+                }
+            }
+            .onEnded { _ in endTurbo(player) }
+    }
+
+    private func beginTurbo(_ player: AVPlayer) {
+        guard !turboHolding else { return }
+        turboHolding = true
+        pullConsumed = false
+        // Already locked: the hold is the start of an unlock, not a
+        // fresh speed-up, so it neither changes the rate nor buzzes.
+        guard !turboLocked else { return }
+        applyRate(2, to: player)
+        turboHaptic += 1
+    }
+
+    private func pullDown(_ player: AVPlayer) {
+        guard !pullConsumed else { return }
+        pullConsumed = true
+        turboLocked.toggle()
+        applyRate(turboLocked ? 2 : 1, to: player)
+        lockHaptic += 1
+    }
+
+    private func endTurbo(_ player: AVPlayer) {
+        turboHolding = false
+        pullConsumed = false
+        if !turboLocked { applyRate(1, to: player) }
+    }
+
+    /// Set the playback rate without starting a paused player.
+    ///
+    /// `defaultRate` is what `play()` resumes at, so it has to move too
+    /// or the next resume would quietly drop back to 1x — and this view
+    /// calls `play()` from several places. `rate` is only touched when
+    /// something is actually playing, because assigning a non-zero rate
+    /// to a paused player starts it.
+    private func applyRate(_ rate: Float, to player: AVPlayer?) {
+        guard let player else { return }
+        // Speech stays intelligible at 2x with the time-domain
+        // algorithm; the default is tuned for music and sounds wrong
+        // on dialogue.
+        player.currentItem?.audioTimePitchAlgorithm = .timeDomain
+        player.defaultRate = rate
+        if player.timeControlStatus != .paused {
+            player.rate = rate
+        }
+    }
+
     private func kickIfStuck(_ p: AVPlayer?) {
         guard let p else { return }
         let sceneId = scene.id
