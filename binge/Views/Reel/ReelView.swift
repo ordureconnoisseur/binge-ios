@@ -363,9 +363,35 @@ struct ReelView: View {
         jump: ReelNavigator.TimelineJump
     ) {
         timelineMode = true
-        scenes = jump.scenes
-        seenIds = Set(jump.scenes.map(\.id))
-        activeId = jump.startId
+        // Begin the queue AT the tapped scene instead of asking the
+        // scroll view to jump to it.
+        //
+        // .scrollPosition(id:) can only land on a row the LazyVStack has
+        // already built, and on first layout that is roughly the first
+        // screenful. Handing it the whole pack and pointing at the
+        // seventh tile asked it to scroll to a row that did not exist
+        // yet, so it stayed where it was and the reel opened on the
+        // first scene. It looked intermittent because it was: the early
+        // tiles are inside the built range and worked, the later ones
+        // were not and did not.
+        //
+        // Slicing removes the dependency on scroll restoration entirely
+        // rather than trying to time it. The cost is that the scenes
+        // above the tapped one are no longer behind you in the reel,
+        // which matches what the tap asked for: play this one.
+        let ordered: [BingeScene]
+        if let idx = jump.scenes.firstIndex(where: { $0.id == jump.startId })
+        {
+            ordered = Array(jump.scenes[idx...])
+        } else {
+            // startId not in the list. Play what we were given rather
+            // than nothing; the caller built both, so this is a bug
+            // upstream, but an empty reel would hide it.
+            ordered = jump.scenes
+        }
+        scenes = ordered
+        seenIds = Set(ordered.map(\.id))
+        activeId = ordered.first?.id ?? jump.startId
     }
 
     // MARK: - Chained mode

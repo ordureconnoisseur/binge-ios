@@ -192,42 +192,61 @@ struct PackFeedCard: View {
     private var mosaic: some View {
         let tiles = Array(pack.scenes.prefix(Self.mosaicTiles))
         let overflow = pack.sceneCount - tiles.count
-        Button { sheetOpen = true } label: {
-            GeometryReader { geo in
-                let gap: CGFloat = 2
-                let tileSide = (geo.size.width - gap * 2) / 3
-                VStack(spacing: gap) {
-                    ForEach(0..<3, id: \.self) { row in
-                        HStack(spacing: gap) {
-                            ForEach(0..<3, id: \.self) { col in
-                                let i = row * 3 + col
-                                if i < tiles.count {
+        // Each tile is its own target. The whole mosaic used to be one
+        // button that opened the sheet, so tapping a scene did not play
+        // that scene, it opened a list you then had to tap again. Tapping
+        // a picture of a scene should play that scene.
+        GeometryReader { geo in
+            let gap: CGFloat = 2
+            let tileSide = (geo.size.width - gap * 2) / 3
+            VStack(spacing: gap) {
+                ForEach(0..<3, id: \.self) { row in
+                    HStack(spacing: gap) {
+                        ForEach(0..<3, id: \.self) { col in
+                            let i = row * 3 + col
+                            if i < tiles.count {
+                                // The badge belongs on the last tile
+                                // actually drawn. Keying it to the ninth
+                                // slot meant a pack that mosaics fewer
+                                // than nine covers showed no badge and
+                                // had no way through to the rest.
+                                let isOverflow =
+                                    i == tiles.count - 1 && overflow > 0
+                                Button {
+                                    if isOverflow {
+                                        sheetOpen = true
+                                    } else {
+                                        onSceneTap?(tiles[i])
+                                    }
+                                } label: {
                                     tile(
                                         scene: tiles[i],
-                                        showOverflow:
-                                            i == Self.mosaicTiles - 1
-                                            && overflow > 0,
+                                        showOverflow: isOverflow,
                                         overflow: overflow
                                     )
                                     .frame(
                                         width: tileSide,
                                         height: tileSide
                                     )
-                                } else {
-                                    Color(white: 0.04)
-                                        .frame(
-                                            width: tileSide,
-                                            height: tileSide
-                                        )
+                                    // The whole square is the target,
+                                    // whether or not its image has
+                                    // loaded yet.
+                                    .contentShape(Rectangle())
                                 }
+                                .buttonStyle(.plain)
+                            } else {
+                                Color(white: 0.04)
+                                    .frame(
+                                        width: tileSide,
+                                        height: tileSide
+                                    )
                             }
                         }
                     }
                 }
             }
-            .aspectRatio(1, contentMode: .fit)
         }
-        .buttonStyle(.plain)
+        .aspectRatio(1, contentMode: .fit)
     }
 
     @ViewBuilder
