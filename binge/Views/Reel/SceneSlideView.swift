@@ -145,40 +145,48 @@ struct SceneSlideView: View {
             if let player {
                 VideoPlayerView(player: player)
                     .padding(.vertical, 22)
-                    // The video is split down the middle, because hold
-                    // means two different things now. Left holds to
-                    // pause, which is what it has always done; right
-                    // holds for 2x. Both halves keep double-tap to
-                    // like, so that still works wherever you tap.
+                    // Double-tap → like, anywhere. Hold to pause;
+                    // release resumes. Pause MUST happen in `perform`
+                    // (fires once, AFTER minimumDuration), NOT in
+                    // onPressingChanged(true) which fires on every
+                    // touch-down — quick taps would pause/resume the
+                    // player instantly, exactly the AVPlayer state
+                    // churn that killed snappiness in the previous
+                    // regression.
+                    .onTapGesture(count: 2) { triggerLike() }
+                    .onLongPressGesture(
+                        minimumDuration: 0.2,
+                        maximumDistance: 60
+                    ) {
+                        player.pause()
+                        isHolding = true
+                    } onPressingChanged: { pressing in
+                        if !pressing && isHolding {
+                            isHolding = false
+                            if isActive { player.play() }
+                        }
+                    }
+                    // The 2x zone is a patch in the top right corner,
+                    // not the right half. A thumb scrolling the reel
+                    // travels through the middle and lower part of the
+                    // screen, so anything that reaches down there gets
+                    // caught by ordinary swiping. Keeping it high and
+                    // near the edge puts it where a scroll does not go
+                    // and clear of the action stack in the opposite
+                    // corner.
                     .overlay {
-                        HStack(spacing: 0) {
-                            Color.clear
-                                .contentShape(Rectangle())
-                                .onTapGesture(count: 2) { triggerLike() }
-                                // Pause MUST happen in `perform`
-                                // (fires once, AFTER minimumDuration),
-                                // NOT in onPressingChanged(true) which
-                                // fires on every touch-down — quick
-                                // taps would pause/resume the player
-                                // instantly, exactly the AVPlayer state
-                                // churn that killed snappiness in the
-                                // previous regression.
-                                .onLongPressGesture(
-                                    minimumDuration: 0.2,
-                                    maximumDistance: 60
-                                ) {
-                                    player.pause()
-                                    isHolding = true
-                                } onPressingChanged: { pressing in
-                                    if !pressing && isHolding {
-                                        isHolding = false
-                                        if isActive { player.play() }
-                                    }
-                                }
+                        GeometryReader { geo in
+                            let w = geo.size.width * Self.turboZoneWidth
+                            let h = geo.size.height * Self.turboZoneHeight
                             Color.clear
                                 .contentShape(Rectangle())
                                 .onTapGesture(count: 2) { triggerLike() }
                                 .gesture(turboGesture(player))
+                                .frame(width: w, height: h)
+                                .position(
+                                    x: geo.size.width - w / 2,
+                                    y: h / 2
+                                )
                         }
                     }
             }
@@ -671,6 +679,12 @@ struct SceneSlideView: View {
     /// doesn't loop.
     // MARK: - Hold right for 2x
 
+    /// The 2x zone, as a fraction of the video. Narrow and high: a
+    /// swipe up the reel passes through the middle of the screen, so
+    /// the further this stays from there the fewer scrolls it steals.
+    private static let turboZoneWidth: CGFloat = 0.26
+    private static let turboZoneHeight: CGFloat = 0.42
+
     /// How far down the finger travels, after the hold is recognised,
     /// to latch 2x on (or off again). Comfortably past a thumb's idle
     /// wobble, comfortably short of a deliberate scroll.
@@ -683,7 +697,11 @@ struct SceneSlideView: View {
     /// which is also correct, since pulling down then means "lock this"
     /// rather than "scroll away".
     private func turboGesture(_ player: AVPlayer) -> some Gesture {
-        LongPressGesture(minimumDuration: 0.22, maximumDistance: 70)
+        // Deliberately slow and fussy about movement. A scroll that
+        // begins in this corner should reach the scroll view, and the
+        // only thing separating the two is that a scroll starts moving
+        // almost immediately while a hold does not.
+        LongPressGesture(minimumDuration: 0.3, maximumDistance: 30)
             .sequenced(before: DragGesture(minimumDistance: 0))
             .onChanged { value in
                 switch value {
