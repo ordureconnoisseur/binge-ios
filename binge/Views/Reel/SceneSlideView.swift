@@ -187,12 +187,18 @@ struct SceneSlideView: View {
                         Spacer()
                         HStack(spacing: 5) {
                             Image(
-                                systemName: turboLocked
-                                    ? "lock.fill"
-                                    : "forward.fill"
+                                systemName: turboLocked && turboHolding
+                                    ? "arrow.down"
+                                    : turboLocked
+                                        ? "lock.fill"
+                                        : "forward.fill"
                             )
                             .font(.system(size: 11, weight: .bold))
-                            Text("2x")
+                            Text(
+                                turboLocked && turboHolding
+                                    ? "pull to unlock"
+                                    : "2x"
+                            )
                                 .font(
                                     .system(
                                         size: 13,
@@ -205,12 +211,30 @@ struct SceneSlideView: View {
                         .padding(.horizontal, 10)
                         .padding(.vertical, 6)
                         .background(.black.opacity(0.55), in: Capsule())
+                        // Tapping the badge drops back to 1x. The hold
+                        // and pull is the gesture people know from
+                        // elsewhere, but it is a gesture with a timing
+                        // window, and being stuck at 2x with no obvious
+                        // way out is a bad place to leave someone. The
+                        // badge is the one thing on screen that is
+                        // unambiguously about speed, so it is where a
+                        // tap should work.
+                        .contentShape(Capsule())
+                        .onTapGesture {
+                            guard turboLocked, !turboHolding else { return }
+                            turboLocked = false
+                            applyRate(1, to: player)
+                            lockHaptic += 1
+                        }
                         .padding(.trailing, 14)
                     }
                     .padding(.top, 60)
                     Spacer()
                 }
-                .allowsHitTesting(false)
+                // Spacers draw nothing and so take no hits; this only
+                // ever exposes the capsule above, and only while the
+                // lock is idle.
+                .allowsHitTesting(turboLocked && !turboHolding)
                 .transition(.opacity)
                 .animation(
                     .easeOut(duration: 0.14),
@@ -678,7 +702,7 @@ struct SceneSlideView: View {
     /// which is also correct, since pulling down then means "lock this"
     /// rather than "scroll away".
     private func turboGesture(_ player: AVPlayer) -> some Gesture {
-        LongPressGesture(minimumDuration: 0.22, maximumDistance: 40)
+        LongPressGesture(minimumDuration: 0.22, maximumDistance: 70)
             .sequenced(before: DragGesture(minimumDistance: 0))
             .onChanged { value in
                 switch value {
@@ -702,9 +726,16 @@ struct SceneSlideView: View {
         guard !turboHolding else { return }
         turboHolding = true
         pullConsumed = false
-        // Already locked: the hold is the start of an unlock, not a
-        // fresh speed-up, so it neither changes the rate nor buzzes.
-        guard !turboLocked else { return }
+        if turboLocked {
+            // Already at 2x, so there is no rate to change - but the
+            // hold still has to say it registered. Without that there
+            // is nothing to wait for, so the pull starts immediately,
+            // travels past maximumDistance before the press completes,
+            // and cancels the gesture. Unlock then looks broken when
+            // in fact the hold never happened.
+            turboHaptic += 1
+            return
+        }
         applyRate(2, to: player)
         turboHaptic += 1
     }
