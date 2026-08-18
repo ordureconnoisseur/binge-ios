@@ -86,16 +86,7 @@ struct SceneSlideView: View {
     @State private var speedToast: String?
     @State private var speedToastTick = 0
 
-    /// What the toast should say right now. While the finger is down it
-    /// reflects live state, including the hint for the pull, since that
-    /// is the moment the hint is useful. Otherwise it is whatever was
-    /// last announced, until the timer clears it.
-    private var speedToastText: String? {
-        if turboHolding {
-            return turboLocked ? "Pull down to unlock" : "2X speed"
-        }
-        return speedToast
-    }
+
     @State private var presentedPerformerId: String?
     @State private var moreOpen: Bool = false
     @State private var saveOpen: Bool = false
@@ -200,29 +191,69 @@ struct SceneSlideView: View {
                 HeartBurst().id(id)
             }
 
-            // Speed toast. Transient on purpose: a badge parked in
-            // the corner for as long as the video is fast becomes
-            // furniture, and the speed is audible anyway. It says what
-            // just changed, then gets out of the way. While the finger
-            // is down it stays up, because that is when the hint about
-            // pulling is worth reading.
-            if let text = speedToastText {
+            // Speed toast. Transient on purpose: a badge parked in a
+            // corner for as long as the video runs fast becomes
+            // furniture, and the speed is audible anyway. It names the
+            // new speed and leaves.
+            //
+            // Material rather than a flat fill, because this floats
+            // over video: a solid panel reads as a bug on a dark frame
+            // and disappears entirely on a bright one, while a blur
+            // keeps its edges against both. Forced dark so it stays
+            // legible whatever the video is doing underneath.
+            if let text = speedToast {
                 VStack {
                     Text(text)
-                        .font(.system(size: 17, weight: .semibold))
+                        .font(
+                            .system(
+                                size: 15,
+                                weight: .semibold,
+                                design: .rounded
+                            )
+                        )
+                        .kerning(0.2)
                         .foregroundStyle(.white)
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 14)
-                        .background(
-                            Color(white: 0.18).opacity(0.94),
-                            in: RoundedRectangle(cornerRadius: 20)
+                        .padding(.horizontal, 18)
+                        .padding(.vertical, 11)
+                        .background {
+                            let shape = RoundedRectangle(
+                                cornerRadius: 18,
+                                style: .continuous
+                            )
+                            shape
+                                .fill(.ultraThinMaterial)
+                                .overlay(shape.fill(.black.opacity(0.28)))
+                                .overlay(
+                                    shape.strokeBorder(
+                                        .white.opacity(0.12),
+                                        lineWidth: 0.5
+                                    )
+                                )
+                        }
+                        .environment(\.colorScheme, .dark)
+                        .shadow(
+                            color: .black.opacity(0.28),
+                            radius: 14,
+                            y: 5
                         )
                         .padding(.top, 96)
                     Spacer()
                 }
                 .allowsHitTesting(false)
-                .transition(.opacity)
-                .animation(.easeOut(duration: 0.18), value: text)
+                // In fast and small, out soft. Arriving should feel
+                // like an answer to the gesture, so it is quick and
+                // barely scales; leaving is not news, so it drifts up
+                // and thins out instead of being cut.
+                .transition(
+                    .asymmetric(
+                        insertion: .opacity.combined(
+                            with: .scale(scale: 0.92)
+                        ),
+                        removal: .opacity.combined(
+                            with: .offset(y: -6)
+                        )
+                    )
+                )
             }
 
             // Centered play glyph while the user is holding to
@@ -375,7 +406,7 @@ struct SceneSlideView: View {
             guard speedToast != nil else { return }
             try? await Task.sleep(for: .seconds(2))
             guard !Task.isCancelled else { return }
-            speedToast = nil
+            dismissToast()
         }
         .bingeHaptic(.impact, trigger: turboHaptic)
         .bingeHaptic(.success, trigger: lockHaptic)
@@ -737,6 +768,7 @@ struct SceneSlideView: View {
         }
         applyRate(2, to: player)
         turboHaptic += 1
+        announce("2X speed")
     }
 
     private func pullDown(_ player: AVPlayer) {
@@ -745,26 +777,31 @@ struct SceneSlideView: View {
         turboLocked.toggle()
         applyRate(turboLocked ? 2 : 1, to: player)
         lockHaptic += 1
-        announce(turboLocked ? "Locked at 2X speed" : "Speed reset to 1X")
+        announce(turboLocked ? "2X speed" : "1X speed")
     }
 
     /// Show a message and restart its two-second life.
     private func announce(_ text: String) {
-        speedToast = text
+        withAnimation(.easeOut(duration: 0.16)) { speedToast = text }
         speedToastTick += 1
+    }
+
+    /// Fade it out. Slower than it arrived but still under a third of a
+    /// second: long enough not to blink out, short enough that it is
+    /// never in the way.
+    private func dismissToast() {
+        withAnimation(.easeInOut(duration: 0.28)) { speedToast = nil }
     }
 
     private func endTurbo(_ player: AVPlayer) {
         turboHolding = false
         pullConsumed = false
-        if turboLocked {
-            // Restart the countdown on release: the message spent the
-            // hold hidden behind the live text, so this is the first
-            // moment it is actually being read.
-            announce("Locked at 2X speed")
-        } else {
+        // Letting go of a locked slide changes nothing, so it says
+        // nothing. Letting go of a plain hold drops back to 1x, and the
+        // 2X message that is still up would now be wrong, so it goes.
+        if !turboLocked {
             applyRate(1, to: player)
-            speedToast = nil
+            dismissToast()
         }
     }
 
