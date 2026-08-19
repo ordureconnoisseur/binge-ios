@@ -183,47 +183,21 @@ struct SceneSlideView: View {
                         GeometryReader { geo in
                             let w = geo.size.width * Self.turboZoneWidth
                             let h = geo.size.height * Self.turboZoneHeight
-                            Color.clear
-                                .contentShape(Rectangle())
-                                .onTapGesture(count: 2) { triggerLike() }
-                                // onLongPressGesture rather than a
-                                // LongPressGesture sequenced before a
-                                // drag. The sequence claimed the touch
-                                // outright, so the reel could not be
-                                // scrolled anywhere in this corner, and
-                                // its onEnded did not fire on a lift, so
-                                // 2x stayed on afterwards looking latched
-                                // when nothing had latched it. This is
-                                // the same call the left half has always
-                                // used to hold-to-pause, which coexists
-                                // with scrolling, and onPressingChanged
-                                // runs on a cancel as well as a lift.
-                                .onLongPressGesture(
-                                    minimumDuration: 0.45,
-                                    maximumDistance: 8
-                                ) {
-                                    beginTurbo(player)
-                                } onPressingChanged: { pressing in
-                                    if !pressing { endTurbo(player) }
-                                }
-                                // Simultaneous, so it observes the pull
-                                // without taking the touch away from the
-                                // scroll view. It does nothing at all
-                                // until the hold has engaged.
-                                .simultaneousGesture(
-                                    DragGesture(minimumDistance: 0)
-                                        .onChanged { v in
-                                            handleTurboDrag(
-                                                v.translation.height,
-                                                player
-                                            )
-                                        }
-                                )
-                                .frame(width: w, height: h)
-                                .position(
-                                    x: geo.size.width - w / 2,
-                                    y: h / 2
-                                )
+                            HoldAndPull(
+                                minimumDuration: 0.45,
+                                allowableMovement: 8,
+                                onBegan: { beginTurbo(player) },
+                                onChanged: { dy in
+                                    handleTurboDrag(dy, player)
+                                },
+                                onEnded: { endTurbo(player) },
+                                onDoubleTap: { triggerLike() }
+                            )
+                            .frame(width: w, height: h)
+                            .position(
+                                x: geo.size.width - w / 2,
+                                y: h / 2
+                            )
                         }
                     }
             }
