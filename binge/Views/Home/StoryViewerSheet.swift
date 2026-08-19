@@ -115,11 +115,19 @@ struct StoryViewerSheet: View {
     }
 
     var body: some View {
+        // The GeometryReader itself keeps its safe area, so it can
+        // report the inset; the stack inside it ignores it, so the
+        // panels still fill the screen. Ignoring it out here instead
+        // took the progress strip and the header up under the Dynamic
+        // Island with everything else.
         GeometryReader { geo in
-            bodyStack(width: geo.size.width)
-                .gesture(performerSwipe(width: geo.size.width))
+            bodyStack(
+                width: geo.size.width,
+                topInset: geo.safeAreaInsets.top
+            )
+            .gesture(performerSwipe(width: geo.size.width))
+            .ignoresSafeArea()
         }
-        .ignoresSafeArea()
     }
 
     /// A swipe between people, drawn as a fold rather than a slide.
@@ -135,12 +143,12 @@ struct StoryViewerSheet: View {
     /// for a quarter of a second, and standing up a second video player
     /// for that would cost far more than it shows.
     @ViewBuilder
-    private func bodyStack(width: CGFloat) -> some View {
+    private func bodyStack(width: CGFloat, topInset: CGFloat) -> some View {
         let progressX = width > 0 ? dragX / width : 0
         ZStack {
             Color.black.ignoresSafeArea()
             if let neighbour = neighbourStory {
-                storyCover(neighbour)
+                storyCover(neighbour, topInset: topInset)
                     .rotation3DEffect(
                         .degrees(Double(progressX) * 90 + (dragX < 0 ? 90 : -90)),
                         axis: (x: 0, y: 1, z: 0),
@@ -149,7 +157,7 @@ struct StoryViewerSheet: View {
                     )
                     .offset(x: dragX + (dragX < 0 ? width : -width))
             }
-            currentPanel
+            currentPanel(topInset: topInset)
                 .rotation3DEffect(
                     .degrees(Double(progressX) * 90),
                     axis: (x: 0, y: 1, z: 0),
@@ -176,7 +184,7 @@ struct StoryViewerSheet: View {
     /// name over the first cover in their set, which is enough to know
     /// who is coming.
     @ViewBuilder
-    private func storyCover(_ story: Story) -> some View {
+    private func storyCover(_ story: Story, topInset: CGFloat) -> some View {
         ZStack {
             Color.black
             if let url = coverURL(for: story) {
@@ -215,7 +223,9 @@ struct StoryViewerSheet: View {
                     Spacer()
                 }
                 .padding(.horizontal, 14)
-                .padding(.top, 58)
+                // Sit the incoming header where the real one sits, or
+                // the name jumps down as the fold closes.
+                .padding(.top, topInset + 14)
                 Spacer()
             }
         }
@@ -283,7 +293,7 @@ struct StoryViewerSheet: View {
     }
 
     @ViewBuilder
-    private var currentPanel: some View {
+    private func currentPanel(topInset: CGFloat) -> some View {
         ZStack {
             Color.black.ignoresSafeArea()
             content
@@ -310,7 +320,10 @@ struct StoryViewerSheet: View {
                         progress: progress
                     )
                     .padding(.horizontal, 8)
-                    .padding(.top, 6)
+                    // The panel bleeds under the status bar so the fold
+                    // turns the whole screen, so the chrome has to step
+                    // back down past it by hand.
+                    .padding(.top, topInset + 6)
                     header(for: s)
                 }
                 Spacer()
