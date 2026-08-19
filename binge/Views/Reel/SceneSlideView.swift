@@ -25,10 +25,6 @@ struct SceneSlideView: View {
     let apiKey: String
     let onLike: (BingeScene) async -> Int?
     let onUnlike: (BingeScene) async -> Int?
-    /// Raised while the 2x hold is engaged. The reel stops scrolling
-    /// for the duration, so the pull that latches the speed cannot also
-    /// drag the list underneath it.
-    var onTurboChanged: ((Bool) -> Void)? = nil
     // Fired when this slide transitions from inactive to active.
     // Wired by ReelView's chained mode to feed ChainAlgo.onPlay.
     // nil in surfaces that don't care (PerformerReelSheet, etc).
@@ -41,6 +37,10 @@ struct SceneSlideView: View {
     /// scrolls back up. Fades the per-slide mute toggle in/out
     /// alongside the top-right filter pill.
     var chromeVisible: Bool = true
+    /// Raised while the 2x hold is engaged. The reel stops scrolling
+    /// for the duration, so the pull that latches the speed cannot also
+    /// drag the list underneath it.
+    var onTurboChanged: ((Bool) -> Void)? = nil
 
     // Mute functionality removed for now — playback is always unmuted.
     private let muted = false
