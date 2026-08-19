@@ -723,11 +723,14 @@ struct SceneSlideView: View {
     /// doesn't loop.
     // MARK: - Hold right for 2x
 
-    /// The 2x zone, as a fraction of the video. Narrow and high: a
-    /// swipe up the reel passes through the middle of the screen, so
-    /// the further this stays from there the fewer scrolls it steals.
+    /// The 2x zone, as a fraction of the video: a strip down the right
+    /// edge, from the top to the middle of the screen. Narrow is what
+    /// keeps it clear of a scroll, which runs up the centre, so the
+    /// width is the part doing the work. Reaching the midpoint gives
+    /// the thumb somewhere comfortable to land without extending into
+    /// the lower half, where a swipe begins.
     private static let turboZoneWidth: CGFloat = 0.26
-    private static let turboZoneHeight: CGFloat = 0.42
+    private static let turboZoneHeight: CGFloat = 0.5
 
     /// How far down the finger travels, after the hold is recognised,
     /// to latch 2x on (or off again). Comfortably past a thumb's idle
