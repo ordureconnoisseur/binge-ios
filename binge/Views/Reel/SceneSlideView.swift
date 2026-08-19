@@ -25,6 +25,10 @@ struct SceneSlideView: View {
     let apiKey: String
     let onLike: (BingeScene) async -> Int?
     let onUnlike: (BingeScene) async -> Int?
+    /// Raised while the 2x hold is engaged. The reel stops scrolling
+    /// for the duration, so the pull that latches the speed cannot also
+    /// drag the list underneath it.
+    var onTurboChanged: ((Bool) -> Void)? = nil
     // Fired when this slide transitions from inactive to active.
     // Wired by ReelView's chained mode to feed ChainAlgo.onPlay.
     // nil in surfaces that don't care (PerformerReelSheet, etc).
@@ -182,7 +186,39 @@ struct SceneSlideView: View {
                             Color.clear
                                 .contentShape(Rectangle())
                                 .onTapGesture(count: 2) { triggerLike() }
-                                .gesture(turboGesture(player))
+                                // onLongPressGesture rather than a
+                                // LongPressGesture sequenced before a
+                                // drag. The sequence claimed the touch
+                                // outright, so the reel could not be
+                                // scrolled anywhere in this corner, and
+                                // its onEnded did not fire on a lift, so
+                                // 2x stayed on afterwards looking latched
+                                // when nothing had latched it. This is
+                                // the same call the left half has always
+                                // used to hold-to-pause, which coexists
+                                // with scrolling, and onPressingChanged
+                                // runs on a cancel as well as a lift.
+                                .onLongPressGesture(
+                                    minimumDuration: 0.45,
+                                    maximumDistance: 8
+                                ) {
+                                    beginTurbo(player)
+                                } onPressingChanged: { pressing in
+                                    if !pressing { endTurbo(player) }
+                                }
+                                // Simultaneous, so it observes the pull
+                                // without taking the touch away from the
+                                // scroll view. It does nothing at all
+                                // until the hold has engaged.
+                                .simultaneousGesture(
+                                    DragGesture(minimumDistance: 0)
+                                        .onChanged { v in
+                                            handleTurboDrag(
+                                                v.translation.height,
+                                                player
+                                            )
+                                        }
+                                )
                                 .frame(width: w, height: h)
                                 .position(
                                     x: geo.size.width - w / 2,
@@ -764,56 +800,28 @@ struct SceneSlideView: View {
     /// untouched. Only once 2x has engaged does the drag take over,
     /// which is also correct, since pulling down then means "lock this"
     /// rather than "scroll away".
-    private func turboGesture(_ player: AVPlayer) -> some Gesture {
-        // Long and near enough stationary that no part of a scroll
-        // passes for it. The distance stops a slow swipe satisfying the
-        // press on the move; the duration stops the pause people take
-        // before flicking up counting as a hold, which is the way a
-        // scroll was still turning the speed on after the distance came
-        // down.
-        LongPressGesture(minimumDuration: 0.45, maximumDistance: 8)
-            .sequenced(before: DragGesture(minimumDistance: 0))
-            .onChanged { value in
-                switch value {
-                case .first(true):
-                    beginTurbo(player)
-                case .second(true, let drag):
-                    guard let drag else {
-                        beginTurbo(player)
-                        return
-                    }
-                    // Upward means they were scrolling after all, and
-                    // held still just long enough on the way. Give the
-                    // speed back and stay out of it until they let go,
-                    // rather than leaving 2x on behind a swipe they
-                    // never meant as a hold.
-                    if drag.translation.height <= -Self.abandonDistance {
-                        abandonTurbo(player)
-                        return
-                    }
-                    beginTurbo(player)
-                    if drag.translation.height >= Self.lockPullDistance {
-                        // Same rule downward as upward: a swipe already
-                        // in motion is a scroll, whichever way it goes.
-                        // A hold and the first moments of a slow swipe
-                        // look identical, so what separates them is what
-                        // happens next. Someone who felt the tap and
-                        // chose to latch pauses first; covering the
-                        // whole pull within a fraction of a second of
-                        // engaging means the finger never stopped.
-                        if let at = turboEngagedAt,
-                            Date().timeIntervalSince(at) < Self.pullGrace
-                        {
-                            abandonTurbo(player)
-                            return
-                        }
-                        pullDown(player)
-                    }
-                default:
-                    break
-                }
-            }
-            .onEnded { _ in endTurbo(player) }
+    /// Movement during a hold. Only meaningful once the hold has
+    /// engaged: before that the finger belongs to the scroll view.
+    private func handleTurboDrag(_ dy: CGFloat, _ player: AVPlayer) {
+        guard turboHolding, !turboAbandoned else { return }
+        // Upward is a scroll that paused on its way, so give the speed
+        // straight back.
+        if dy <= -Self.abandonDistance {
+            abandonTurbo(player)
+            return
+        }
+        guard dy >= Self.lockPullDistance else { return }
+        // Same rule downward: a pull arriving this soon after the hold
+        // engaged is a swipe that never stopped, not a decision. A hold
+        // and the opening of a slow swipe are identical; what separates
+        // them is that someone who felt the tap pauses before pulling.
+        if let at = turboEngagedAt,
+            Date().timeIntervalSince(at) < Self.pullGrace
+        {
+            abandonTurbo(player)
+            return
+        }
+        pullDown(player)
     }
 
     private func beginTurbo(_ player: AVPlayer) {
@@ -821,6 +829,7 @@ struct SceneSlideView: View {
         turboHolding = true
         turboEngagedAt = Date()
         pullConsumed = false
+        onTurboChanged?(true)
         if turboLocked {
             // Already at 2x, so there is no rate to change - but the
             // hold still has to say it registered. Without that there
@@ -876,6 +885,7 @@ struct SceneSlideView: View {
         turboHolding = false
         turboEngagedAt = nil
         pullConsumed = false
+        onTurboChanged?(false)
         if !turboLocked {
             applyRate(1, to: player)
             dismissToast()
@@ -887,6 +897,7 @@ struct SceneSlideView: View {
         turboEngagedAt = nil
         pullConsumed = false
         turboAbandoned = false
+        onTurboChanged?(false)
         // Letting go of a locked slide changes nothing, so it says
         // nothing. Letting go of a plain hold drops back to 1x, and the
         // 2X message that is still up would now be wrong, so it goes.

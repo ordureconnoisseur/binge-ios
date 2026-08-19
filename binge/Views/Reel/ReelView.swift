@@ -58,6 +58,8 @@ struct ReelView: View {
     @State private var seenIds: Set<String> = []
     @State private var page: Int = 1
     @State private var activeId: String?
+    /// True while a slide's 2x hold is engaged; freezes the scroll.
+    @State private var turboEngaged = false
     @State private var tour = TourDirector.shared
     @State private var loading: Bool = false
     @State private var error: String?
@@ -334,7 +336,8 @@ struct ReelView: View {
                             onAutoAdvance: { ended in
                                 advance(after: ended.id)
                             },
-                            chromeVisible: chromeVisible
+                            chromeVisible: chromeVisible,
+                            onTurboChanged: { turboEngaged = $0 }
                         )
                         .frame(width: geo.size.width, height: geo.size.height)
                         .id(scene.id)
@@ -345,6 +348,10 @@ struct ReelView: View {
             .frame(width: geo.size.width, height: geo.size.height)
             .scrollTargetBehavior(.paging)
             .scrollPosition(id: $activeId)
+            // Hold the list still while the 2x gesture owns the finger,
+            // so pulling down to latch the speed does not also drag the
+            // reel. Off again the moment the finger lifts.
+            .scrollDisabled(turboEngaged)
             .clipped()
         }
     }
