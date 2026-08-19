@@ -72,6 +72,8 @@ struct SceneSlideView: View {
     @State private var turboHolding = false
     /// 2x survives the finger lifting, until it is pulled down again.
     @State private var turboLocked = false
+    /// When the hold engaged, so a pull can be judged against it.
+    @State private var turboEngagedAt: Date?
     /// Set when a hold turned out to be a scroll. Blocks the rest of
     /// that gesture, so drifting back down does not re-engage what the
     /// user has just shown they did not want.
@@ -736,11 +738,20 @@ struct SceneSlideView: View {
     private static let turboZoneWidth: CGFloat = 0.26
     private static let turboZoneHeight: CGFloat = 0.5
 
+    /// A pull reaching the lock distance sooner than this after the
+    /// hold engaged is a swipe in progress rather than a choice, and
+    /// hands the speed back instead of latching.
+    private static let pullGrace: TimeInterval = 0.28
+
     /// How far UP the finger travels before the hold is read as a
     /// scroll that happened to pause, and the speed is handed back.
-    /// Shorter than the lock distance on purpose: undoing a mistake
-    /// should ask less of you than committing to something.
-    private static let abandonDistance: CGFloat = 24
+    ///
+    /// Small on purpose, and far smaller than the lock distance. A hold
+    /// that is genuinely a hold does not drift a centimetre upward, so
+    /// there is nothing to protect by waiting, and every point of travel
+    /// spent waiting is time the speed is up during a scroll nobody
+    /// asked to be fast. Undoing should cost less than committing.
+    private static let abandonDistance: CGFloat = 10
 
     /// How far down the finger travels, after the hold is recognised,
     /// to latch 2x on (or off again). Comfortably past a thumb's idle
@@ -754,12 +765,13 @@ struct SceneSlideView: View {
     /// which is also correct, since pulling down then means "lock this"
     /// rather than "scroll away".
     private func turboGesture(_ player: AVPlayer) -> some Gesture {
-        // 10pt, not 30. A finger allowed to travel 30pt inside the
-        // press window can climb a good part of a slow upward swipe and
-        // still satisfy it, which is how scrolling turned the speed on.
-        // The hold has to be a hold: essentially stationary, and only
-        // then does anything happen.
-        LongPressGesture(minimumDuration: 0.3, maximumDistance: 10)
+        // Long and near enough stationary that no part of a scroll
+        // passes for it. The distance stops a slow swipe satisfying the
+        // press on the move; the duration stops the pause people take
+        // before flicking up counting as a hold, which is the way a
+        // scroll was still turning the speed on after the distance came
+        // down.
+        LongPressGesture(minimumDuration: 0.45, maximumDistance: 8)
             .sequenced(before: DragGesture(minimumDistance: 0))
             .onChanged { value in
                 switch value {
@@ -781,6 +793,20 @@ struct SceneSlideView: View {
                     }
                     beginTurbo(player)
                     if drag.translation.height >= Self.lockPullDistance {
+                        // Same rule downward as upward: a swipe already
+                        // in motion is a scroll, whichever way it goes.
+                        // A hold and the first moments of a slow swipe
+                        // look identical, so what separates them is what
+                        // happens next. Someone who felt the tap and
+                        // chose to latch pauses first; covering the
+                        // whole pull within a fraction of a second of
+                        // engaging means the finger never stopped.
+                        if let at = turboEngagedAt,
+                            Date().timeIntervalSince(at) < Self.pullGrace
+                        {
+                            abandonTurbo(player)
+                            return
+                        }
                         pullDown(player)
                     }
                 default:
@@ -793,6 +819,7 @@ struct SceneSlideView: View {
     private func beginTurbo(_ player: AVPlayer) {
         guard !turboAbandoned, !turboHolding else { return }
         turboHolding = true
+        turboEngagedAt = Date()
         pullConsumed = false
         if turboLocked {
             // Already at 2x, so there is no rate to change - but the
@@ -847,6 +874,7 @@ struct SceneSlideView: View {
         guard !turboAbandoned else { return }
         turboAbandoned = true
         turboHolding = false
+        turboEngagedAt = nil
         pullConsumed = false
         if !turboLocked {
             applyRate(1, to: player)
@@ -856,6 +884,7 @@ struct SceneSlideView: View {
 
     private func endTurbo(_ player: AVPlayer) {
         turboHolding = false
+        turboEngagedAt = nil
         pullConsumed = false
         turboAbandoned = false
         // Letting go of a locked slide changes nothing, so it says
