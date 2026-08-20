@@ -300,7 +300,11 @@ struct StoryViewerSheet: View {
                     // once would jump: the content would become the new
                     // performer while still rotated away.
                     storyIndex += forward ? 1 : -1
-                    sceneIndex = 0
+                    // sceneIndex is left to the storyIndex handler.
+                    // Zeroing it here fired the sceneIndex handler too,
+                    // so a swipe between performers built a player and
+                    // its observers, tore them down and built them
+                    // again.
                     dragX = 0
                     turning = false
                 }
@@ -362,10 +366,14 @@ struct StoryViewerSheet: View {
         // tore them down and built them again. Harmless but wasteful,
         // on the most expensive transition the sheet has.
         .onChange(of: storyIndex) { _, _ in
-            if sceneIndex != 0 {
-                sceneIndex = 0  // the handler below will load
-            } else {
+            // Owns the reset, so there is exactly one load per change.
+            // When sceneIndex is already 0 the handler below will not
+            // fire, so this one loads; when it is not, setting it fires
+            // that handler instead.
+            if sceneIndex == 0 {
                 loadScene()
+            } else {
+                sceneIndex = 0
             }
         }
         .onChange(of: sceneIndex) { _, _ in loadScene() }

@@ -167,7 +167,10 @@ enum StashLoginService {
         if h.hasPrefix("[") && h.hasSuffix("]") {
             h = String(h.dropFirst().dropLast())
         }
-        if h.contains(":") { return isPrivateIPv6(h) }
+        // Deliberately the same implementation the daemon-trust check
+        // uses, not a copy of it. This answer decides whether to accept
+        // any certificate at all, so it must not be allowed to drift.
+        if h.contains(":") { return BingeServerService.isPrivateIPv6(h) }
         if h == "localhost" || h.hasSuffix(".local")
             || h.hasSuffix(".internal") || h.hasSuffix(".ts.net")
         {
@@ -190,27 +193,6 @@ enum StashLoginService {
         return !h.contains(".")
     }
 
-    /// Unique-local (fc00::/7) and link-local (fe80::/10) only.
-    /// Everything else, including an IPv4-mapped address, is treated as
-    /// public: the point of this check is to decide whether to stop
-    /// validating certificates, so it fails closed.
-    private static func isPrivateIPv6(_ host: String) -> Bool {
-        // Strip a zone id such as fe80::1%en0.
-        let bare = host.split(separator: "%").first.map(String.init) ?? host
-        if bare == "::1" { return true }
-        guard let firstHextet = bare.split(separator: ":").first,
-            !firstHextet.isEmpty
-        else {
-            // "::ffff:10.0.0.1" and friends start empty. An IPv4-mapped
-            // address is not something this app should be trusting on a
-            // sign-in path, so refuse rather than parse it.
-            return false
-        }
-        let p = firstHextet.lowercased()
-        return p.hasPrefix("fc") || p.hasPrefix("fd")
-            || p.hasPrefix("fe8") || p.hasPrefix("fe9")
-            || p.hasPrefix("fea") || p.hasPrefix("feb")
-    }
 }
 
 enum StashLoginError: LocalizedError {
@@ -259,7 +241,7 @@ private struct ApiKeyResponse: Decodable {
 /// approach Stashy uses — Stash on a LAN IP or Tailscale endpoint
 /// commonly has a self-signed cert that strict TLS would reject.
 private final class TrustAllSessionDelegate: NSObject,
-    URLSessionDelegate
+    URLSessionDelegate, URLSessionTaskDelegate
 {
     /// Only accept an untrusted server cert when the target host is
     /// private/LAN/tailnet. Public hosts fall through to strict default
@@ -276,6 +258,28 @@ private final class TrustAllSessionDelegate: NSObject,
     init(allowInsecure: Bool, allowedHost: String) {
         self.allowInsecure = allowInsecure
         self.allowedHost = allowedHost.lowercased()
+    }
+
+    /// Refuse to follow a redirect onto a different host.
+    ///
+    /// Judging the certificate exemption per host stops an untrusted
+    /// cert being accepted after a redirect, but it does not stop the
+    /// redirect: a private host answering 307 with a valid public
+    /// certificate would still have received the form body, which on
+    /// this path carries the user's Stash username and password.
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest,
+        completionHandler: @escaping (URLRequest?) -> Void
+    ) {
+        let to = request.url?.host?.lowercased() ?? ""
+        if to.isEmpty || to != allowedHost {
+            completionHandler(nil)
+            return
+        }
+        completionHandler(request)
     }
 
     func urlSession(

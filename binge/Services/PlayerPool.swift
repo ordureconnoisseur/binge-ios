@@ -64,6 +64,16 @@ final class PlayerPool {
             entry.lastUsed = Date()
             entries[scene.id] = entry
             entry.player.isMuted = muted
+            // Handed back at normal speed. A pooled player keeps the
+            // defaultRate it was last given, and play() resumes at it,
+            // so a slide that had been latched to 2x came back fast on
+            // a scene that had not been - with fresh view state saying
+            // 1x, so nothing on screen explained it and nothing would
+            // have reset it. Whoever wants 2x asks for it again.
+            entry.player.defaultRate = 1
+            if entry.player.timeControlStatus != .paused {
+                entry.player.rate = 1
+            }
             print(
                 "[PlayerPool] HIT  scene=\(scene.id) "
                 + "pool=\(entries.count)/\(capacity)"

@@ -169,7 +169,17 @@ enum BingeServerService {
     /// Loopback, unique-local (fc00::/7) and link-local (fe80::/10) only.
     /// Anything else, including an address with an embedded IPv4 part, is
     /// treated as public.
-    private static func isPrivateIPv6(_ addr: String) -> Bool {
+    /// Internal rather than private so the sign-in path can use this
+    /// one instead of keeping its own. Two copies of a rule this fiddly
+    /// drift: the second copy split without keeping empty pieces, which
+    /// made "::fc00:1" look like it began with the ULA prefix, and that
+    /// answer is what decides whether to stop validating certificates.
+    static func isPrivateIPv6(_ addr: String) -> Bool {
+        // A zone id belongs to the interface, not the address.
+        var addr = addr
+        if let cut = addr.firstIndex(of: "%") {
+            addr = String(addr[addr.startIndex..<cut])
+        }
         if addr == "::1" { return true }
         // Keep empty pieces, or a leading "::" would hand back the wrong
         // hextet: "::1" would look like it starts with "1".
