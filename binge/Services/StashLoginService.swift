@@ -39,7 +39,8 @@ enum StashLoginService {
         // strict default TLS validation.
         let loginHost = URL(string: trimmedBase)?.host ?? ""
         let delegate = TrustAllSessionDelegate(
-            allowInsecure: isPrivateHost(loginHost)
+            allowInsecure: isPrivateHost(loginHost),
+            allowedHost: loginHost
         )
         let session = URLSession(
             configuration: config,
@@ -147,9 +148,26 @@ enum StashLoginService {
 
     /// Loopback / RFC1918 / Tailscale-CGNAT / .local / .ts.net / bare
     /// hostname → private. Public FQDNs and public IPs → false.
+    ///
+    /// The IPv6 branch has to come before the bare-hostname rule, and
+    /// this copy was missing it. `URL.host` returns an IPv6 literal
+    /// without its brackets, so `2001:4860:4860::8888` contains no dot
+    /// and fell straight through to "no dot means a LAN machine name".
+    /// That answer is the only gate on the delegate below, which accepts
+    /// any server certificate, so a Stash address given as a public
+    /// IPv6 literal disabled TLS validation entirely and then posted the
+    /// user's Stash username and password over it. The same hole was
+    /// found and fixed in BingeServerService.isTrustedURL; this file was
+    /// missed.
     private static func isPrivateHost(_ host: String) -> Bool {
-        let h = host.lowercased()
+        var h = host.lowercased()
         if h.isEmpty { return false }
+        // Defensive: URL.host does not include brackets, but a caller
+        // passing a raw authority might.
+        if h.hasPrefix("[") && h.hasSuffix("]") {
+            h = String(h.dropFirst().dropLast())
+        }
+        if h.contains(":") { return isPrivateIPv6(h) }
         if h == "localhost" || h.hasSuffix(".local")
             || h.hasSuffix(".internal") || h.hasSuffix(".ts.net")
         {
@@ -170,6 +188,28 @@ enum StashLoginService {
         }
         // Bare hostname (no dot) is a LAN/tailnet machine name.
         return !h.contains(".")
+    }
+
+    /// Unique-local (fc00::/7) and link-local (fe80::/10) only.
+    /// Everything else, including an IPv4-mapped address, is treated as
+    /// public: the point of this check is to decide whether to stop
+    /// validating certificates, so it fails closed.
+    private static func isPrivateIPv6(_ host: String) -> Bool {
+        // Strip a zone id such as fe80::1%en0.
+        let bare = host.split(separator: "%").first.map(String.init) ?? host
+        if bare == "::1" { return true }
+        guard let firstHextet = bare.split(separator: ":").first,
+            !firstHextet.isEmpty
+        else {
+            // "::ffff:10.0.0.1" and friends start empty. An IPv4-mapped
+            // address is not something this app should be trusting on a
+            // sign-in path, so refuse rather than parse it.
+            return false
+        }
+        let p = firstHextet.lowercased()
+        return p.hasPrefix("fc") || p.hasPrefix("fd")
+            || p.hasPrefix("fe8") || p.hasPrefix("fe9")
+            || p.hasPrefix("fea") || p.hasPrefix("feb")
     }
 }
 
@@ -224,8 +264,19 @@ private final class TrustAllSessionDelegate: NSObject,
     /// Only accept an untrusted server cert when the target host is
     /// private/LAN/tailnet. Public hosts fall through to strict default
     /// TLS so a MITM can't intercept the password on the sign-in path.
+    ///
+    /// Held as the host it was decided for, not as a bare flag. The flag
+    /// was computed once from the URL the user typed and then applied to
+    /// every challenge on the session, so a private host that redirected
+    /// to a public one kept the exemption, and with a 307 or 308 the
+    /// password body followed it. Each challenge is now judged against
+    /// the host actually being talked to.
     let allowInsecure: Bool
-    init(allowInsecure: Bool) { self.allowInsecure = allowInsecure }
+    let allowedHost: String
+    init(allowInsecure: Bool, allowedHost: String) {
+        self.allowInsecure = allowInsecure
+        self.allowedHost = allowedHost.lowercased()
+    }
 
     func urlSession(
         _ session: URLSession,
@@ -235,6 +286,7 @@ private final class TrustAllSessionDelegate: NSObject,
         ) -> Void
     ) {
         if allowInsecure,
+            challenge.protectionSpace.host.lowercased() == allowedHost,
             challenge.protectionSpace.authenticationMethod
                 == NSURLAuthenticationMethodServerTrust,
             let trust = challenge.protectionSpace.serverTrust

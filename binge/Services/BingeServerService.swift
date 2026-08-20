@@ -139,8 +139,17 @@ enum BingeServerService {
             )
             let url = (r.configuration.plugins.binge?.serverUrl ?? "")
                 .trimmingCharacters(in: .whitespacesAndNewlines)
-            if !url.isEmpty {
+            // Stored only if it is somewhere credentials could go
+            // anyway. This value comes off the Stash server rather than
+            // from the person holding the phone, so accepting it
+            // unchecked let anyone who can write that plugin config
+            // choose where the app points. Storing a URL we would then
+            // refuse to authenticate is the worst of both: the feeds
+            // fail and the reason is invisible.
+            if !url.isEmpty, isTrustedURL(url) {
                 UserDefaults.standard.set(url, forKey: urlStorageKey)
+            } else if !url.isEmpty {
+                print("[bingeServer] ignoring untrusted seeded URL")
             }
         } catch {
             // Stash unreachable / no config — keep the default.
@@ -632,7 +641,15 @@ enum BingeServerService {
             return nil
         }
         var req = URLRequest(url: url)
-        if !cachedKey.isEmpty {
+        // The same gate setConfig and saveToStash already apply. It was
+        // missing here, which is the path every routine call uses:
+        // /healthz, /config, the reddit, x and pornhub feeds. So the
+        // one-time push of the key was protected and the key then went
+        // out in cleartext on every poll afterwards, to whatever
+        // currentURL() happened to be. That URL is not necessarily
+        // something the user typed either: seedFromPluginConfig takes it
+        // off the Stash server and stores it unvalidated.
+        if !cachedKey.isEmpty, isTrustedURL(currentURL()) {
             req.addValue(cachedKey, forHTTPHeaderField: "ApiKey")
         }
         // Tailscale Funnel + Mullvad NL adds latency vs a LAN
