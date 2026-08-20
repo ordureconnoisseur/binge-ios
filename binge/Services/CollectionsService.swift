@@ -344,13 +344,12 @@ final class CollectionsService {
         }
     }
 
-    /// Toggle a scene's membership in a collection. Caller passes
-    /// the scene's CURRENT tag ids (BingeScene.tags); we resolve
-    /// the collection's tag id, diff, and sceneUpdate.
+    /// Toggle a scene's membership in a collection. Reads the scene's
+    /// current tags from Stash, resolves the collection's tag id,
+    /// diffs, and sceneUpdate.
     /// Returns the new membership state on success, nil on error.
     func setSceneInCollection(
         sceneId: String,
-        currentTagIds: [String],
         collection: CollectionDef,
         next: Bool
     ) async -> Bool? {
@@ -358,13 +357,38 @@ final class CollectionsService {
         // but nothing is written to Stash.
         if DemoMode.isOn { return next }
         guard let id = await tagId(for: collection) else { return nil }
+        let client = StashClient(baseURL: baseURL, apiKey: apiKey)
+        // Read the scene's tags now rather than taking them from the
+        // caller. They used to be passed in, and the only thing any
+        // caller had was BingeScene.tags: the array fetched when the
+        // reel or the feed loaded, held for the session and never
+        // refreshed. Since this mutation replaces the whole array, an
+        // ordinary sequence destroyed data. Rate a scene, which writes
+        // score tags through a path that does read fresh, then save it
+        // to a collection: the save rebuilt the array from the older
+        // copy, the score tags were not in it, and they were gone. The
+        // Advanced Rating hook then recomputed the rating from what
+        // survived. The same fix landed in the web plugin.
+        let currentTagIds: [String]
+        do {
+            let live: SceneTagIdsResponse = try await client.gql(
+                Mutations.sceneTagIds,
+                variables: ["id": sceneId]
+            )
+            // Fail closed: a scene we cannot read is not a scene with
+            // no tags, and writing that back would strip it.
+            guard let tags = live.findScene?.tags else { return nil }
+            currentTagIds = tags.map(\.id)
+        } catch {
+            print("[binge] setSceneInCollection read failed [\(sceneId)]: \(error)")
+            return nil
+        }
         let has = currentTagIds.contains(id)
         if has == next { return next }
         let newIds: [String] =
             next
             ? currentTagIds + [id]
             : currentTagIds.filter { $0 != id }
-        let client = StashClient(baseURL: baseURL, apiKey: apiKey)
         do {
             let _: SceneUpdateTagsResponse = try await client.gql(
                 Mutations.sceneUpdateTags,

@@ -64,6 +64,19 @@ enum Mutations {
         }
         """
 
+    /// A scene's tags as Stash holds them right now.
+    ///
+    /// sceneUpdate replaces the whole tag array, so a write built from
+    /// anything older than this deletes whatever was added in between.
+    static let sceneTagIds = """
+        query SceneTagIds($id: ID!) {
+          findScene(id: $id) {
+            id
+            tags { id name }
+          }
+        }
+        """
+
     /// Generic scene update — used by setSceneTags to swap the
     /// scene's tag list when toggling collection membership. Same
     /// mutation Stash uses everywhere; we only ever send tag_ids.
@@ -1430,6 +1443,15 @@ struct TagCreateResponse: Decodable {
 
 struct TagDestroyResponse: Decodable {
     let tagDestroy: Bool
+}
+
+/// The scene's live tags, read immediately before a tag write.
+struct SceneTagIdsResponse: Decodable {
+    let findScene: Payload?
+    struct Payload: Decodable {
+        let id: String
+        let tags: [StashTag]
+    }
 }
 
 struct SceneUpdateTagsResponse: Decodable {

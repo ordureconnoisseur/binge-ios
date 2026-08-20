@@ -199,16 +199,19 @@ struct SaveToCollectionSheet: View {
         pending.insert(coll.tagName)
         defer { pending.remove(coll.tagName) }
 
+        // The service reads the scene's tags itself now. It used to
+        // take them from here, and what was here was the copy captured
+        // when this sheet opened, which is how tags written since then
+        // were deleted by a save.
         let result = await service.setSceneInCollection(
             sceneId: scene.id,
-            currentTagIds: currentTagIds,
             collection: coll,
             next: next
         )
         if let r = result {
             memberships[coll.tagName] = r
-            // Keep currentTagIds in sync so the next toggle on a
-            // different collection uses the updated list.
+            // Kept in sync only so the local membership row is right;
+            // it is no longer what the next write is built from.
             if let id = service.tagIds[coll.tagName] {
                 if r && !currentTagIds.contains(id) {
                     currentTagIds.append(id)
