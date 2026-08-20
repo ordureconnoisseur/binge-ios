@@ -505,6 +505,20 @@ struct SceneSlideView: View {
             hasAutoAdvanced = false
             didRebuildPlayer = nil
             fallbackURL = nil
+            // Everything below belongs to the scene that just left.
+            // This view is reused for a different scene, which is why
+            // this handler exists, and these were being carried over:
+            // the O count showed the previous scene's number until
+            // something refreshed it, and a latched 2x arrived on an
+            // unrelated scene with no toast and no explanation, since
+            // the activation handler re-applies it.
+            localOCounter = scene.oCounter ?? 0
+            turboLocked = false
+            turboHolding = false
+            turboAbandoned = false
+            pullConsumed = false
+            turboEngagedAt = nil
+            isHolding = false
             attachPlayer()
         }
         .onDisappear {

@@ -39,6 +39,9 @@ struct StoryViewerSheet: View {
     /// True while the commit animation runs, so a second swipe cannot
     /// start mid-turn and leave the index and the offset disagreeing.
     @State private var turning = false
+    /// When the fold began, so a completion handler that never
+    /// runs cannot latch swiping off permanently.
+    @State private var turningSince: Date?
     @State private var player: AVPlayer?
     @State private var endObserver: NSObjectProtocol?
     @State private var timeObserver: Any?
@@ -249,6 +252,17 @@ struct StoryViewerSheet: View {
     private func performerSwipe(width: CGFloat) -> some Gesture {
         DragGesture(minimumDistance: 18)
             .onChanged { v in
+                // `turning` is cleared only by the fold animation's
+                // completion handler. If that ever fails to run, both
+                // halves of this gesture bail forever and performer
+                // swiping is dead for the life of the sheet, so the
+                // latch is given an age as well as a flag.
+                if turning, let since = turningSince,
+                    Date().timeIntervalSince(since) > 2
+                {
+                    turning = false
+                    turningSince = nil
+                }
                 guard !turning else { return }
                 // Vertical drags belong to dismissal, not to this.
                 guard abs(v.translation.width) > abs(v.translation.height)
@@ -277,6 +291,7 @@ struct StoryViewerSheet: View {
                     return
                 }
                 turning = true
+                turningSince = Date()
                 withAnimation(.easeOut(duration: 0.26)) {
                     dragX = forward ? -width : width
                 } completion: {
@@ -341,9 +356,17 @@ struct StoryViewerSheet: View {
         .onAppear { loadScene() }
         .onDisappear { teardown() }
         .statusBarHidden(tour.isRunning)
+        // Both indices in one handler. Moving to another performer set
+        // sceneIndex to 0, which fired the second handler as well, so
+        // every performer change built an AVPlayer and its observers,
+        // tore them down and built them again. Harmless but wasteful,
+        // on the most expensive transition the sheet has.
         .onChange(of: storyIndex) { _, _ in
-            sceneIndex = 0
-            loadScene()
+            if sceneIndex != 0 {
+                sceneIndex = 0  // the handler below will load
+            } else {
+                loadScene()
+            }
         }
         .onChange(of: sceneIndex) { _, _ in loadScene() }
         // Pause the underlying player while the performer
@@ -914,7 +937,13 @@ struct StoryViewerSheet: View {
         case .reddit(let post):
             loadReddit(post)
         case .none:
-            return
+            // A performer whose posts were all filtered out lands here.
+            // Returning left the sheet on a black panel with the
+            // previous scene's spinner still turning and nothing that
+            // would ever advance or dismiss it. Stop the spinner and
+            // move on the way an empty scene otherwise would.
+            loading = false
+            armCap(after: 1.0)
         }
     }
 
