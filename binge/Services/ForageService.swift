@@ -92,7 +92,12 @@ enum ForageService {
             )
             let url = (r.configuration.plugins.binge?.forageUrl ?? "")
                 .trimmingCharacters(in: .whitespacesAndNewlines)
-            if !url.isEmpty {
+            // Checked like the binge-server seed beside it. This
+            // value comes off the Stash server rather than from the
+            // person holding the phone, and probeReachable below
+            // announces this device to whatever it names, on every
+            // launch and on every keystroke in the Settings field.
+            if !url.isEmpty, BingeServerService.isTrustedURL(url) {
                 UserDefaults.standard.set(url, forKey: urlStorageKey)
             }
         } catch {
@@ -111,6 +116,10 @@ enum ForageService {
         let base = currentURL()
         // Not configured — don't build a relative URL out of "/healthz".
         if base.isEmpty { return false }
+        // No credential rides on this one, but it still tells whoever
+        // owns that address that this device exists and when it wakes,
+        // so it is not sent anywhere the app would refuse to authenticate.
+        guard BingeServerService.isTrustedURL(base) else { return false }
         guard let url = URL(string: base + "/healthz") else {
             return false
         }

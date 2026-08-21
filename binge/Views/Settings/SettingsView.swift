@@ -798,7 +798,42 @@ struct SettingsView: View {
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .keyboardType(.URL)
+                // Typing an address here is what makes it a deliberate
+                // choice, which is the whole difference between this
+                // and a URL that arrived from Stash's plugin config.
+                // Recorded on commit rather than per keystroke, so a
+                // half-typed host never gets vouched for.
+                .onSubmit {
+                    BingeServerService.confirmDaemonOrigin(bingeServerUrl)
+                }
                 BingeServerHealthDot()
+            }
+            // A public address the app has not been told to use is not
+            // refused silently. The daemon degrades quietly by design,
+            // so without this the Reddit, PornHub and X rows would just
+            // stop appearing and nothing would say why.
+            if !bingeServerUrl.isEmpty,
+                !BingeServerService.isTrustedURL(bingeServerUrl)
+            {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("This address is not being used yet")
+                        .font(.footnote.weight(.semibold))
+                    Text(
+                        "It is a public address, so binge will not send "
+                            + "your Stash API key to it until you confirm "
+                            + "you meant it. Only do that if the address "
+                            + "is yours."
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    Button("Use this address") {
+                        BingeServerService.confirmDaemonOrigin(bingeServerUrl)
+                        // Nudge the views that read the trust decision.
+                        bingeServerUrl = bingeServerUrl
+                    }
+                    .font(.caption.weight(.semibold))
+                }
+                .padding(.vertical, 2)
             }
         } header: {
             Text("binge-server URL")
@@ -807,7 +842,9 @@ struct SettingsView: View {
                 "HTTP address of the binge-server daemon. Default "
                     + "is \(BingeServerService.defaultURL) — change "
                     + "this if you run the daemon on a different "
-                    + "host or port. The status dot pings /healthz."
+                    + "host or port. The status dot pings /healthz. "
+                    + "A public address is only used once you have "
+                    + "entered it here yourself."
             )
         }
     }

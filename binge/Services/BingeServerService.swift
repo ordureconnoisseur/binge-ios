@@ -197,16 +197,107 @@ enum BingeServerService {
         return false
     }
 
+    /// Hosts where a shared suffix means a shared landlord rather than
+    /// a shared owner. Two names under one of these are strangers.
+    private static let sharedSuffixes = [
+        // Tailscale: every tailnet is a sibling under ts.net, and Funnel
+        // makes those names publicly resolvable, so two of them share a
+        // landlord in exactly the sense this list is about.
+        "ts.net", "duckdns.org", "hopto.org", "zapto.org", "myftp.org",
+        "dynu.net", "myds.me", "diskstation.me", "dscloud.me",
+        "quickconnect.to", "nip.io", "sslip.io", "cloudflareaccess.com",
+        "no-ip.org", "no-ip.com", "ddns.net", "synology.me",
+        "myqnapcloud.com", "github.io", "ngrok-free.app", "ngrok.app",
+        "ngrok.io", "trycloudflare.com", "netlify.app", "vercel.app",
+        "pages.dev", "workers.dev",
+    ]
+
+    private static func isSharedSuffix(_ host: String) -> Bool {
+        for sfx in sharedSuffixes where host == sfx || host.hasSuffix("." + sfx)
+        {
+            return true
+        }
+        // co.uk, com.au, co.nz and the rest: a two-part suffix whose
+        // first label is one of the usual second-level names.
+        let parts = host.split(separator: ".")
+        if parts.count >= 3 {
+            let second = String(parts[parts.count - 2])
+            let tld = String(parts[parts.count - 1])
+            if tld.count == 2,
+                ["co", "com", "net", "org", "ac", "gov", "edu"].contains(second)
+            {
+                return true
+            }
+        }
+        return false
+    }
+
+    /// Whether two hosts belong to the same person, as far as a name can
+    /// say so.
+    private static func sharesRegistrableDomain(_ a: String, _ b: String)
+        -> Bool
+    {
+        if a.isEmpty || b.isEmpty { return false }
+        if a == b { return true }
+        // Under a shared suffix, only an exact host match means
+        // anything. Comparing the last two labels made every
+        // duckdns.org name look like every other one.
+        if isSharedSuffix(a) || isSharedSuffix(b) { return false }
+        func tail(_ h: String) -> String {
+            h.split(separator: ".").suffix(2).joined(separator: ".")
+        }
+        let ta = tail(a)
+        return !ta.isEmpty && ta == tail(b)
+    }
+
+    /// The host of the Stash the app is configured against.
+    private static func stashHost() -> String {
+        let raw = UserDefaults.standard.string(forKey: "binge.stashUrl") ?? ""
+        return URL(string: raw)?.host?.lowercased() ?? ""
+    }
+
+    static let confirmedOriginsKey = "binge.confirmedDaemonOrigins"
+
+    /// Origins the person holding the phone chose deliberately.
+    static func confirmedDaemonOrigins() -> [String] {
+        UserDefaults.standard.stringArray(forKey: confirmedOriginsKey) ?? []
+    }
+
+    /// Record an origin as deliberately chosen. Called only from the
+    /// Settings field, never from anything that arrives over the wire.
+    static func confirmDaemonOrigin(_ raw: String) {
+        guard let o = originOf(raw) else { return }
+        var list = confirmedDaemonOrigins()
+        guard !list.contains(o) else { return }
+        list.append(o)
+        UserDefaults.standard.set(list, forKey: confirmedOriginsKey)
+    }
+
+    static func originOf(_ raw: String) -> String? {
+        guard let u = URL(string: raw), let scheme = u.scheme?.lowercased(),
+            let host = u.host?.lowercased(), !host.isEmpty
+        else { return nil }
+        if let p = u.port { return "\(scheme)://\(host):\(p)" }
+        return "\(scheme)://\(host)"
+    }
+
     /// Whether it's safe to transmit credentials (Stash API key / Reddit
-    /// cookie) to this daemon URL. https is always fine; plain http is
-    /// allowed only to loopback / private / tailnet hosts — never a public
-    /// host, which would put the secrets on the open internet in cleartext.
+    /// cookie) to this daemon URL.
+    ///
+    /// https alone is NOT enough, and used to be: this began with an
+    /// `if scheme == "https" { return true }` short circuit, which meant
+    /// every host on the internet was trusted and none of the careful
+    /// work below it ever ran except for cleartext http. The web plugin
+    /// removed the same line; this copy kept it. A URL arriving from
+    /// Stash's plugin config was therefore enough to point the app at a
+    /// stranger and hand over the Stash API key.
     static func isTrustedURL(_ raw: String) -> Bool {
         guard let u = URL(string: raw), let scheme = u.scheme?.lowercased()
         else { return false }
-        if scheme == "https" { return true }
-        if scheme != "http" { return false }
-        guard var host = u.host?.lowercased() else { return false }
+        if scheme != "https" && scheme != "http" { return false }
+        guard var host = u.host?.lowercased(), !host.isEmpty else {
+            return false
+        }
         // Foundation hands IPv6 back without brackets, unlike the web URL
         // parser, but strip them anyway so both shapes behave the same.
         if host.hasPrefix("["), host.hasSuffix("]") {
@@ -225,21 +316,56 @@ enum BingeServerService {
         // LAN name" would wave a public address like 2001:4860:4860::8888
         // straight through and post the credentials to it in cleartext.
         if host.contains(":") { return isPrivateIPv6(host) }
+        // A host that is all digits is an IPv4 address written as one
+        // number - getaddrinfo accepts 134744072 as 8.8.8.8 - and it has
+        // no dot, so the bare-hostname rule below would call it a LAN
+        // name.
+        if !host.isEmpty, host.allSatisfy({ $0.isNumber }) { return false }
         // Bare hostname (no dot) is a LAN/tailnet machine name, not public.
         if !host.contains(".") { return true }
         // RFC1918 private + Tailscale CGNAT (100.64/10) IPv4 literals.
-        let parts = host.split(separator: ".").compactMap { Int($0) }
-        if parts.count == 4, parts.allSatisfy({ (0...255).contains($0) }) {
-            let a = parts[0]
-            let b = parts[1]
-            if a == 10 { return true }
-            if a == 172 && (16...31).contains(b) { return true }
-            if a == 192 && b == 168 { return true }
-            if a == 100 && (64...127).contains(b) { return true }  // CGNAT
-            return false
+        //
+        // Split FIRST and require exactly four labels. This used to
+        // compactMap the split straight into integers, which DISCARDS
+        // the non-numeric labels rather than rejecting the host: the six
+        // labels of 10.0.0.1.evil.com became the four numbers 10,0,0,1
+        // and the host was accepted as private. The sibling copy in
+        // StashLoginService always did this correctly; the two drifted.
+        let labels = host.split(separator: ".")
+        if labels.count == 4 {
+            let nums = labels.compactMap { Int($0) }
+            // A leading zero means octal to the resolver - 010.0.0.1 is
+            // 8.0.0.1, a public address - so those are not ours to call
+            // private.
+            let octalish = labels.contains {
+                $0.count > 1 && $0.hasPrefix("0")
+            }
+            if nums.count == 4, !octalish,
+                nums.allSatisfy({ (0...255).contains($0) })
+            {
+                let a = nums[0]
+                let b = nums[1]
+                if a == 10 { return true }
+                if a == 172 && (16...31).contains(b) { return true }
+                if a == 192 && b == 168 { return true }
+                if a == 100 && (64...127).contains(b) { return true }  // CGNAT
+                return false
+            }
+            if nums.count == 4 { return false }
         }
-        // Dotted public hostname → untrusted for cleartext credentials.
-        return false
+        // A public hostname. Cleartext to one is never acceptable.
+        if scheme != "https" { return false }
+        // A daemon under the same registrable domain as the configured
+        // Stash is the ordinary reverse-proxy deployment (Stash at
+        // stash.example.com, the daemon at binge.example.com), so it
+        // needs no confirmation.
+        if sharesRegistrableDomain(host, stashHost()) { return true }
+        // Anything else: only if this origin was set deliberately.
+        // Typing it into Settings records it, so this costs no setup
+        // step. It is the check for an address that appeared without
+        // anyone choosing it.
+        guard let o = originOf(raw) else { return false }
+        return confirmedDaemonOrigins().contains(o)
     }
 
     // MARK: - GET endpoints
@@ -366,6 +492,15 @@ enum BingeServerService {
     /// AsyncImage. No key configured (Stash auth off) returns it unchanged.
     private static func withKey(_ url: String) -> String {
         if cachedKey.isEmpty { return url }
+        // Gated, like the header path. This was not, so refusing the
+        // header bought nothing: the key left on the very next image or
+        // video request instead, to the same untrusted host, and in a
+        // query string - the worst place for a secret, since it lands in
+        // access logs, Referer headers and the URL cache.
+        guard isTrustedURL(url) else {
+            print("[bingeServer] not adding the key to an untrusted URL")
+            return url
+        }
         let sep = url.contains("?") ? "&" : "?"
         return "\(url)\(sep)apikey=\(queryEncode(cachedKey))"
     }
