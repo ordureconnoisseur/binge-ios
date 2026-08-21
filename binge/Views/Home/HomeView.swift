@@ -417,6 +417,16 @@ struct HomeView: View {
                     // (Modifier applies to the closing brace,
                     // see below.)
                     if let vm {
+                        // Merged once, not once per body evaluation, and
+                        // shared with the empty-state check below so the
+                        // two can never disagree about whether there is
+                        // anything on screen.
+                        let entries = merged(
+                            library: vm.feed,
+                            packs: vm.packs,
+                            discovery: vm.discovery,
+                            repostCutoff: vm.repostCutoff
+                        )
                         // Stories row reaches screen edges
                         // intentionally — bubbles look cramped if
                         // they're also inset. The vertical stack's
@@ -433,15 +443,7 @@ struct HomeView: View {
                         // last week interleaves naturally with
                         // recent library imports. Discovery cards
                         // identified by id prefix "discovery:".
-                        ForEach(
-                            merged(
-                                library: vm.feed,
-                                packs: vm.packs,
-                                discovery: vm.discovery,
-                                repostCutoff: vm.repostCutoff
-                            ),
-                            id: \.id
-                        ) { entry in
+                        ForEach(entries, id: \.id) { entry in
                             switch entry {
                             case .library(let scene):
                                 libraryCard(scene, entry: entry, vm: vm)
@@ -496,8 +498,25 @@ struct HomeView: View {
                         if case .error(let diagnosis) = vm.loadState {
                             errorBanner(diagnosis)
                         }
-                        if case .loaded = vm.loadState, vm.feed.isEmpty {
-                            emptyState
+                        // Gated on the merged, filtered list - the one
+                        // the ForEach above just rendered - rather than on
+                        // vm.feed.
+                        //
+                        // vm.feed is only the loose library scenes, so it
+                        // is empty in the ordinary case where every recent
+                        // scene was gathered into a pack, and it was also
+                        // empty on a library carried entirely by StashDB
+                        // discovery. Both showed "No recent scenes" sitting
+                        // underneath a screen full of cards. It also missed
+                        // the opposite case: hiding every category left
+                        // vm.feed full, so the reader got a blank screen
+                        // with nothing saying why.
+                        if case .loaded = vm.loadState, entries.isEmpty {
+                            emptyState(
+                                everythingFiltered: !vm.feed.isEmpty
+                                    || !vm.packs.isEmpty
+                                    || !vm.discovery.isEmpty
+                            )
                         }
                     } else {
                         BingeLoading(minHeight: 220)
@@ -698,7 +717,13 @@ struct HomeView: View {
     /// IS plenty new, none of it is identified, and "nothing added or
     /// released" would send the reader looking for a bug that is not
     /// there.
-    private var emptyDetail: String {
+    private func emptyDetail(everythingFiltered: Bool) -> String {
+        // There is something to show and the filter is hiding all of it.
+        // Saying "nothing added or released" here would be a lie the
+        // reader can disprove by opening the funnel menu.
+        if everythingFiltered {
+            return "Everything is filtered out. Adjust the filter to see it."
+        }
         let held = vm?.unidentifiedCount ?? 0
         guard held > 0 else {
             return "Nothing added or released in the last \(lookbackDays) days."
@@ -715,15 +740,15 @@ struct HomeView: View {
     }
 
     @ViewBuilder
-    private var emptyState: some View {
+    private func emptyState(everythingFiltered: Bool) -> some View {
         VStack(spacing: 8) {
-            Image(systemName: "tray")
+            Image(systemName: everythingFiltered ? "line.3.horizontal.decrease.circle" : "tray")
                 .font(.system(size: 36))
                 .foregroundStyle(.white.opacity(0.4))
-            Text("No recent scenes")
+            Text(everythingFiltered ? "Nothing shown" : "No recent scenes")
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(.white)
-            Text(emptyDetail)
+            Text(emptyDetail(everythingFiltered: everythingFiltered))
                 .font(.system(size: 12))
                 .foregroundStyle(.white.opacity(0.55))
                 .multilineTextAlignment(.center)
