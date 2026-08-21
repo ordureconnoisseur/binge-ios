@@ -85,7 +85,14 @@ extension StashDBService {
         // site builds its own StashDBService instance, so an
         // instance-level guard would not see the other one.
         if let inFlight = Self.ownedIdsInFlight {
-            return await inFlight.value
+            // The shared sweep can now report failure, and a failure is
+            // not an empty library. Fall back to whatever is on disk,
+            // stale or not, exactly as the fresh path below does.
+            if let shared = await inFlight.value { return shared }
+            let stale: [String] =
+                StashDBCache.shared.read(key, ttl: .greatestFiniteMagnitude)
+                ?? []
+            return Set(stale)
         }
         let task = Task { await self.fetchOwnedStashIds() }
         Self.ownedIdsInFlight = task
