@@ -258,7 +258,9 @@ final class HomeViewModel {
         }
 
         var packs: [SceneFeedPack] = []
-        var packedKeys: Set<String> = []
+        // The scenes a pack actually holds, by id - not the groups that
+        // formed one. See the loose-scene pass below for why.
+        var packedSceneIds: Set<String> = []
         let iso = ISO8601DateFormatter()
 
         for (groupKey, list) in byPrimary {
@@ -316,29 +318,24 @@ final class HomeViewModel {
                     isRepost: isRepost
                 )
             )
-            packedKeys.insert(groupKey)
+            for packed in inWindow { packedSceneIds.insert(packed.id) }
         }
 
-        // A performer who formed a pack is represented by that pack
-        // card, so we don't also surface their loose individual
-        // scenes — otherwise a bulk-import performer would flood the
-        // feed with a pack AND dozens of cards. Everyone else shows
-        // all their scenes in the window (no per-performer cap).
+        // A scene already inside a pack card is not also shown loose,
+        // otherwise a bulk-import performer would fill the feed with a
+        // pack AND dozens of cards. Everyone else shows every scene in
+        // the window, with no per-performer cap.
+        //
+        // Keyed on the scenes the pack holds, not on the group that
+        // formed it. A pack gathers only what falls inside its own
+        // seven-day window, but this pass used to skip everything
+        // sharing the group key, which is the whole lookback. So a
+        // performer with a fresh bulk import also lost her older scenes
+        // still inside the lookback: they were in no pack and got no
+        // card of their own, and the library looked emptier than it is.
         var out: [BingeScene] = []
         for s in scenes {
-            guard
-                let key = packGroupKey(
-                    s,
-                    matchedPerformers: matchedPerformers,
-                    impliedSources: impliedSources
-                )
-            else {
-                // Nothing identifies it well enough to group, so it can
-                // only ever stand on its own.
-                out.append(s)
-                continue
-            }
-            if packedKeys.contains(key) { continue }
+            if packedSceneIds.contains(s.id) { continue }
             out.append(s)
         }
         return (out, packs)
