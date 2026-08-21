@@ -623,7 +623,17 @@ final class StashDBPerformerProfileViewModel {
         followError = nil
         defer { following = false }
         let svc = StashDBService(baseURL: baseURL, apiKey: apiKey)
-        let linked = await svc.fetchLinkedPerformers()
+        // Fails closed. This lookup is the only thing standing between
+        // Follow and a duplicate performer in the user's library, and
+        // the fetch now reports a failure as nil rather than as an empty
+        // list - so a Stash blip must stop the Follow rather than let it
+        // conclude nobody is linked and create a second copy.
+        guard let linked = await svc.fetchLinkedPerformers() else {
+            followError =
+                "Could not check your library just now, so nothing was "
+                + "added. Try again in a moment."
+            return nil
+        }
         if let existing = linked.first(where: { $0.stashId == stashId }) {
             return existing.localId
         }
