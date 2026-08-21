@@ -35,7 +35,12 @@ struct ScribeModal: View {
     @State private var busy: Bool = false
     @State private var busyMsg: String = ""
     @State private var reviewText: String = ""
-    @State private var scores: [String: Int] = [:]
+    /// Keyed by criterion id. A criterion present here is one this
+    /// modal speaks for on save; absent means leave it alone. Seeded
+    /// from the subject's existing scores on every entry path, so a
+    /// generated review merges over what is really there rather than
+    /// replacing it with whatever the model happened to mention.
+    @State private var scores: [String: ScoreIntent] = [:]
     @State private var editMode: Bool = false
     /// Trigger for "scroll transcript to bottom" — bumped on
     /// every message append.
@@ -476,9 +481,19 @@ struct ScribeModal: View {
         }
     }
 
+    /// The subject's existing scores, as intents this modal owns.
+    private func seededScores(_ subj: LoadedSubject) -> [String: ScoreIntent] {
+        subj.initialScores.mapValues { ScoreIntent.set($0) }
+    }
+
     @ViewBuilder
     private func scoreRow(_ c: RatingCriterion) -> some View {
-        let current = scores[c.id]
+        // nil when this modal is not speaking for the criterion, and
+        // when it is speaking to clear it - both display as unrated.
+        let current: Int? = {
+            if case .set(let v)? = scores[c.id] { return v }
+            return nil
+        }()
         HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(c.name)
@@ -498,7 +513,11 @@ struct ScribeModal: View {
                 // AND visible, matching web's 0-5 slider. Tap toggles
                 // between 0 and unrated.
                 Button {
-                    scores[c.id] = (current == 0) ? nil : 0
+                    // .clear, not a removed key: taking a score off
+                    // has to be sayable, or the save cannot tell it
+                    // from a criterion nobody touched and the old tag
+                    // survives forever.
+                    scores[c.id] = (current == 0) ? .clear : .set(0)
                 } label: {
                     Text("0")
                         .font(.system(size: 12, weight: .bold))
@@ -520,13 +539,8 @@ struct ScribeModal: View {
                 .buttonStyle(.plain)
                 ForEach(1...5, id: \.self) { star in
                     Button {
-                        let newScore: Int? =
-                            (current == star) ? nil : star
-                        if let v = newScore {
-                            scores[c.id] = v
-                        } else {
-                            scores.removeValue(forKey: c.id)
-                        }
+                        scores[c.id] =
+                            (current == star) ? .clear : .set(star)
                     } label: {
                         Image(
                             systemName: (current ?? 0) >= star
@@ -684,7 +698,13 @@ struct ScribeModal: View {
             messages = saved.messages
             if let gen = saved.generated {
                 reviewText = gen.review
-                scores = gen.scores
+                // Merged over the subject's real scores. A resumed
+                // draft holds only what the model produced, so
+                // restoring it alone would present every other
+                // criterion as unrated and save it that way.
+                var merged = seededScores(subj)
+                for (id, v) in gen.scores { merged[id] = .set(v) }
+                scores = merged
                 phase = .result
             } else {
                 phase = .interview
@@ -692,7 +712,7 @@ struct ScribeModal: View {
         } else if let existing = subj.existingReview, !existing.isEmpty {
             editMode = true
             reviewText = existing
-            scores = subj.initialScores
+            scores = seededScores(subj)
             phase = .result
         } else {
             phase = .intro
@@ -704,7 +724,9 @@ struct ScribeModal: View {
         _ = loaded
         editMode = true
         reviewText = ""
-        scores = [:]
+        // Seeded, not blank: the subject's ratings are not part of the
+        // review being written, and starting empty saved them away.
+        scores = seededScores(loaded.subject)
         phase = .result
     }
 
@@ -843,7 +865,13 @@ struct ScribeModal: View {
             )
             let parsed = api.parseGenerated(body: reply, criteria: crits)
             reviewText = parsed.review
-            scores = parsed.scores
+            // Merged over the current state rather than replacing it.
+            // parseGenerated only fills criteria the model echoed back,
+            // so substituting it dropped every score it did not
+            // mention - and the save then deleted those tags.
+            var merged = scores
+            for (id, v) in parsed.scores { merged[id] = .set(v) }
+            scores = merged
             ScribeSessionStore.save(
                 loaded.subject.sessionKey,
                 state: ScribeSessionState(
@@ -867,7 +895,7 @@ struct ScribeModal: View {
             let sys = buildFreshSystem(loaded, tone: tone)
             messages = [sys]
             reviewText = ""
-            scores = [:]
+            scores = seededScores(loaded.subject)
             phase = .interview
             Task { await runKickoff(sys) }
             return
@@ -884,7 +912,8 @@ struct ScribeModal: View {
         ScribeSessionStore.clear(loaded.subject.sessionKey)
         editMode = false
         reviewText = ""
-        scores = [:]
+        // Discarding a draft does not discard the subject's ratings.
+        scores = seededScores(loaded.subject)
         messages = []
         phase = .intro
         errorText = nil

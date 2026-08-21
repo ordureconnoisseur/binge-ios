@@ -356,7 +356,7 @@ final class ScribeAPI {
         scene: SceneForScribeResponse.Scene,
         reviewText: String,
         criteria: [RatingCriterion],
-        scoresByCriterion: [String: Int],
+        scoresByCriterion: [String: ScoreIntent],
         autoCreate: Bool
     ) async throws {
         // custom_fields partial — preferred path, matches web
@@ -372,8 +372,20 @@ final class ScribeAPI {
             input["details"] = cleaned
         }
         if !scoresByCriterion.isEmpty {
+            // Read the scene's tags now rather than using the copy
+            // captured when the modal opened. sceneUpdate replaces the
+            // whole array, so a write built from a snapshot drops
+            // anything added since - by another device, by Stash's own
+            // UI, or by the rating plugin's hook.
+            let live: FindSceneTagsAndRatingResponse = try await client.gql(
+                Queries.findSceneTagsAndRating,
+                variables: ["id": scene.id]
+            )
+            guard let liveTags = live.findScene?.tags else {
+                throw ScribeError("That scene could not be read, so its tags were left alone.")
+            }
             let newTagIds = try await buildUpdatedTagIds(
-                currentTags: scene.tags.map { ($0.id, $0.name) },
+                currentTags: liveTags.map { ($0.id, $0.name) },
                 criteria: criteria,
                 scoresByCriterion: scoresByCriterion,
                 autoCreate: autoCreate
@@ -392,13 +404,22 @@ final class ScribeAPI {
         performer: PerformerForScribeResponse.Performer,
         reviewText: String,
         criteria: [RatingCriterion],
-        scoresByCriterion: [String: Int],
+        scoresByCriterion: [String: ScoreIntent],
         autoCreate: Bool
     ) async throws {
         var base: [String: Any] = ["id": performer.id]
         if !scoresByCriterion.isEmpty {
+            // Same fresh read as the scene path above.
+            let live: FindPerformerTagsAndRatingResponse =
+                try await client.gql(
+                    Queries.findPerformerTagsAndRating,
+                    variables: ["id": performer.id]
+                )
+            guard let liveTags = live.findPerformer?.tags else {
+                throw ScribeError("That performer could not be read, so their tags were left alone.")
+            }
             let newTagIds = try await buildUpdatedTagIds(
-                currentTags: performer.tags.map { ($0.id, $0.name) },
+                currentTags: liveTags.map { ($0.id, $0.name) },
                 criteria: criteria,
                 scoresByCriterion: scoresByCriterion,
                 autoCreate: autoCreate
@@ -447,14 +468,23 @@ final class ScribeAPI {
     private func buildUpdatedTagIds(
         currentTags: [(id: String, name: String)],
         criteria: [RatingCriterion],
-        scoresByCriterion: [String: Int],
+        scoresByCriterion: [String: ScoreIntent],
         autoCreate: Bool
     ) async throws -> [String] {
-        // Drop any score-tag whose criterion is in the current
-        // config — those will be replaced by the new score tags
-        // (one per scored criterion). Tags that don't match a
-        // current criterion (legacy / disabled) are kept
-        // untouched, matching web (api.ts:L460-L466).
+        // Only the criteria this save speaks for lose their old score
+        // tag. Every configured criterion used to be dropped here and
+        // only the supplied ones re-added, so saving a review with a
+        // subset of scores deleted the rest: generating a review on a
+        // scene rated across eight criteria kept whatever the model
+        // happened to mention and destroyed the others, and the
+        // Advanced Rating hook then recomputed the rating from what
+        // survived. Tags for criteria nobody has configured are left
+        // alone either way; they are not ours to delete.
+        let owned = Set(
+            criteria
+                .filter { scoresByCriterion[$0.id] != nil }
+                .map(\.name)
+        )
         let keep = currentTags.filter { tag in
             let range = NSRange(tag.name.startIndex..., in: tag.name)
             guard
@@ -467,12 +497,15 @@ final class ScribeAPI {
             }
             let captured = String(tag.name[nameRange])
                 .trimmingCharacters(in: .whitespaces)
-            // Keep score tags for criteria NOT in the active list.
-            return !criteria.contains(where: { $0.name == captured })
+            // Keep unless this save speaks for that criterion.
+            return !owned.contains(captured)
         }
         var newTagIds = keep.map(\.id)
         for c in criteria {
-            guard let score = scoresByCriterion[c.id] else { continue }
+            // .clear is owned above and simply not re-added.
+            guard case .set(let score)? = scoresByCriterion[c.id] else {
+                continue
+            }
             let tagName = "\(c.name)\(RATING_TAG_SUFFIX): \(score)"
             var tagId = try await findTagIdByName(tagName)
             if tagId == nil {
