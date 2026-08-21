@@ -35,10 +35,28 @@ enum MultiviewService {
         }
         let client = StashClient(baseURL: baseURL, apiKey: apiKey)
         let r: Resp = try await client.gql("{ configuration { plugins } }")
-        let raw = r.configuration.plugins.multiView?.queue ?? "[]"
-        guard let data = raw.data(using: .utf8),
-            let arr = try? JSONSerialization.jsonObject(with: data) as? [Any]
+        // An absent key is a genuinely empty queue. Anything else that
+        // cannot be read is NOT.
+        //
+        // Every caller feeds this straight into a set-membership intent
+        // and writes the result back, and configurePlugin is
+        // last-write-wins with no compare-and-swap. So answering "empty"
+        // for a queue we simply failed to parse meant the next scene
+        // added replaced the user's whole queue with a single item -
+        // and the queue is shared with the web plugin and with
+        // multiview-ios, so a shape this client did not recognise was
+        // enough to do it.
+        guard let raw = r.configuration.plugins.multiView?.queue,
+            !raw.isEmpty
         else { return [] }
+        guard let data = raw.data(using: .utf8),
+            let parsed = try? JSONSerialization.jsonObject(with: data)
+        else {
+            throw MultiviewQueueError.unreadable
+        }
+        guard let arr = parsed as? [Any] else {
+            throw MultiviewQueueError.unreadable
+        }
         return arr
     }
 
@@ -57,6 +75,16 @@ enum MultiviewService {
             "mutation($input: Map!) { configurePlugin(plugin_id: \"multiView\", input: $input) }",
             variables: ["input": ["queue": json]]
         )
+    }
+
+    enum MultiviewQueueError: Error, LocalizedError {
+        /// The stored queue is there but could not be parsed. Refusing
+        /// is the whole point: the alternative is overwriting it.
+        case unreadable
+
+        var errorDescription: String? {
+            "The multiview queue could not be read, so it was left alone."
+        }
     }
 
     enum IntentOutcome {
