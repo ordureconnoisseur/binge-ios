@@ -596,7 +596,7 @@ enum BingeServerService {
         request.timeoutInterval = 30
         do {
             request.httpBody = try JSONEncoder().encode(req)
-            let (data, resp) = try await URLSession.shared.data(
+            let (data, resp) = try await CredentialSession.shared.data(
                 for: request
             )
             guard let http = resp as? HTTPURLResponse else {
@@ -700,7 +700,7 @@ enum BingeServerService {
         req.timeoutInterval = 15
         do {
             req.httpBody = try JSONEncoder().encode(payload)
-            let (data, resp) = try await URLSession.shared.data(for: req)
+            let (data, resp) = try await CredentialSession.shared.data(for: req)
             guard let http = resp as? HTTPURLResponse else {
                 return .failure("No HTTP response")
             }
@@ -804,7 +804,7 @@ enum BingeServerService {
         // larger budget.
         req.timeoutInterval = timeout
         do {
-            let (data, resp) = try await URLSession.shared.data(for: req)
+            let (data, resp) = try await CredentialSession.shared.data(for: req)
             guard let http = resp as? HTTPURLResponse else { return nil }
             if !(200..<300).contains(http.statusCode) {
                 print("[bingeServer] \(http.statusCode) for \(path)")

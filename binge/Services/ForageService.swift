@@ -126,7 +126,7 @@ enum ForageService {
         var req = URLRequest(url: url)
         req.timeoutInterval = 8
         do {
-            let (data, resp) = try await URLSession.shared.data(for: req)
+            let (data, resp) = try await CredentialSession.shared.data(for: req)
             guard let http = resp as? HTTPURLResponse,
                 (200..<300).contains(http.statusCode)
             else { return false }
@@ -179,7 +179,7 @@ enum ForageService {
         req.timeoutInterval = 15
         do {
             req.httpBody = try JSONEncoder().encode(payload)
-            let (data, resp) = try await URLSession.shared.data(for: req)
+            let (data, resp) = try await CredentialSession.shared.data(for: req)
             guard let http = resp as? HTTPURLResponse else {
                 return .failure("No HTTP response")
             }

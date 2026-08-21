@@ -68,7 +68,7 @@ final class RatingPrecisionLoader {
             withJSONObject: ["query": "query { configuration { ui } }"]
         )
         do {
-            let (data, resp) = try await URLSession.shared.data(for: req)
+            let (data, resp) = try await CredentialSession.shared.data(for: req)
             if let http = resp as? HTTPURLResponse, http.statusCode != 200 {
                 return 20
             }

@@ -211,7 +211,7 @@ final class StashDBService {
         ]
         do {
             req.httpBody = try JSONSerialization.data(withJSONObject: body)
-            let (data, resp) = try await URLSession.shared.data(for: req)
+            let (data, resp) = try await CredentialSession.shared.data(for: req)
             if let http = resp as? HTTPURLResponse, http.statusCode != 200 {
                 print("[binge] stashdb perf http=\(http.statusCode)")
                 return nil
@@ -246,7 +246,7 @@ final class StashDBService {
         ]
         do {
             req.httpBody = try JSONSerialization.data(withJSONObject: body)
-            let (data, resp) = try await URLSession.shared.data(for: req)
+            let (data, resp) = try await CredentialSession.shared.data(for: req)
             if let http = resp as? HTTPURLResponse, http.statusCode != 200 {
                 print("[binge] stashdb scene http=\(http.statusCode)")
                 return nil
@@ -338,7 +338,7 @@ final class StashDBService {
         ]
         do {
             req.httpBody = try JSONSerialization.data(withJSONObject: body)
-            let (data, resp) = try await URLSession.shared.data(for: req)
+            let (data, resp) = try await CredentialSession.shared.data(for: req)
             if let http = resp as? HTTPURLResponse, http.statusCode != 200 {
                 print(
                     "[binge] stashdb trending perf "
@@ -427,7 +427,7 @@ final class StashDBService {
             return nil
         }
         do {
-            let (data, resp) = try await URLSession.shared.data(for: req)
+            let (data, resp) = try await CredentialSession.shared.data(for: req)
             if let http = resp as? HTTPURLResponse,
                 http.statusCode != 200
             {

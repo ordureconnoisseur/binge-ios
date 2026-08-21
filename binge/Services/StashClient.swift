@@ -57,7 +57,15 @@ actor StashClient {
         let cfg = URLSessionConfiguration.ephemeral
         cfg.timeoutIntervalForRequest = 15
         cfg.timeoutIntervalForResource = 30
-        return URLSession(configuration: cfg)
+        // With a delegate that refuses a redirect off the host we asked
+        // for. This request carries the Stash API key in a custom
+        // header, and Foundation copies those to the redirect target.
+        // See CredentialSession.
+        return URLSession(
+            configuration: cfg,
+            delegate: SameHostRedirectDelegate.shared,
+            delegateQueue: nil
+        )
     }()
 
     private var session: URLSession { Self.sharedSession }

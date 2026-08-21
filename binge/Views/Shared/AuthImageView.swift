@@ -45,18 +45,38 @@ struct AuthImageView: View {
     /// their behalf. Anything else, however it reached us, gets the
     /// request without it: a missing image is a far smaller problem
     /// than a credential handed to a stranger's CDN.
+    /// Origin, not host.
+    ///
+    /// This compared hosts alone, so a URL that merely shared a name
+    /// with the configured Stash collected the key on any scheme and
+    /// any port. The daemon supplies these strings - cover, avatar and
+    /// thumb URLs all arrive over the wire - so an http URL naming the
+    /// https Stash host put the key on the wire in cleartext, which the
+    /// app's arbitrary-loads exception happily allows.
+    private static func sameOrigin(_ a: URL?, _ b: URL?) -> Bool {
+        guard let a, let b,
+            let ah = a.host?.lowercased(), !ah.isEmpty,
+            let bh = b.host?.lowercased(), !bh.isEmpty
+        else { return false }
+        func port(_ u: URL) -> Int {
+            u.port ?? (u.scheme?.lowercased() == "https" ? 443 : 80)
+        }
+        return ah == bh
+            && a.scheme?.lowercased() == b.scheme?.lowercased()
+            && port(a) == port(b)
+    }
+
     static func mayReceiveKey(_ url: URL) -> Bool {
         guard let host = url.host?.lowercased(), !host.isEmpty else {
             return false
         }
         let stash = URL(
             string: UserDefaults.standard.string(forKey: "binge.stashUrl") ?? ""
-        )?.host?.lowercased()
-        if let stash, !stash.isEmpty, host == stash { return true }
-        let daemon = URL(string: BingeServerService.currentURL())?
-            .host?.lowercased()
-        if let daemon, !daemon.isEmpty, host == daemon,
-            BingeServerService.isTrustedURL(BingeServerService.currentURL())
+        )
+        if sameOrigin(url, stash) { return true }
+        let daemonRaw = BingeServerService.currentURL()
+        if sameOrigin(url, URL(string: daemonRaw)),
+            BingeServerService.isTrustedURL(daemonRaw)
         {
             return true
         }
@@ -150,7 +170,7 @@ struct AuthImageView: View {
                 req.setValue(apiKey, forHTTPHeaderField: "ApiKey")
             }
             do {
-                let (data, resp) = try await URLSession.shared.data(for: req)
+                let (data, resp) = try await CredentialSession.shared.data(for: req)
                 if let http = resp as? HTTPURLResponse, http.statusCode != 200 {
                     print("[binge] image \(Self.loggable(url)) status=\(http.statusCode)")
                     await MainActor.run { failed = true }
