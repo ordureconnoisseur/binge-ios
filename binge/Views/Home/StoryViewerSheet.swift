@@ -64,7 +64,26 @@ struct StoryViewerSheet: View {
     /// Save-to-Stash status for the current social scene. Reset per
     /// scene in loadScene(). Tapping Save also pauses auto-advance so
     /// the result has time to land.
-    @State private var saveState: SaveState = .idle
+    /// Keyed by scene id, and NOT reset when the scene changes.
+    ///
+    /// A single value reset in loadScene() meant the button forgot it
+    /// had already saved: tap Save, let it finish, tap next then back,
+    /// and it reads "Save to Stash" again - so a second tap re-downloads
+    /// the media and adds a second copy to the library. Nothing marks a
+    /// post as saved anywhere else, so the state has to live for the
+    /// sheet's lifetime.
+    @State private var saveStates: [String: SaveState] = [:]
+
+    /// The save state of the scene on screen.
+    private var currentSaveState: SaveState {
+        guard let id = currentScene?.id else { return .idle }
+        return saveStates[id] ?? .idle
+    }
+
+    private func setSaveState(_ state: SaveState) {
+        guard let id = currentScene?.id else { return }
+        saveStates[id] = state
+    }
     @State private var tour = TourDirector.shared
 
     enum SaveState: Equatable {
@@ -639,7 +658,7 @@ struct StoryViewerSheet: View {
     /// "Save"; in-flight → spinner; done → "Saved"; error → message.
     @ViewBuilder
     private func saveButton(_ post: RedditStoryPost) -> some View {
-        switch saveState {
+        switch currentSaveState {
         case .saved:
             HStack(spacing: 5) {
                 Image(systemName: "checkmark.circle.fill")
@@ -674,7 +693,7 @@ struct StoryViewerSheet: View {
                 Task { await doSave(post) }
             } label: {
                 HStack(spacing: 5) {
-                    if saveState == .saving {
+                    if currentSaveState == .saving {
                         ProgressView()
                             .controlSize(.small)
                             .tint(.white)
@@ -682,7 +701,13 @@ struct StoryViewerSheet: View {
                         Image(systemName: "square.and.arrow.down")
                             .font(.system(size: 12, weight: .semibold))
                     }
-                    Text(saveState == .saving ? "Saving…" : "Save to Stash")
+                    Text(
+                        currentSaveState == .saving
+                            ? "Saving…"
+                            : currentSaveState == .saved
+                                ? "Saved"
+                                : "Save to Stash"
+                    )
                         .font(.system(size: 13, weight: .semibold))
                 }
                 .foregroundStyle(.white)
@@ -693,7 +718,9 @@ struct StoryViewerSheet: View {
                     Capsule().stroke(Color.white.opacity(0.25), lineWidth: 1)
                 )
             }
-            .disabled(saveState == .saving)
+            .disabled(
+                currentSaveState == .saving || currentSaveState == .saved
+            )
         }
     }
 
@@ -706,10 +733,10 @@ struct StoryViewerSheet: View {
             ),
             let performerId = currentStory?.performer.id
         else {
-            saveState = .failed("Not saveable")
+            setSaveState(.failed("Not saveable"))
             return
         }
-        saveState = .saving
+        setSaveState(.saving)
         let req = BingeServerService.SaveToStashRequest(
             performerStashId: performerId,
             source: source,
@@ -724,9 +751,9 @@ struct StoryViewerSheet: View {
         let result = await BingeServerService.saveToStash(req)
         switch result {
         case .ok:
-            saveState = .saved
+            setSaveState(.saved)
         case .failure(let msg):
-            saveState = .failed(msg)
+            setSaveState(.failed(msg))
         }
     }
 
@@ -940,7 +967,6 @@ struct StoryViewerSheet: View {
         teardown()
         progress = 0
         didAutoAdvance = false
-        saveState = .idle
         switch currentScene {
         case .library(let scene):
             loadLibrary(scene)

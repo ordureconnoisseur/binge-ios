@@ -472,6 +472,18 @@ struct SceneSlideView: View {
                 // branch — so the kick task was being missed
                 // for the most common case (scroll into a
                 // pre-mounted slide). Wire it up here too.
+                // A fresh activation gets a fresh auto-advance and a
+                // fresh rebuild allowance.
+                //
+                // hasAutoAdvanced latched true for the whole mount, so
+                // scrolling back to a slide that had already
+                // auto-advanced left it looping forever with auto-scroll
+                // silently dead on it. didRebuildPlayer capped the
+                // stuck-player recovery at one per mount, so a slide
+                // whose player was evicted twice stayed black with no
+                // way back.
+                hasAutoAdvanced = false
+                didRebuildPlayer = nil
                 kickIfStuck(player)
                 applyRate(turboLocked ? 2 : 1, to: player)
                 onActivate?(scene)
@@ -481,6 +493,15 @@ struct SceneSlideView: View {
                 // should return to the speed it was left at.
                 turboHolding = false
                 pullConsumed = false
+                // isHolding is cleared here too. It is set by the
+                // long-press and cleared only when SwiftUI reports the
+                // press ending - which it does not do if the view is
+                // torn out from under the finger or the app resigns
+                // active mid-press. Latched, it leaves the play glyph on
+                // screen and blocks the overlay-resume branch, so
+                // opening and closing a sheet left the video paused with
+                // no way to resume but scrolling away and back.
+                isHolding = false
                 applyRate(1, to: player)
             }
         }
@@ -515,6 +536,14 @@ struct SceneSlideView: View {
             // feeding the chain algo.
             if isActive { onActivate?(scene) }
         }
+        // NOTE: currently unreachable. Both call sites are
+        // ForEach(scenes, id: \.id) with an explicit .id(scene.id), so
+        // view identity IS the scene id and this view can never be
+        // handed a different scene. Kept because it is correct for the
+        // day the explicit .id() goes away, but nothing load-bearing may
+        // live here alone - hasAutoAdvanced and didRebuildPlayer were
+        // reset only here, so within a mount they latched forever. Both
+        // are now reset on activation as well, which does fire.
         .onChange(of: scene.id) { _, _ in
             detachTimeObserver()
             posterVisible = true
