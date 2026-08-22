@@ -76,3 +76,23 @@ enum CredentialSession {
         )
     }
 }
+
+extension CredentialSession {
+    /// Header fields for an AVURLAsset, carrying the Stash API key only
+    /// when the URL is somewhere it belongs.
+    ///
+    /// AVFoundation does its own networking: it does not use
+    /// URLSession's delegate, so the redirect guard above does not cover
+    /// it, and it has no origin check of its own. Every keyed asset in
+    /// the app attached the key unconditionally, to whatever absolute
+    /// URL the server put in paths.stream or sceneStreams[].url - and
+    /// those are fields a Stash instance fills in, so pointing binge at
+    /// someone else's server was enough to collect the key. The image
+    /// path has had this check for a while; the video path did not.
+    static func assetOptions(for url: URL, apiKey: String) -> [String: Any] {
+        guard !apiKey.isEmpty, AuthImageView.mayReceiveKey(url) else {
+            return [:]
+        }
+        return ["AVURLAssetHTTPHeaderFieldsKey": ["ApiKey": apiKey]]
+    }
+}

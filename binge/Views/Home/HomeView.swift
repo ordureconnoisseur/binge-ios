@@ -193,6 +193,29 @@ struct HomeView: View {
             .map(\.entry)
     }
 
+    /// Mark the first entry active when nothing valid is.
+    ///
+    /// SwiftUI's .scrollPosition only updates its binding on real scroll
+    /// events - an initially visible item does not trigger one - so
+    /// without this nudge the first card stays inactive: the poster
+    /// covers the video and no frame mounts.
+    private func primeActiveEntryIfNeeded() {
+        guard let vm else { return }
+        let entries = merged(
+            library: vm.feed,
+            packs: vm.packs,
+            discovery: vm.discovery,
+            repostCutoff: vm.repostCutoff
+        )
+        // Also when the current id no longer names anything, which is
+        // the case a first-load-only prime could not see.
+        let stillThere =
+            activeFeedEntryId.map { id in entries.contains { $0.id == id } }
+            ?? false
+        guard !stillThere else { return }
+        activeFeedEntryId = entries.first?.id
+    }
+
     /// Route a discovery-card performer tap. The performer's
     /// `localId` is baked in when the discovery feed is built, so
     /// after a successful Follow the field is stale (still nil).
@@ -578,14 +601,20 @@ struct HomeView: View {
             // don't trigger an update, so without this nudge
             // the first card stays inActive (poster covers the
             // video, audio plays but no frame mounts).
-            if activeFeedEntryId == nil, let vm {
-                activeFeedEntryId = merged(
-                    library: vm.feed,
-                    packs: vm.packs,
-                    discovery: vm.discovery,
-                    repostCutoff: vm.repostCutoff
-                ).first?.id
-            }
+            primeActiveEntryIfNeeded()
+        }
+        // Re-primed whenever the feed is rebuilt.
+        //
+        // Priming ran once, only when activeFeedEntryId was nil. But the
+        // matched-cast fetch lands a second or two after the first paint
+        // and reassembles the feed, and a scene that gains a StashDB
+        // cast can then group into a pack - so the entry that was primed
+        // stops existing, its card's onDisappear tears the player down,
+        // and no card is active any more. Nothing autoplays until the
+        // user scrolls, and pull-to-refresh has the same hole whenever a
+        // pack id changes.
+        .onChange(of: vm?.feedRevision) { _, _ in
+            primeActiveEntryIfNeeded()
         }
         .onChange(of: tour.tick) { _, _ in handleTour() }
         .fullScreenCover(item: $presented) { sheet in

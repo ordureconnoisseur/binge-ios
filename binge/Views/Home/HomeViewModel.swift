@@ -774,7 +774,12 @@ final class HomeViewModel {
     /// Rebuild the feed from the scenes that passed the identification
     /// rule. Separate from `fetch()` so the matched-cast pass can redo
     /// it when names arrive, without another round trip.
+    /// Bumped whenever the feed is rebuilt, so the view can notice that
+    /// the entry it had marked active may no longer exist.
+    private(set) var feedRevision = 0
+
     private func reassembleFeed() {
+        feedRevision &+= 1
         let assembled = Self.assemblePacks(
             identifiedSource,
             recentWindowDays: lookbackDays,

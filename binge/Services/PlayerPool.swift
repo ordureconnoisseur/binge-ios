@@ -100,9 +100,7 @@ final class PlayerPool {
         }
         let asset = AVURLAsset(
             url: url,
-            options: [
-                "AVURLAssetHTTPHeaderFieldsKey": ["ApiKey": apiKey]
-            ]
+            options: CredentialSession.assetOptions(for: url, apiKey: apiKey)
         )
         let item = AVPlayerItem(asset: asset)
         // Tune for first-frame speed: AVPlayer defaults to ~25s

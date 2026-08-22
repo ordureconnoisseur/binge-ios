@@ -993,9 +993,7 @@ struct StoryViewerSheet: View {
         }
         let asset = AVURLAsset(
             url: url,
-            options: [
-                "AVURLAssetHTTPHeaderFieldsKey": ["ApiKey": apiKey]
-            ]
+            options: CredentialSession.assetOptions(for: url, apiKey: apiKey)
         )
         let item = AVPlayerItem(asset: asset)
         item.preferredForwardBufferDuration = 2
