@@ -580,8 +580,22 @@ struct HomeView: View {
             .toolbarColorScheme(.dark, for: .navigationBar)
             .bingeRouteDestinations()
         }
-        .task(id: "\(includeStashDB):\(includeReddit):\(lookbackDays)") {
-            if vm == nil {
+        // stashUrl and the key are part of the identity, not just the
+        // settings.
+        //
+        // The VM holds the address it was built with for its whole life,
+        // and this task neither keyed on that address nor rebuilt when
+        // it changed - so the error banner's own "Open settings" button
+        // could not fix the error it was reporting. The sheet opens over
+        // a still-mounted HomeView, the user corrects the address, and
+        // the task does not re-run; "Try again" then retries against the
+        // old one and shows the same failure. The only escape was
+        // switching tabs, which nothing suggested.
+        .task(
+            id: "\(includeStashDB):\(includeReddit):\(lookbackDays):"
+                + "\(stashUrl):\(stashApiKey.isEmpty)"
+        ) {
+            if vm == nil || vm?.baseURL != stashUrl {
                 vm = HomeViewModel(
                     baseURL: stashUrl,
                     apiKey: stashApiKey

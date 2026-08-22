@@ -341,7 +341,11 @@ final class HomeViewModel {
         return (out, packs)
     }
 
-    private let baseURL: String
+    /// Readable so the view can tell whether this VM was built against
+    /// the address currently configured. It is fixed for the VM's
+    /// lifetime, which is why the view has to rebuild rather than
+    /// mutate it.
+    let baseURL: String
     private let apiKey: String
     /// Read fresh from UserDefaults each fetch (not captured at
     /// init) so toggling "Discover from StashDB / Reddit" in Settings

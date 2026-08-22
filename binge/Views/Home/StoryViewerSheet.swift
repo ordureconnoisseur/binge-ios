@@ -30,6 +30,8 @@ struct StoryViewerSheet: View {
     // Mute functionality removed for now — playback is always unmuted.
     private let muted = false
 
+    @Environment(\.scenePhase) private var scenePhase
+
     @State private var storyIndex: Int
     @State private var sceneIndex: Int = 0
     /// Horizontal travel of an in-progress swipe between performers.
@@ -72,6 +74,24 @@ struct StoryViewerSheet: View {
     /// the media and adds a second copy to the library. Nothing marks a
     /// post as saved anywhere else, so the state has to live for the
     /// sheet's lifetime.
+    /// Set by goPrev so the storyIndex handler lands on the previous
+    /// performer's last scene rather than their first.
+    /// Wall-clock time this slide spent with the app in the background.
+    ///
+    /// Every timer here measures Date().timeIntervalSince(start), and
+    /// iOS suspends the process on background - so leaving for a minute
+    /// and coming back made the first wake compute elapsed >= total and
+    /// advance immediately. The slide you were on was gone before you
+    /// saw it. Subtracting the time we were away is the same thing the
+    /// web viewer does with its paused accumulator.
+    /// The cap most recently armed, so it can be re-armed against what
+    /// is left rather than starting over.
+    @State private var capDuration: Double = 0
+    @State private var backgroundDebt: TimeInterval = 0
+    @State private var leftForegroundAt: Date?
+
+    @State private var pendingLastScene = false
+
     @State private var saveStates: [String: SaveState] = [:]
 
     /// The save state of the scene on screen.
@@ -378,6 +398,20 @@ struct StoryViewerSheet: View {
         }
         .onAppear { loadScene() }
         .onDisappear { teardown() }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active {
+                guard let away = leftForegroundAt else { return }
+                backgroundDebt += Date().timeIntervalSince(away)
+                leftForegroundAt = nil
+                // The watchdog sleeps on a clock that keeps running
+                // while the process is suspended, so it would fire the
+                // moment we return however long is really left. Re-armed
+                // against what remains of this slide.
+                rearmCapAfterBackground()
+            } else if leftForegroundAt == nil {
+                leftForegroundAt = Date()
+            }
+        }
         .statusBarHidden(tour.isRunning)
         // Both indices in one handler. Moving to another performer set
         // sceneIndex to 0, which fired the second handler as well, so
@@ -389,10 +423,15 @@ struct StoryViewerSheet: View {
             // When sceneIndex is already 0 the handler below will not
             // fire, so this one loads; when it is not, setting it fires
             // that handler instead.
-            if sceneIndex == 0 {
+            let target =
+                pendingLastScene
+                ? max(0, (currentStory?.scenes.count ?? 1) - 1)
+                : 0
+            pendingLastScene = false
+            if sceneIndex == target {
                 loadScene()
             } else {
-                sceneIndex = 0
+                sceneIndex = target
             }
         }
         .onChange(of: sceneIndex) { _, _ in loadScene() }
@@ -936,6 +975,12 @@ struct StoryViewerSheet: View {
         if sceneIndex > 0 {
             sceneIndex -= 1
         } else if storyIndex > 0 {
+            // Land on the previous performer's LAST scene, not their
+            // first. Stepping back across a seam and being dropped at
+            // the top of a thirty-scene strip means thirty more taps to
+            // get back to where you were. The web viewer does the same
+            // and has a test named for it.
+            pendingLastScene = true
             storyIndex -= 1
         }
     }
@@ -953,7 +998,15 @@ struct StoryViewerSheet: View {
     /// Arm a wall-clock watchdog that auto-advances after `secs` —
     /// the video preview cap and the no-media fallback. Replaces any
     /// existing cap task; cleared in teardown().
+    /// Give the watchdog back whatever this slide still had coming.
+    private func rearmCapAfterBackground() {
+        guard capDuration > 0 else { return }
+        let remaining = capDuration * (1 - progress)
+        armCap(after: max(0.5, remaining))
+    }
+
     private func armCap(after secs: Double) {
+        capDuration = secs
         capTimer?.cancel()
         capTimer = Task { @MainActor in
             try? await Task.sleep(for: .seconds(secs))
@@ -966,6 +1019,9 @@ struct StoryViewerSheet: View {
     private func loadScene() {
         teardown()
         progress = 0
+        // A fresh slide starts with no debt.
+        backgroundDebt = 0
+        leftForegroundAt = nil
         didAutoAdvance = false
         switch currentScene {
         case .library(let scene):
@@ -997,7 +1053,8 @@ struct StoryViewerSheet: View {
             let start = Date()
             stashDBTimer = Task { @MainActor in
                 while !Task.isCancelled {
-                    let elapsed = Date().timeIntervalSince(start)
+                    let elapsed =
+                    Date().timeIntervalSince(start) - backgroundDebt
                     progress = min(1, elapsed / total)
                     if elapsed >= total { autoAdvance(); return }
                     try? await Task.sleep(for: .milliseconds(50))
@@ -1091,7 +1148,8 @@ struct StoryViewerSheet: View {
         let start = Date()
         stashDBTimer = Task { @MainActor in
             while !Task.isCancelled {
-                let elapsed = Date().timeIntervalSince(start)
+                let elapsed =
+                    Date().timeIntervalSince(start) - backgroundDebt
                 progress = min(1, elapsed / total)
                 if elapsed >= total {
                     autoAdvance()
@@ -1113,7 +1171,8 @@ struct StoryViewerSheet: View {
         let start = Date()
         stashDBTimer = Task { @MainActor in
             while !Task.isCancelled {
-                let elapsed = Date().timeIntervalSince(start)
+                let elapsed =
+                    Date().timeIntervalSince(start) - backgroundDebt
                 progress = min(1, elapsed / total)
                 if elapsed >= total {
                     autoAdvance()

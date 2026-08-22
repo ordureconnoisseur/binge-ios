@@ -855,7 +855,15 @@ struct SceneFeedCard: View {
             Spacer()
             watchFullButton
         }
-        .task { await MultiviewQueueStore.shared.refresh() }
+        // Skipped entirely when the plugin is not installed. This fired
+        // from every card that mounted, including on libraries where the
+        // button it feeds is never rendered.
+        .task {
+            guard PluginContext.shared.hasPlugin(PluginID.multiView) else {
+                return
+            }
+            await MultiviewQueueStore.shared.refresh()
+        }
         .sheet(isPresented: $rateOpen) {
             // Branch on plugin availability so users without
             // the advancedRating plugin still get the native

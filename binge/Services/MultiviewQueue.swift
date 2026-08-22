@@ -213,6 +213,16 @@ final class MultiviewQueueStore {
             if pendingWrites > 0 { return }
             syncState(from: items)
         } catch {
+            // Stamped on failure too.
+            //
+            // The throttle above reads lastLoadedAt, which was only
+            // stamped on the success path - so it was disabled exactly
+            // when it matters. Once the Stash box sleeps or the phone
+            // drops off Wi-Fi, every card that mounts fires another
+            // whole-config query that hangs to the 15-second timeout,
+            // and scrolling a loaded feed on a dead connection produces
+            // a continuous stream of doomed requests.
+            lastLoadedAt = Date()
             print("[binge] multiview queue load failed: \(error)")
         }
     }
