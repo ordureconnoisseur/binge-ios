@@ -594,7 +594,12 @@ final class StashDBPerformerProfileViewModel {
         let (d, raw, owned) = await (detailTask, scenesTask, ownedTask)
         detail = d
         scenes = raw
-        ownedSceneIds = owned
+        // An unknown ownership answer keeps whatever was already known
+        // rather than claiming the user owns none of these - the "in
+        // library" stat and the Add affordance both read this, and Add
+        // creates a second row carrying a stash_id the library already
+        // uses.
+        if let owned { ownedSceneIds = owned }
         if d == nil {
             error = "Couldn't load profile"
         }
