@@ -165,6 +165,13 @@ struct ReelView: View {
             withAnimation { activeId = scenes[idx + 1].id }
         }
         .onDisappear {
+            // Leaving the reel drains the pool. Without this the three
+            // players, their loopers and their queued items stayed
+            // alive for the rest of the process, holding decode
+            // sessions while Home, the story viewer and the scene sheet
+            // each built their own.
+            PlayerPool.shared.setActive(sceneId: nil)
+            PlayerPool.shared.evictExcept(keepers: [])
             // A drilled-in reel (chain / timeline, or one the user
             // converted to a tag feed by tapping a #hashtag in the
             // caption sheet) shares the single FilterNavigator with
@@ -176,6 +183,10 @@ struct ReelView: View {
             }
         }
         .onChange(of: activeId) { _, newId in
+            // Tell the pool which slide is on screen, so its LRU cannot
+            // evict the player the user is watching. Becoming active
+            // otherwise never touches the pool.
+            PlayerPool.shared.setActive(sceneId: newId)
             guard let newId else { return }
             guard let idx = scenes.firstIndex(where: { $0.id == newId })
             else { return }

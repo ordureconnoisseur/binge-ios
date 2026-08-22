@@ -46,6 +46,8 @@ struct SceneSlideView: View {
     private let muted = false
     @AppStorage("binge.autoScroll") private var autoScroll: Bool = false
 
+    @Environment(\.scenePhase) private var scenePhase
+
     @State private var tour = TourDirector.shared
     @State private var player: AVPlayer?
     /// Per-cell counter. Resets to scene.oCounter on remount.
@@ -439,6 +441,20 @@ struct SceneSlideView: View {
         }
         .bingeHaptic(.impact, trigger: turboHaptic)
         .bingeHaptic(.success, trigger: lockHaptic)
+        // Resume after the app comes back.
+        //
+        // There was no scenePhase observer anywhere in the reel, and no
+        // audio background mode, so iOS sets the rate to 0 on background
+        // and AVPlayer does not resume on its own. Returning to the app
+        // left a frozen frame with nothing to explain it: isActive never
+        // changed, no sheet opened, and the only way to get video back
+        // was to swipe away and swipe back - which, on this pool, can
+        // itself cost a rebuild and the user's position in the scene.
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active else { return }
+            guard isActive, !isHolding, !anyOverlayOpen else { return }
+            player?.play()
+        }
         .onChange(of: isActive) { _, nowActive in
             if nowActive {
                 let ready =

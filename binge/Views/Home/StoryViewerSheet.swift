@@ -587,7 +587,11 @@ struct StoryViewerSheet: View {
                     .shadow(color: .black.opacity(0.6), radius: 4, x: 0, y: 1)
             }
             HStack(spacing: 8) {
-                if let url = URL(string: post.permalink) {
+                // Checked before it reaches the system opener: this
+                // string comes off the daemon, and the label beside it
+                // is computed from a different field, so an unchecked
+                // one renders "View on Reddit" over anything at all.
+                if let url = SafeExternalURL.from(post.permalink) {
                     Link(destination: url) {
                         HStack(spacing: 5) {
                             Text(sourceCtaLabel(for: post.domain))
@@ -786,7 +790,7 @@ struct StoryViewerSheet: View {
                     .lineLimit(2)
                     .shadow(color: .black.opacity(0.6), radius: 4, x: 0, y: 1)
             }
-            if let url = URL(string: sb.stashboxUrl) {
+            if let url = SafeExternalURL.from(sb.stashboxUrl) {
                 Link(destination: url) {
                     HStack(spacing: 5) {
                         Text("View on StashDB")

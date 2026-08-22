@@ -74,6 +74,10 @@ struct ReelActionStack: View {
     @State private var holdTask: Task<Void, Never>?
 
     // Web's HEART_HOLD_DURATION_MS.
+    /// How far a finger may travel and still count as a tap on the
+    /// heart. Anything beyond this is the reel being scrolled.
+    private static let heartTapSlop: CGFloat = 12
+
     private static let holdDuration: Duration = .milliseconds(1500)
 
     var body: some View {
@@ -220,17 +224,39 @@ struct ReelActionStack: View {
                         }
                     }
                 }
-                .onEnded { _ in
+                .onEnded { value in
+                // A lift that travelled is a scroll, not a tap.
+                //
+                // This is a raw DragGesture rather than a Button, and a
+                // Button is what normally cancels when the finger leaves
+                // its bounds. With no check at all, putting a thumb on
+                // the heart to scroll the feed and lifting anywhere
+                // fired onLike() - a real sceneIncrementO against the
+                // user's Stash, on a scene they only scrolled past.
                     holdTask?.cancel()
                     let wasUnlike = didUnlike
                     holding = false
                     didUnlike = false
+                    let moved = max(
+                        abs(value.translation.width),
+                        abs(value.translation.height)
+                    )
+                    guard moved <= Self.heartTapSlop else { return }
                     if !wasUnlike {
                         likeBounce &+= 1
                         onLike()
                     }
                 }
         )
+        // Same reasoning as the feed card: SwiftUI does not deliver
+        // onEnded when the reel's pan cancels the drag, and the hold
+        // task would then fire onUnlike() against a scene that has
+        // scrolled away.
+        .onDisappear {
+            holdTask?.cancel()
+            holding = false
+            didUnlike = false
+        }
     }
 
     @ViewBuilder
