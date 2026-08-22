@@ -66,7 +66,11 @@ extension StashDBService {
         return fresh
     }
 
-    func cachedOwnedStashIds() async -> Set<String> {
+    /// nil when the answer is unknown. An empty set means the user owns
+    /// none of these, which is a different and much more consequential
+    /// claim - it is what decides whether a scene is offered with an
+    /// Add button.
+    func cachedOwnedStashIds() async -> Set<String>? {
         let key = "owned"
         if let cached: [String] = StashDBCache.shared.memoRead(key) {
             return Set(cached)
@@ -85,13 +89,16 @@ extension StashDBService {
         // site builds its own StashDBService instance, so an
         // instance-level guard would not see the other one.
         if let inFlight = Self.ownedIdsInFlight {
-            // The shared sweep can now report failure, and a failure is
-            // not an empty library. Fall back to whatever is on disk,
-            // stale or not, exactly as the fresh path below does.
+            // A failure falls back to whatever is on disk, stale or not.
+            // With nothing on disk it reports failure, because an empty
+            // set here means "you own none of these" and that is the one
+            // answer that must never be invented.
             if let shared = await inFlight.value { return shared }
-            let stale: [String] =
-                StashDBCache.shared.read(key, ttl: .greatestFiniteMagnitude)
-                ?? []
+            guard
+                let stale: [String] = StashDBCache.shared.read(
+                    key, ttl: .greatestFiniteMagnitude
+                )
+            else { return nil }
             return Set(stale)
         }
         let task = Task { await self.fetchOwnedStashIds() }
@@ -99,11 +106,16 @@ extension StashDBService {
         let result = await task.value
         Self.ownedIdsInFlight = nil
         guard let fresh = result else {
-            // Same as the linked-performer path: stale beats empty, and
-            // a failure is never written.
-            let stale: [String] =
-                StashDBCache.shared.read(key, ttl: .greatestFiniteMagnitude)
-                ?? []
+            // Stale beats empty, and a failure is never written - but a
+            // COLD cache has no stale entry, and returning [] there was
+            // the same fail-open this optional was introduced to close:
+            // callers read it as "you own nothing", so every scene
+            // already in the library came back offering Add.
+            guard
+                let stale: [String] = StashDBCache.shared.read(
+                    key, ttl: .greatestFiniteMagnitude
+                )
+            else { return nil }
             return Set(stale)
         }
         let asArray = Array(fresh)

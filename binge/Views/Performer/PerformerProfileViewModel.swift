@@ -388,7 +388,10 @@ final class PerformerProfileViewModel {
         // Through the cache, not around it. This is a sweep of every
         // scene in the library, and the uncached call re-ran it on every
         // profile open while Home's copy sat cached beside it.
-        let owned = await svc.cachedOwnedStashIds()
+        // An unknown answer is treated as "owns everything" here, so a
+        // failed lookup understates what is new rather than offering an
+        // Add button for a scene already in the library.
+        let ownedMaybe = await svc.cachedOwnedStashIds()
         let raw = await svc.fetchScenesForStashDBPerformer(
             stashId: stashId,
             apiKey: box.apiKey
@@ -397,7 +400,16 @@ final class PerformerProfileViewModel {
         // already visible in the library grid via their local
         // entry; surfacing them again on stashdb tiles would
         // just be noise.
-        stashDBScenes = raw.filter { !owned.contains($0.id) }
+        // An unknown ownership answer shows nothing rather than
+        // offering an Add button for a scene already in the library -
+        // Add creates a second, fileless row carrying a stash_id the
+        // library already uses, and Stash does not enforce uniqueness
+        // on that.
+        if let owned = ownedMaybe {
+            stashDBScenes = raw.filter { !owned.contains($0.id) }
+        } else {
+            stashDBScenes = []
+        }
         stashDBLoaded = true
     }
 

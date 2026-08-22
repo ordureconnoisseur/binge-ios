@@ -83,8 +83,19 @@ final class RatingPrecisionLoader {
                 return 20
             }
             let opts = ui["ratingSystemOptions"] as? [String: Any]
-            if (opts?["type"] as? String) == "DECIMAL" { return 1 }
-            switch opts?["starPrecision"] as? String {
+            // Upper-cased before comparing. Stash stores these
+            // lowercase - this box has starPrecision "tenth" and type
+            // "stars" - so every case below was dead and the default of
+            // 20 was the only reachable answer, while the plugin's
+            // Python hook upper-cases and gets 1. The preview was
+            // computed at the wrong precision on every rated scene, and
+            // since the modal shows the preview whenever anything is
+            // scored, the authoritative rating it had just fetched was
+            // never displayed.
+            if (opts?["type"] as? String)?.uppercased() == "DECIMAL" {
+                return 1
+            }
+            switch (opts?["starPrecision"] as? String)?.uppercased() {
             case "FULL": return 20
             case "HALF": return 10
             case "QUARTER": return 5

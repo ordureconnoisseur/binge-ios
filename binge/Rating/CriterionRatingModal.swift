@@ -315,17 +315,34 @@ struct CriterionRatingModal: View {
             baseURL: baseURL, apiKey: apiKey
         )
         let svc = RatingService(baseURL: baseURL, apiKey: apiKey)
-        async let entityTask: (tags: [RatingTag], rating100: Int?) = {
-            switch target {
-            case .scene(let id):
-                return await svc.fetchSceneTagsAndRating(sceneId: id)
-            case .performer(let id):
-                return await svc.fetchPerformerTagsAndRating(performerId: id)
+        async let entityTask: (tags: [RatingTag], rating100: Int?)? = {
+            do {
+                switch target {
+                case .scene(let id):
+                    return try await svc.fetchSceneTagsAndRating(sceneId: id)
+                case .performer(let id):
+                    return try await svc.fetchPerformerTagsAndRating(
+                        performerId: id
+                    )
+                }
+            } catch {
+                return nil
             }
         }()
         let config = await configTask
         let precision = await precisionTask
-        let entity = await entityTask
+        // The error branch, which until now was unreachable: state was
+        // only ever assigned .ready, so the "Couldn't load" UI could not
+        // appear. That mattered because a failed tag read arrived as an
+        // empty tag list, and the next star tapped wrote that emptiness
+        // back as the scene's whole tag array.
+        guard let entity = await entityTask else {
+            state = .error(
+                "Couldn't read this item's tags, so nothing was changed."
+                    + " Check that Stash is reachable and try again."
+            )
+            return
+        }
         let ratings = parseRatingsFromTags(
             entity.tags, criteria: config.criteria
         )
@@ -408,9 +425,11 @@ struct CriterionRatingModal: View {
             let refreshed: (tags: [RatingTag], rating100: Int?)
             switch target {
             case .scene(let id):
-                refreshed = await svc.fetchSceneTagsAndRating(sceneId: id)
+                refreshed = try? await svc.fetchSceneTagsAndRating(sceneId: id)
             case .performer(let id):
-                refreshed = await svc.fetchPerformerTagsAndRating(performerId: id)
+                refreshed = try? await svc.fetchPerformerTagsAndRating(
+                    performerId: id
+                )
             }
             state = .ready(
                 config: config,
@@ -440,9 +459,11 @@ struct CriterionRatingModal: View {
             let rolled: (tags: [RatingTag], rating100: Int?)
             switch target {
             case .scene(let id):
-                rolled = await svc.fetchSceneTagsAndRating(sceneId: id)
+                rolled = try? await svc.fetchSceneTagsAndRating(sceneId: id)
             case .performer(let id):
-                rolled = await svc.fetchPerformerTagsAndRating(performerId: id)
+                rolled = try? await svc.fetchPerformerTagsAndRating(
+                    performerId: id
+                )
             }
             state = .ready(
                 config: config,

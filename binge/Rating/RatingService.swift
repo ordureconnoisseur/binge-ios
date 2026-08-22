@@ -142,40 +142,56 @@ final class RatingService {
 
     /// Re-read tags + rating100 after a write so callers can
     /// pick up the plugin hook's recomputed value.
-    func fetchSceneTagsAndRating(
-        sceneId: String
-    ) async -> (tags: [RatingTag], rating100: Int?) {
-        let client = StashClient(baseURL: baseURL, apiKey: apiKey)
-        do {
-            let resp: FindSceneTagsAndRatingResponse = try await client.gql(
-                Queries.findSceneTagsAndRating,
-                variables: ["id": sceneId]
-            )
-            let tags = (resp.findScene?.tags ?? []).map {
-                RatingTag(id: $0.id, name: $0.name)
-            }
-            return (tags, resp.findScene?.rating100)
-        } catch {
-            return ([], nil)
+    /// Throws rather than reporting an untagged scene.
+    ///
+    /// Every failure used to collapse to ([], nil) - a network error, a
+    /// non-200, a decode failure, GraphQL errors, and a null findScene
+    /// all became "this scene has no tags". The caller feeds that
+    /// straight into a whole-array tag write, so opening the rating
+    /// sheet while Stash was restarting and tapping one star replaced a
+    /// scene's entire tag list with the single score tag. On a scene
+    /// with seventy-three tags that is seventy-two gone, silently, with
+    /// no way back short of a database restore. The web client fails
+    /// closed here and says why.
+    enum RatingServiceError: Error, LocalizedError {
+        /// Stash answered, but not with the entity we asked for.
+        /// Refusing is the point: an entity we cannot read is one whose
+        /// tag list we must not overwrite.
+        case entityUnreadable
+
+        var errorDescription: String? {
+            "That item could not be read, so its tags were left alone."
         }
     }
 
+    func fetchSceneTagsAndRating(
+        sceneId: String
+    ) async throws -> (tags: [RatingTag], rating100: Int?) {
+        let client = StashClient(baseURL: baseURL, apiKey: apiKey)
+        let resp: FindSceneTagsAndRatingResponse = try await client.gql(
+            Queries.findSceneTagsAndRating,
+            variables: ["id": sceneId]
+        )
+        guard let scene = resp.findScene else {
+            throw RatingServiceError.entityUnreadable
+        }
+        let tags = scene.tags.map { RatingTag(id: $0.id, name: $0.name) }
+        return (tags, scene.rating100)
+    }
+
+    /// Same reasoning as the scene fetch above.
     func fetchPerformerTagsAndRating(
         performerId: String
-    ) async -> (tags: [RatingTag], rating100: Int?) {
+    ) async throws -> (tags: [RatingTag], rating100: Int?) {
         let client = StashClient(baseURL: baseURL, apiKey: apiKey)
-        do {
-            let resp: FindPerformerTagsAndRatingResponse =
-                try await client.gql(
-                    Queries.findPerformerTagsAndRating,
-                    variables: ["id": performerId]
-                )
-            let tags = (resp.findPerformer?.tags ?? []).map {
-                RatingTag(id: $0.id, name: $0.name)
-            }
-            return (tags, resp.findPerformer?.rating100)
-        } catch {
-            return ([], nil)
+        let resp: FindPerformerTagsAndRatingResponse = try await client.gql(
+            Queries.findPerformerTagsAndRating,
+            variables: ["id": performerId]
+        )
+        guard let performer = resp.findPerformer else {
+            throw RatingServiceError.entityUnreadable
         }
+        let tags = performer.tags.map { RatingTag(id: $0.id, name: $0.name) }
+        return (tags, performer.rating100)
     }
 }

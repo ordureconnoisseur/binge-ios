@@ -76,6 +76,9 @@ struct ReelActionStack: View {
     // Web's HEART_HOLD_DURATION_MS.
     /// How far a finger may travel and still count as a tap on the
     /// heart. Anything beyond this is the reel being scrolled.
+    /// Furthest the finger has travelled during the current press.
+    @State private var heartTravel: CGFloat = 0
+
     private static let heartTapSlop: CGFloat = 12
 
     private static let holdDuration: Duration = .milliseconds(1500)
@@ -205,7 +208,22 @@ struct ReelActionStack: View {
         .contentShape(Rectangle())
         .gesture(
             DragGesture(minimumDistance: 0)
-                .onChanged { _ in
+                .onChanged { value in
+                    // Travel is tracked on every frame, not just at the
+                    // end. The unlike below fires from a timer that
+                    // completes while the finger is still down, so the
+                    // check in onEnded - added to stop a scroll counting
+                    // as a tap - never saw it: a thumb resting on the
+                    // heart while scrolling still sent a real
+                    // sceneDecrementO. It is the more destructive of the
+                    // two writes, and it was the unguarded one.
+                    heartTravel = max(
+                        heartTravel,
+                        max(
+                            abs(value.translation.width),
+                            abs(value.translation.height)
+                        )
+                    )
                     // First fingerdown frame starts the hold
                     // timer. onChanged fires many times during a
                     // drag — only react to the first.
@@ -217,10 +235,11 @@ struct ReelActionStack: View {
                             try? await Task.sleep(
                                 for: Self.holdDuration
                             )
-                            if !Task.isCancelled && holding {
-                                didUnlike = true
-                                onUnlike()
-                            }
+                            guard !Task.isCancelled, holding,
+                                heartTravel <= Self.heartTapSlop
+                            else { return }
+                            didUnlike = true
+                            onUnlike()
                         }
                     }
                 }
@@ -237,6 +256,7 @@ struct ReelActionStack: View {
                     let wasUnlike = didUnlike
                     holding = false
                     didUnlike = false
+                    defer { heartTravel = 0 }
                     let moved = max(
                         abs(value.translation.width),
                         abs(value.translation.height)

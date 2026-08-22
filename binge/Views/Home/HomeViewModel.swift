@@ -848,8 +848,18 @@ final class HomeViewModel {
             apiKey: box.apiKey
         )
         let linked = await linkedTask
-        let owned = await ownedTask
+        let ownedMaybe = await ownedTask
         let trending = await trendingTask
+        // No discovery pass when we do not know what the user owns.
+        //
+        // The filter that keeps owned scenes out of discovery is the
+        // only thing standing between the user and an Add button on a
+        // scene they already have - and Add creates a second, fileless
+        // scene carrying a stash_id the library already uses. An unknown
+        // answer is not an empty one, so the surface waits rather than
+        // offering something it cannot vouch for. The web client refuses
+        // the same way, by throwing.
+        guard let owned = ownedMaybe else { return }
         let costar: [StashDBScene]
         if linked.isEmpty {
             costar = []

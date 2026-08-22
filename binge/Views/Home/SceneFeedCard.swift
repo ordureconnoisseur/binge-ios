@@ -103,6 +103,9 @@ struct SceneFeedCard: View {
     /// The pending poster fade, so teardown can cancel it.
     @State private var posterFadeTask: Task<Void, Never>?
 
+    /// Furthest the finger has travelled during the current press.
+    @State private var heartTravel: CGFloat = 0
+
     private static let heartTapSlop: CGFloat = 12
 
     private static let heartHoldDuration: Duration = .milliseconds(1500)
@@ -194,6 +197,7 @@ struct SceneFeedCard: View {
             heartHoldTask?.cancel()
             heartHolding = false
             heartDidUnlike = false
+            heartTravel = 0
         }
         .onChange(of: isActive) { _, active in
             liveIsActive = active
@@ -979,7 +983,19 @@ struct SceneFeedCard: View {
         .contentShape(Rectangle())
         .gesture(
             DragGesture(minimumDistance: 0)
-                .onChanged { _ in
+                .onChanged { value in
+                    // Same reasoning as the reel's heart: the unlike
+                    // fires from a timer that completes while the finger
+                    // is still down, so the travel check in onEnded
+                    // never saw it and a thumb resting here while
+                    // scrolling sent a real sceneDecrementO.
+                    heartTravel = max(
+                        heartTravel,
+                        max(
+                            abs(value.translation.width),
+                            abs(value.translation.height)
+                        )
+                    )
                     if !heartHolding {
                         heartHolding = true
                         heartDidUnlike = false
@@ -988,10 +1004,11 @@ struct SceneFeedCard: View {
                             try? await Task.sleep(
                                 for: Self.heartHoldDuration
                             )
-                            if !Task.isCancelled && heartHolding {
-                                heartDidUnlike = true
-                                onUnlike()
-                            }
+                            guard !Task.isCancelled, heartHolding,
+                                heartTravel <= Self.heartTapSlop
+                            else { return }
+                            heartDidUnlike = true
+                            onUnlike()
                         }
                     }
                 }
@@ -1008,6 +1025,7 @@ struct SceneFeedCard: View {
                     let wasUnlike = heartDidUnlike
                     heartHolding = false
                     heartDidUnlike = false
+                    defer { heartTravel = 0 }
                     let moved = max(
                         abs(value.translation.width),
                         abs(value.translation.height)
