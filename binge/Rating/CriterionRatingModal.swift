@@ -422,7 +422,7 @@ struct CriterionRatingModal: View {
             // The plugin's hook just recomputed rating100 — re-
             // read to pick up its value (don't trust our local
             // preview which uses our precision interpretation).
-            let refreshed: (tags: [RatingTag], rating100: Int?)
+            let refreshed: (tags: [RatingTag], rating100: Int?)?
             switch target {
             case .scene(let id):
                 refreshed = try? await svc.fetchSceneTagsAndRating(sceneId: id)
@@ -431,13 +431,17 @@ struct CriterionRatingModal: View {
                     performerId: id
                 )
             }
+            // A re-read we could not do leaves the list we just wrote
+            // in place rather than blanking it - that list came from a
+            // live read moments ago, so it is the best thing we have.
+            let after = refreshed ?? (tags: updatedTags, rating100: nil)
             state = .ready(
                 config: config,
-                tags: refreshed.tags,
+                tags: after.tags,
                 ratings: parseRatingsFromTags(
-                    refreshed.tags, criteria: config.criteria
+                    after.tags, criteria: config.criteria
                 ),
-                rating100: refreshed.rating100,
+                rating100: after.rating100,
                 precision: precision
             )
             // Notify observers (card chrome, profile header)
@@ -449,14 +453,14 @@ struct CriterionRatingModal: View {
                 userInfo: [
                     "domain": target.domain.rawValue,
                     "id": target.id,
-                    "rating100": refreshed.rating100 as Any,
+                    "rating100": after.rating100 as Any,
                 ]
             )
         } catch {
             // Roll back optimistic state — re-read from server
             // to be safe (some Stash plugins normalize tags on
             // write, so server may differ from filtered-local).
-            let rolled: (tags: [RatingTag], rating100: Int?)
+            let rolled: (tags: [RatingTag], rating100: Int?)?
             switch target {
             case .scene(let id):
                 rolled = try? await svc.fetchSceneTagsAndRating(sceneId: id)
@@ -465,13 +469,17 @@ struct CriterionRatingModal: View {
                     performerId: id
                 )
             }
+            // A failed write followed by a failed re-read must NOT
+            // leave an empty tag list sitting in state: the next star
+            // tapped would write that emptiness back. Keep what we had.
+            let back = rolled ?? (tags: tags, rating100: nil)
             state = .ready(
                 config: config,
-                tags: rolled.tags,
+                tags: back.tags,
                 ratings: parseRatingsFromTags(
-                    rolled.tags, criteria: config.criteria
+                    back.tags, criteria: config.criteria
                 ),
-                rating100: rolled.rating100,
+                rating100: back.rating100,
                 precision: precision
             )
             print("[binge] rating apply failed: \(error)")
