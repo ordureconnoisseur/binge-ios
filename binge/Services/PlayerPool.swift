@@ -131,7 +131,7 @@ final class PlayerPool {
         print(
             "[PlayerPool] MISS scene=\(scene.id) "
             + "create=\(ms)ms pool=\(entries.count)/\(capacity) "
-            + "url=\(url.absoluteString.prefix(80))"
+            + "url=\(BingeScene.redacted(url))"
         )
         // Surface buffer-ready timing too — the actual "video
         // appears" moment depends on the asset's first frame

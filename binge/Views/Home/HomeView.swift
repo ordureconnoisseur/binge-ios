@@ -24,6 +24,13 @@ struct HomeView: View {
     private var stashApiKey: String { KeychainStore.shared.stashApiKey }
     @AppStorage("binge.includeStashDB") private var includeStashDB: Bool = true
     @AppStorage("binge.includeReddit") private var includeReddit: Bool = true
+    // Was missing from the .task key, so turning PornHub off did not
+    // re-run the fetch at all.
+    @AppStorage("binge.includePornhub") private var includePornhub: Bool = true
+    /// The settings the live view model was last built or refreshed
+    /// for. .task(id:) cannot tell "the id changed" from "the view came
+    /// back", so this does.
+    @State private var lastTaskKey: String = ""
     /// Recent window (days). Mirrored here only so a change in Settings
     /// re-runs the fetch task below; the VM reads the value itself.
     @AppStorage("binge.lookbackDays") private var lookbackDays: Int = 30
@@ -207,12 +214,21 @@ struct HomeView: View {
             discovery: vm.discovery,
             repostCutoff: vm.repostCutoff
         )
-        // Also when the current id no longer names anything, which is
-        // the case a first-load-only prime could not see.
-        let stillThere =
-            activeFeedEntryId.map { id in entries.contains { $0.id == id } }
-            ?? false
-        guard !stillThere else { return }
+        // .scrollPosition(id:) is a two-way binding: writing it
+        // SCROLLS. So this must only ever write when there is nothing
+        // sensible on screen to keep.
+        //
+        // It used to re-prime whenever the active id had disappeared
+        // from the list, and ids genuinely disappear a second or two
+        // after first paint: fetchMatchedCasts lands, packGroupKey
+        // starts preferring a StashDB match over an implied source, and
+        // loose scenes get absorbed into newly formed packs. The user
+        // would begin scrolling and get yanked back to the top.
+        // So: prime once, when there is nothing to keep. If the entry
+        // has genuinely vanished, leaving the binding alone keeps the
+        // reader where they were, which is always better than moving
+        // them somewhere they did not ask to go.
+        guard activeFeedEntryId == nil else { return }
         activeFeedEntryId = entries.first?.id
     }
 
@@ -595,18 +611,29 @@ struct HomeView: View {
             id: "\(includeStashDB):\(includeReddit):\(lookbackDays):"
                 + "\(stashUrl):\(stashApiKey.isEmpty)"
         ) {
+            let key =
+                "\(includeStashDB):\(includeReddit):\(includePornhub):"
+                + "\(lookbackDays):\(stashUrl):\(stashApiKey.isEmpty)"
             if vm == nil || vm?.baseURL != stashUrl {
                 vm = HomeViewModel(
                     baseURL: stashUrl,
                     apiKey: stashApiKey
                 )
+                lastTaskKey = key
                 await vm?.load()
-            } else {
-                // VM already up — the recent-window (lookbackDays)
-                // setting changed mid-session. The VM reads it fresh
-                // from UserDefaults at fetch time, so refresh() picks
-                // up the new value and re-runs the feed/pack/discovery
-                // assembly with the new window.
+            } else if key != lastTaskKey {
+                // Only when a setting ACTUALLY changed.
+                //
+                // .task(id:) restarts on every re-appearance, not only
+                // on an id change - and this branch called refresh(),
+                // which rm -rf's the whole StashDB cache directory. So
+                // closing a story bubble, the scene player, a performer
+                // profile, or popping back from a drilled reel each
+                // wiped the cache and forced a cold reload: two ~13 MB
+                // feed queries plus a whole-library owned-ids scan plus
+                // fresh stashdb.org round trips, on a phone, for
+                // dismissing a sheet.
+                lastTaskKey = key
                 await vm?.refresh()
             }
             // Prime activeFeedEntryId on first load. SwiftUI's

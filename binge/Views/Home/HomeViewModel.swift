@@ -606,7 +606,29 @@ final class HomeViewModel {
                 unidentifiedCount = await countUnidentified(
                     client: client, since: sinceIso
                 )
+                // Re-taken, because that was an await. Everything below
+                // overwrites the feed unconditionally, so a stale run
+                // resuming here blanked a newer one that had already
+                // painted - and countUnidentified swallows
+                // CancellationError to return 0, so even a cancelled
+                // task ran on to do it. The trigger is ordinary: narrow
+                // the lookback to a window with nothing in it, widen it
+                // again, and the empty answer lands last.
+                guard gen == fetchGeneration else { return }
             }
+            // Cleared here, with the story tails. Leaving it meant
+            // turning "Discover from StashDB" off kept the previous
+            // run's discovery cards in the feed - fetchDiscovery simply
+            // is not called, so nothing overwrote them - and a StashDB
+            // outage left stale ones on screen indefinitely, because
+            // both early-returns happen before the assignment. The
+            // comment on includeDiscovery claims this already happened.
+            discovery = []
+            // Optimistic o-counter values belong to the rows they were
+            // taken from. Kept across a fetch, a stale override masked
+            // the fresh o_counter and then became the base the next
+            // increment counted from.
+            oCounterOverrides = [:]
             // Stories stay performer-only. A story is one performer's
             // strip, so a scene with nobody linked has no strip to
             // belong to however well StashDB knows it.
