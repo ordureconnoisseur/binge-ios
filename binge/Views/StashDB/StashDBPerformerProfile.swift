@@ -591,8 +591,8 @@ final class StashDBPerformerProfileViewModel {
     /// because it refuses to run a second time once detail is set.
     func retryOwnershipIfUnknown() async {
         if ownershipKnown || loading { return }
-        guard let owned = await StashDBService.shared.cachedOwnedStashIds()
-        else { return }
+        let svc = StashDBService(baseURL: baseURL, apiKey: apiKey)
+        guard let owned = await svc.cachedOwnedStashIds() else { return }
         ownedSceneIds = owned
         ownershipKnown = true
     }
