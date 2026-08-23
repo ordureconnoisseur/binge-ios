@@ -12,6 +12,7 @@ import Foundation
 
 enum StashClientError: Error, LocalizedError {
     case notConfigured
+    case refusedInDemoMode
     case badURL(String)
     case badHTTPStatus(Int)
     case graphqlErrors([String])
@@ -23,6 +24,8 @@ enum StashClientError: Error, LocalizedError {
         switch self {
         case .notConfigured:
             return "Stash URL / API key not set."
+        case .refusedInDemoMode:
+            return "Demo mode is on, so nothing was written to Stash."
         case .badURL(let s):
             return "Invalid URL: \(s)"
         case .badHTTPStatus(let code):
@@ -77,10 +80,48 @@ actor StashClient {
         self.apiKey = apiKey
     }
 
+    /// Whether this document writes.
+    ///
+    /// A GraphQL operation is a query unless it says otherwise, so the
+    /// test is for the mutation keyword at the start of the document -
+    /// not a list of operation names, which would go stale the moment
+    /// someone adds a mutation and forgets to register it. Leading
+    /// whitespace and comment lines are skipped, since these documents
+    /// are multi-line string literals.
+    static func isMutation(_ query: String) -> Bool {
+        for line in query.components(separatedBy: .newlines) {
+            let t = line.trimmingCharacters(in: .whitespaces)
+            if t.isEmpty || t.hasPrefix("#") { continue }
+            return t.hasPrefix("mutation")
+        }
+        return false
+    }
+
     func gql<T: Decodable>(
         _ query: String,
         variables: [String: Any] = [:]
     ) async throws -> T {
+        // Demo mode does not write to the real library.
+        //
+        // Settings says of demo mode and the tour: "Both are
+        // display-only; nothing is uploaded or changed." That was
+        // false. The tour script emits reelLike events, which reach
+        // sceneIncrementO against the configured Stash with the real
+        // API key, and demo scene ids are not numeric so the failure
+        // was not even clean. Everything else on the screen behind the
+        // demo was live too: the o-counter, favourites, both rating
+        // modals (which REPLACE the whole tag array), and Scribe, whose
+        // scribeTagCreate creates real tags BY NAME - so unlike the
+        // id-keyed mutations it was not saved by demo ids being
+        // non-numeric.
+        //
+        // Guarding here rather than at the twelve call sites: this is
+        // the single door every mutation goes through, so it cannot be
+        // missed by the next handler someone adds. Reads are untouched -
+        // the demo builds its own data and never reaches this.
+        if DemoMode.isOn, Self.isMutation(query) {
+            throw StashClientError.refusedInDemoMode
+        }
         guard let url = URL(string: "\(baseURL)/graphql") else {
             throw StashClientError.badURL(baseURL)
         }
