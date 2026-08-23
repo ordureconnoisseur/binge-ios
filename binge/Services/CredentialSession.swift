@@ -27,7 +27,23 @@ final class SameHostRedirectDelegate: NSObject, URLSessionTaskDelegate {
         newRequest request: URLRequest,
         completionHandler: @escaping (URLRequest?) -> Void
     ) {
-        let from = task.originalRequest?.url
+        // Only requests that actually carry a credential are pinned.
+        //
+        // This session also loads off-site imagery - a redgifs or imgur
+        // thumbnail, a StashDB cover - which AuthImageView deliberately
+        // sends with NO ApiKey header. Those hosts redirect cross-host
+        // as a matter of course (imgur.com to i.imgur.com, a CDN hop),
+        // and refusing the hop turned every one of them into a broken
+        // image. There is nothing to protect on a request that carries
+        // nothing.
+        let original = task.originalRequest
+        let carriesKey =
+            original?.value(forHTTPHeaderField: "ApiKey")?.isEmpty == false
+        guard carriesKey else {
+            completionHandler(request)
+            return
+        }
+        let from = original?.url
         let sameHost =
             from?.host?.lowercased() == request.url?.host?.lowercased()
         let sameScheme =
@@ -51,7 +67,16 @@ enum CredentialSession {
     /// Shared session for credential-bearing requests. One instance, so
     /// connection reuse still applies.
     static let shared: URLSession = {
-        let cfg = URLSessionConfiguration.ephemeral
+        // .default, not .ephemeral.
+        //
+        // Ephemeral has no persistent URL cache, and routing the image
+        // loader through this session therefore meant every cover,
+        // avatar and thumbnail was re-downloaded on every launch - over
+        // Tailscale and a Mullvad exit - where URLSession.shared had
+        // been caching them. That is a large, silent cost on a media
+        // app, and it was not the point of the change: the point was
+        // the redirect delegate.
+        let cfg = URLSessionConfiguration.default
         cfg.timeoutIntervalForRequest = 15
         cfg.timeoutIntervalForResource = 30
         return URLSession(

@@ -306,10 +306,38 @@ enum BingeServerService {
         if host == "localhost" || host == "127.0.0.1" || host == "::1" {
             return true
         }
-        if host.hasSuffix(".local") || host.hasSuffix(".internal")
-            || host.hasSuffix(".ts.net")
-        {
+        if host.hasSuffix(".local") || host.hasSuffix(".internal") {
             return true
+        }
+        // A tailnet name is trusted only when it is the SAME tailnet as
+        // the configured Stash.
+        //
+        // This clause used to include ".ts.net" and sits above every
+        // other rule, so the whole public-host path below - the shared
+        // suffix exclusion, the registrable-domain comparison, the
+        // confirmed-origins list - was unreachable for a tailnet name,
+        // on http as well as https. The commit that added those rules
+        // claimed ts.net was scoped by them. It was not: "ts.net" is in
+        // sharedSuffixes and could only ever fire for the Stash side.
+        //
+        // Funnel makes these publicly resolvable and free to obtain, so
+        // a seeded https://binge.<someone-elses-tailnet>.ts.net was
+        // accepted and then handed the Stash API key on every poll.
+        //
+        // Same tailnet is everything after the first label.
+        if host.hasSuffix(".ts.net") {
+            let tailnetOf: (String) -> String = { h in
+                guard let dot = h.firstIndex(of: ".") else { return h }
+                return String(h[h.index(after: dot)...])
+            }
+            let stash = stashHost()
+            if stash.hasSuffix(".ts.net"),
+                tailnetOf(host) == tailnetOf(stash)
+            {
+                return true
+            }
+            // Otherwise fall through to https + confirmed, like any
+            // other public host.
         }
         // IPv6 literal. This has to be settled BEFORE the bare-hostname
         // rule below: an IPv6 address contains no dots, so "no dot means

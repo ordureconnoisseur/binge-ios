@@ -122,7 +122,10 @@ func computeRating100(
     }
     if den == 0 { return nil }
     let final05 = num / den
-    let safePrecision = precision > 0 ? precision : 20
+    // max(1, ...), matching the plugin's Python and the web client.
+    // Falling back to 20 for a non-positive precision is the case the
+    // web suite pins at 70 and this returned 80 for.
+    let safePrecision = max(1, precision)
     // Half-to-even, twice, exactly as the plugin's Python does it. A bare
     // `.rounded()` is half-AWAY-from-zero, which disagrees on every exact
     // half: two criteria scored 2 and 3 average to 2.5, and the modal

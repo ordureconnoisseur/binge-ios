@@ -997,6 +997,14 @@ struct SceneFeedCard: View {
                         )
                     )
                     if !heartHolding {
+                        // Reset at the START of a press, not only at the
+                        // end. onEnded is exactly what SwiftUI does NOT
+                        // deliver when the scroll pan wins arbitration -
+                        // which is the event this guard exists for - so
+                        // clearing it only there left the value latched
+                        // high and silently suppressed the next
+                        // legitimate hold-to-unlike.
+                        heartTravel = 0
                         heartHolding = true
                         heartDidUnlike = false
                         heartHoldTask?.cancel()

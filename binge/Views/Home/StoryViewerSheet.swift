@@ -100,8 +100,8 @@ struct StoryViewerSheet: View {
         return saveStates[id] ?? .idle
     }
 
-    private func setSaveState(_ state: SaveState) {
-        guard let id = currentScene?.id else { return }
+    private func setSaveState(_ state: SaveState, for id: String?) {
+        guard let id else { return }
         saveStates[id] = state
     }
     @State private var tour = TourDirector.shared
