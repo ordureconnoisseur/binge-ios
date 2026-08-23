@@ -54,7 +54,8 @@ struct StashDBScene: Decodable, Identifiable, Hashable {
         let images = (try? c.decode([ImageURL].self, forKey: .images)) ?? []
         coverUrl = images.first?.url
         let wrappedPerformers =
-            (try? c.decode([PerformerWrap].self, forKey: .performers)) ?? []
+            (try? c.decode([LenientElement<PerformerWrap>].self,
+                forKey: .performers))?.compactMap(\.value) ?? []
         performers = wrappedPerformers.compactMap { $0.performer }
     }
 
@@ -64,6 +65,23 @@ struct StashDBScene: Decodable, Identifiable, Hashable {
 
     private struct PerformerWrap: Decodable {
         let performer: StashDBPerformer?
+    }
+}
+
+/// Decodes one element, or nothing, without failing its whole array.
+///
+/// Swift's array decode is all-or-nothing: one malformed element makes
+/// `try? c.decode([T].self, ...)` return nil and the `?? []` fallback
+/// then zeroes the entire collection. For a scene's cast that means a
+/// single orphaned entry costs every performer on the scene, silently.
+/// The web plugin does not have this problem because it filters per
+/// element - `.filter((x) => x && x.performer)` - and it carries a
+/// comment recording that `performers: [null]` is a shape StashDB has
+/// actually been observed to return.
+struct LenientElement<T: Decodable>: Decodable {
+    let value: T?
+    init(from decoder: Decoder) throws {
+        value = try? T(from: decoder)
     }
 }
 
@@ -189,7 +207,7 @@ struct StashDBPerformerDetail: Decodable, Identifiable, Hashable {
         images = imgs.map(\.url)
         let urlPayloads =
             (try? c.decode([URLPayload].self, forKey: .urls)) ?? []
-        urls = urlPayloads.map { URLEntry(url: $0.url, site: $0.site.name) }
+        urls = urlPayloads.map { URLEntry(url: $0.url, site: $0.site?.name ?? "") }
         let tats =
             (try? c.decode([BodyMarkPayload].self, forKey: .tattoos)) ?? []
         tattoos = tats.map {
@@ -220,7 +238,19 @@ struct StashDBPerformerDetail: Decodable, Identifiable, Hashable {
     private struct ImageURL: Decodable { let url: String }
     private struct URLPayload: Decodable {
         let url: String
-        let site: Site
+        // Optional, matching the web plugin at both mirrored call
+        // sites. StashDB declares URL.site non-null, but this codebase
+        // has already established that StashDB violates its own
+        // non-null contract - PerformerAppearance.performer is
+        // Performer! and comes back null for appearances orphaned by
+        // an edit, which is the bug SceneCastPayload was fixed for.
+        //
+        // It matters more than it looks: `urls` is decoded with a
+        // `try?` that spans the WHOLE array, so one site-less entry
+        // dropped every external link on the profile, and left
+        // sceneCreate sending no urls at all - silently, and for as
+        // long as that record stayed that way.
+        let site: Site?
         struct Site: Decodable { let name: String }
     }
     private struct BodyMarkPayload: Decodable {
@@ -271,12 +301,13 @@ struct StashDBSceneDetail: Decodable, Identifiable, Hashable {
         let urlPayloads =
             (try? c.decode([URLPayload].self, forKey: .urls)) ?? []
         urls = urlPayloads.map {
-            URLEntry(url: $0.url, site: $0.site.name)
+            URLEntry(url: $0.url, site: $0.site?.name ?? "")
         }
         let studio = try? c.decode(Studio.self, forKey: .studio)
         studioStashId = studio?.id
         let perfWraps =
-            (try? c.decode([PerformerWrap].self, forKey: .performers)) ?? []
+            (try? c.decode([LenientElement<PerformerWrap>].self,
+                forKey: .performers))?.compactMap(\.value) ?? []
         // performer can be null on a StashDB scene (deleted / merged
         // upstream); decode it optional + compactMap so one null entry
         // doesn't throw and drop EVERY performer for the scene.
@@ -287,7 +318,19 @@ struct StashDBSceneDetail: Decodable, Identifiable, Hashable {
 
     private struct URLPayload: Decodable {
         let url: String
-        let site: Site
+        // Optional, matching the web plugin at both mirrored call
+        // sites. StashDB declares URL.site non-null, but this codebase
+        // has already established that StashDB violates its own
+        // non-null contract - PerformerAppearance.performer is
+        // Performer! and comes back null for appearances orphaned by
+        // an edit, which is the bug SceneCastPayload was fixed for.
+        //
+        // It matters more than it looks: `urls` is decoded with a
+        // `try?` that spans the WHOLE array, so one site-less entry
+        // dropped every external link on the profile, and left
+        // sceneCreate sending no urls at all - silently, and for as
+        // long as that record stayed that way.
+        let site: Site?
         struct Site: Decodable { let name: String }
     }
     private struct Studio: Decodable {

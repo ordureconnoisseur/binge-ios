@@ -491,7 +491,18 @@ final class StashDBService {
                     "[binge] stashdb gql errors: "
                         + errs.map(\.message).joined(separator: "; ")
                 )
-                return nil
+                // But keep the data when there is any, as the web
+                // plugin does.
+                //
+                // GraphQL partial success is ordinary, and the batched
+                // cast document asks for twenty scenes in one request
+                // under aliases. Discarding the whole response because
+                // one alias errored threw away the nineteen good
+                // answers beside it - and nothing was cached, so the
+                // same request was reissued and rediscarded on every
+                // feed load. One awkward stash_id in the library was
+                // enough. Per-alias nulls are handled downstream.
+                if env.data == nil { return nil }
             }
             return env.data
         } catch {
