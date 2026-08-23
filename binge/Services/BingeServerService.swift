@@ -271,6 +271,22 @@ enum BingeServerService {
         guard !list.contains(o) else { return }
         list.append(o)
         UserDefaults.standard.set(list, forKey: confirmedOriginsKey)
+        bumpTrustRevision()
+    }
+
+    /// Key a view or a .task on this to re-run when the trust decision
+    /// changes.
+    ///
+    /// Settings used to "nudge" its readers with
+    /// `bingeServerUrl = bingeServerUrl`, which assigns an identical
+    /// string - not a change, so nothing keyed on it re-ran and the
+    /// banner stayed up after a successful confirmation. A counter
+    /// always differs from its previous value.
+    static let trustRevisionKey = "binge.daemonTrustRevision"
+
+    static func bumpTrustRevision() {
+        let d = UserDefaults.standard
+        d.set(d.integer(forKey: trustRevisionKey) + 1, forKey: trustRevisionKey)
     }
 
     static func originOf(_ raw: String) -> String? {
@@ -339,16 +355,33 @@ enum BingeServerService {
             // Otherwise fall through to https + confirmed, like any
             // other public host.
         }
+        // Whether the user deliberately vouched for this exact origin.
+        //
+        // This is computed HERE, not at the bottom, because it used to
+        // be the function's last line and three branches returned
+        // before reaching it: any public IPv6 literal, any public IPv4
+        // literal, and any non-https host. So "Use this address" wrote
+        // the origin down and changed nothing - the banner stayed, the
+        // key still was not sent, and pressing it again did the same.
+        // Someone running the daemon on a VPS by IP could never get
+        // past it.
+        //
+        // It never excuses cleartext. A confirmation says "this address
+        // is mine", not "sending my Stash key unencrypted is fine".
+        let vouched =
+            scheme == "https"
+            && originOf(raw).map { confirmedDaemonOrigins().contains($0) }
+                == true
         // IPv6 literal. This has to be settled BEFORE the bare-hostname
         // rule below: an IPv6 address contains no dots, so "no dot means
         // LAN name" would wave a public address like 2001:4860:4860::8888
         // straight through and post the credentials to it in cleartext.
-        if host.contains(":") { return isPrivateIPv6(host) }
+        if host.contains(":") { return isPrivateIPv6(host) || vouched }
         // A host that is all digits is an IPv4 address written as one
         // number - getaddrinfo accepts 134744072 as 8.8.8.8 - and it has
         // no dot, so the bare-hostname rule below would call it a LAN
         // name.
-        if !host.isEmpty, host.allSatisfy({ $0.isNumber }) { return false }
+        if !host.isEmpty, host.allSatisfy({ $0.isNumber }) { return vouched }
         // Bare hostname (no dot) is a LAN/tailnet machine name, not public.
         if !host.contains(".") { return true }
         // RFC1918 private + Tailscale CGNAT (100.64/10) IPv4 literals.
@@ -377,9 +410,9 @@ enum BingeServerService {
                 if a == 172 && (16...31).contains(b) { return true }
                 if a == 192 && b == 168 { return true }
                 if a == 100 && (64...127).contains(b) { return true }  // CGNAT
-                return false
+                return vouched
             }
-            if nums.count == 4 { return false }
+            if nums.count == 4 { return vouched }
         }
         // A public hostname. Cleartext to one is never acceptable.
         if scheme != "https" { return false }
@@ -392,8 +425,7 @@ enum BingeServerService {
         // Typing it into Settings records it, so this costs no setup
         // step. It is the check for an address that appeared without
         // anyone choosing it.
-        guard let o = originOf(raw) else { return false }
-        return confirmedDaemonOrigins().contains(o)
+        return vouched
     }
 
     // MARK: - GET endpoints
