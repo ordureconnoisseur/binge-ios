@@ -518,6 +518,29 @@ final class ScribeAPI {
                             + "tags\" in Stash Scribe settings."
                     )
                 }
+                // Only when the plugin that OWNS these tags is
+                // actually installed.
+                //
+                // createTag makes a root-level tag by name with no
+                // parent, which is exactly what RatingService's policy
+                // comment forbids: the plugin's own creation path is
+                // the only thing that puts a score tag under the
+                // Advanced Rating hierarchy, and a tag created outside
+                // it is adopted as an orphan forever. Worse, the
+                // criteria list falls back to the DEFAULTS when the
+                // plugin is absent, so on a Stash with Scribe and no
+                // rating plugin this littered the tag tree with score
+                // tags nothing would ever read. And autoCreate defaults
+                // to true whenever its key is missing or the config
+                // fetch failed, so the guard above was usually open.
+                guard PluginContext.shared.hasAdvancedRating else {
+                    throw ScribeError(
+                        "Tag \"\(tagName)\" doesn't exist, and the "
+                            + "Advanced Rating plugin isn't installed - "
+                            + "so binge won't create score tags that "
+                            + "nothing would read."
+                    )
+                }
                 tagId = try await createTag(name: tagName)
             }
             if let id = tagId, !newTagIds.contains(id) {

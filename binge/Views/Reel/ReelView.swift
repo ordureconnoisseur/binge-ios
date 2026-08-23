@@ -496,6 +496,13 @@ struct ReelView: View {
                 "perPage": perPage,
                 "sort": sort,
                 "direction": direction,
+                // The saved filter's text search. It was decoded and
+                // then never sent, so a filter built around a search
+                // term played the scenes it was written to exclude -
+                // Stash's own UI returns nothing for a filter this
+                // reel answered with 33 scenes. findScenesExplore
+                // already passed q; this one did not.
+                "q": sf.findFilter?.q ?? "",
             ]
             // `sceneFilter` is a GraphQL nullable input — only
             // include it when the saved filter actually carries

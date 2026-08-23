@@ -512,7 +512,8 @@ enum Queries {
           $perPage: Int!,
           $sort: String!,
           $direction: SortDirectionEnum!,
-          $sceneFilter: SceneFilterType
+          $sceneFilter: SceneFilterType,
+          $q: String
         ) {
           findScenes(
             scene_filter: $sceneFilter,
@@ -520,7 +521,8 @@ enum Queries {
               page: $page,
               per_page: $perPage,
               sort: $sort,
-              direction: $direction
+              direction: $direction,
+              q: $q
             }
           ) {
             count
