@@ -405,11 +405,18 @@ final class PerformerProfileViewModel {
         // Add creates a second, fileless row carrying a stash_id the
         // library already uses, and Stash does not enforce uniqueness
         // on that.
-        if let owned = ownedMaybe {
-            stashDBScenes = raw.filter { !owned.contains($0.id) }
-        } else {
+        guard let owned = ownedMaybe else {
+            // Show nothing, but do NOT record this as loaded. Setting
+            // the flag here made an unknown answer indistinguishable
+            // from "this performer has no unowned StashDB scenes",
+            // permanently: loadStashDBScenes early-returns on the flag,
+            // so one restart while the first profile opened emptied the
+            // section for the life of the sheet, discarding a StashDB
+            // fetch that had already succeeded.
             stashDBScenes = []
+            return
         }
+        stashDBScenes = raw.filter { !owned.contains($0.id) }
         stashDBLoaded = true
     }
 

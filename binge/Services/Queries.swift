@@ -111,13 +111,27 @@ enum Mutations {
     /// PerformerCreateInput). v0.2: we hit StashDB directly for
     /// detail rendering and only use this for the
     /// followStashDBPerformer flow.
+    /// The stash_id goes in `query`, not `performer_id`.
+    ///
+    /// performer_id is typed ID and this declares String!, so the
+    /// document failed VALIDATION - Stash answered 422 and the scrape
+    /// never ran. FollowService only prints the error, so every
+    /// followed performer was created from the minimal fallback: name,
+    /// image and the stash_ids link, with no gender, birthdate,
+    /// country, measurements or aliases. Missing gender in particular
+    /// means AllowedGendersStore has nothing to classify them by.
+    ///
+    /// Declaring it ID! is not the fix: performer_id is a LOCAL Stash
+    /// performer id, so a StashDB UUID reaches the resolver and dies in
+    /// strconv.Atoi. `query` accepts a stash_id and Stash resolves a
+    /// bare UUID there as a direct lookup - verified against a live box.
     static let scrapeStashBoxPerformer = """
         query ScrapeStashBoxPerformer(
             $stash_box_index: Int!, $stash_id: String!
         ) {
           scrapeSinglePerformer(
             source: { stash_box_index: $stash_box_index },
-            input: { performer_id: $stash_id }
+            input: { query: $stash_id }
           ) {
             name disambiguation gender url twitter instagram
             birthdate ethnicity country eye_color hair_color

@@ -402,13 +402,34 @@ struct BingeScene: Decodable, Identifiable, Hashable {
     /// noise outweighed the diagnostic value).
     private func logged(_ url: URL?) -> URL? {
         if let url {
+            // Path and query KEYS only. Stash appends ?apikey=<JWT> to
+            // paths.stream and to every sceneStreams url - it is not
+            // something the client opts into - so printing
+            // absoluteString wrote the user's full-access Stash token
+            // to the unified log once per scene the reel played, plus
+            // once per feed video and story. That lands in Console.app
+            // for anyone with the device attached, and in any
+            // sysdiagnose. AuthImageView already redacts for exactly
+            // this reason; this printed on the SUCCESS path, so it fired
+            // far more often than the one that was guarded.
             print(
                 "[binge] streamURL[\(id)] "
                     + "codec=\(files.first?.videoCodec ?? "?") "
-                    + "picked=\(url.absoluteString)"
+                    + "picked=\(Self.redacted(url))"
             )
         }
         return url
+    }
+
+    /// A stream URL safe to print: origin, path, and the NAMES of any
+    /// query parameters, never their values.
+    static func redacted(_ url: URL) -> String {
+        let comps = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        let keys = (comps?.queryItems ?? []).map(\.name).joined(separator: ",")
+        let origin = [comps?.host, comps?.port.map(String.init)]
+            .compactMap { $0 }
+            .joined(separator: ":")
+        return origin + (comps?.path ?? "") + (keys.isEmpty ? "" : "?[\(keys)]")
     }
 
     // Screenshot — used by SceneSlideView as a poster image behind

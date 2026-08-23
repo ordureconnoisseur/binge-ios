@@ -105,6 +105,9 @@ struct StashDBPerformerProfile: View {
                 )
             }
             await vm?.load()
+            // load() refuses to run twice, so an ownership answer that
+            // failed the first time has no other way back.
+            await vm?.retryOwnershipIfUnknown()
         }
         // Followed → swap this sheet for the regular library
         // profile (same fullScreenCover lane, different content).
@@ -535,6 +538,16 @@ final class StashDBPerformerProfileViewModel {
     /// stash_ids the user already has imported locally. Used by
     /// the "in library" stat + per-tile badge.
     var ownedSceneIds: Set<String> = []
+    /// Whether ownedSceneIds is an ANSWER rather than a default.
+    ///
+    /// Empty means two different things - "you own none of these" and
+    /// "nobody could tell me" - and the difference decides whether a
+    /// scene shows an Add affordance and what the "in library" stat
+    /// claims. Guarding the assignment with `if let` protected a
+    /// previous value that does not exist on a first load: the set
+    /// starts empty, load() runs exactly once, so an unknown answer
+    /// latched "you own none of these" for the life of the profile.
+    var ownershipKnown = false
     var loading: Bool = false
     var loadingScenes: Bool = false
     var error: String?
@@ -570,6 +583,20 @@ final class StashDBPerformerProfileViewModel {
         self.apiKey = apiKey
     }
 
+    /// Re-ask only the ownership question.
+    ///
+    /// cachedOwnedStashIds returns nil on a cold cache plus a failed
+    /// sweep, which is the transient case - Stash restarting while the
+    /// first profile of the session opens. load() cannot retry it,
+    /// because it refuses to run a second time once detail is set.
+    func retryOwnershipIfUnknown() async {
+        if ownershipKnown || loading { return }
+        guard let owned = await StashDBService.shared.cachedOwnedStashIds()
+        else { return }
+        ownedSceneIds = owned
+        ownershipKnown = true
+    }
+
     func load() async {
         if loading || detail != nil { return }
         loading = true
@@ -594,12 +621,10 @@ final class StashDBPerformerProfileViewModel {
         let (d, raw, owned) = await (detailTask, scenesTask, ownedTask)
         detail = d
         scenes = raw
-        // An unknown ownership answer keeps whatever was already known
-        // rather than claiming the user owns none of these - the "in
-        // library" stat and the Add affordance both read this, and Add
-        // creates a second row carrying a stash_id the library already
-        // uses.
-        if let owned { ownedSceneIds = owned }
+        if let owned {
+            ownedSceneIds = owned
+            ownershipKnown = true
+        }
         if d == nil {
             error = "Couldn't load profile"
         }

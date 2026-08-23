@@ -412,6 +412,27 @@ final class StashDBService {
     /// header. Returns nil on any HTTP / decode / GraphQL error
     /// (the discovery feed degrades silently — no card shown
     /// rather than a hard surface error).
+    /// One id as a GraphQL string literal, escaped per the spec.
+    static func gqlString(_ raw: String) -> String {
+        var out = "\""
+        for ch in raw.unicodeScalars {
+            switch ch {
+            case "\"": out += "\\\""
+            case "\\": out += "\\\\"
+            case "\n": out += "\\n"
+            case "\r": out += "\\r"
+            case "\t": out += "\\t"
+            default:
+                if ch.value < 0x20 {
+                    out += String(format: "\\u%04x", ch.value)
+                } else {
+                    out.unicodeScalars.append(ch)
+                }
+            }
+        }
+        return out + "\""
+    }
+
     private func stashDBPost(
         _ query: String,
         variables: [String: Any],
@@ -578,8 +599,17 @@ final class StashDBService {
     ) async -> [String: [MatchedPerformer]] {
         let aliases = ids.enumerated()
             .map { index, id in
+                // The id is INTERPOLATED INTO DOCUMENT TEXT, so it has
+                // to be escaped. Stash does not constrain stash_id to a
+                // UUID - it is whatever a user or scraper wrote - and an
+                // id carrying a quote either restructured this query
+                // (adding top-level aliases to a request that carries
+                // the StashDB API key) or failed to parse, which
+                // silently cost all 20 scenes in the chunk their cast.
+                // isPlausibleStashID upstream is a filter, not an
+                // escape; this is the escape.
                 """
-                  s\(index): findScene(id: "\(id)") {
+                  s\(index): findScene(id: \(Self.gqlString(id))) {
                     performers { performer { id name gender images { url } } }
                   }
                 """
