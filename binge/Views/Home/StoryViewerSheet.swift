@@ -772,10 +772,17 @@ struct StoryViewerSheet: View {
             ),
             let performerId = currentStory?.performer.id
         else {
-            setSaveState(.failed("Not saveable"))
+            setSaveState(.failed("Not saveable"), for: currentScene?.id)
             return
         }
-        setSaveState(.saving)
+        // Captured BEFORE the await. setSaveState used to resolve
+        // currentScene at call time, and the viewer auto-advances on a
+        // timer - so a save slower than the remaining slide time wrote
+        // "saved" against whichever post was on screen when the daemon
+        // replied. The post actually saved still offered to save again,
+        // which is the duplicate download this keying was added to stop.
+        let savingSceneID = currentScene?.id
+        setSaveState(.saving, for: savingSceneID)
         let req = BingeServerService.SaveToStashRequest(
             performerStashId: performerId,
             source: source,
@@ -790,9 +797,9 @@ struct StoryViewerSheet: View {
         let result = await BingeServerService.saveToStash(req)
         switch result {
         case .ok:
-            setSaveState(.saved)
+            setSaveState(.saved, for: savingSceneID)
         case .failure(let msg):
-            setSaveState(.failed(msg))
+            setSaveState(.failed(msg), for: savingSceneID)
         }
     }
 
