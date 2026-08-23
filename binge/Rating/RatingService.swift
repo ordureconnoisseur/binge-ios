@@ -28,10 +28,18 @@ final class RatingService {
     private let baseURL: String
     private let apiKey: String
 
-    /// Session-lifetime cache of tag name → id lookups. Score
-    /// tag names are stable; one lookup suffices for the rest of
-    /// the app's run.
+    /// Session-lifetime cache of tag name to id, keyed by SERVER.
+    ///
+    /// It used to be keyed by name alone, and a tag id only means
+    /// something on the box it came from. Point Settings at a
+    /// different Stash mid-session - or at the fresh-Stash fixture -
+    /// and the next star tap appended an id resolved from the previous
+    /// server, which on the new one is some unrelated tag. Same shape
+    /// if the plugin's Remove Tags + Create Tags tasks are run, which
+    /// mints new ids for the same names.
     private static var tagIdCache: [String: String] = [:]
+
+    private var cacheKey: String { baseURL + "|" }
 
     init(baseURL: String, apiKey: String) {
         self.baseURL = baseURL
@@ -46,7 +54,8 @@ final class RatingService {
         criterion: RatingCriterion, score: Int
     ) async -> String? {
         let name = scoreTagName(criterion: criterion, score: score)
-        if let cached = Self.tagIdCache[name] { return cached }
+        let key = cacheKey + name
+        if let cached = Self.tagIdCache[key] { return cached }
         let client = StashClient(baseURL: baseURL, apiKey: apiKey)
         do {
             let resp: FindTagByExactNameResponse = try await client.gql(
@@ -56,7 +65,7 @@ final class RatingService {
             if let match = resp.findTags.tags.first(where: {
                 $0.name == name
             }) {
-                Self.tagIdCache[name] = match.id
+                Self.tagIdCache[key] = match.id
                 return match.id
             }
             return nil

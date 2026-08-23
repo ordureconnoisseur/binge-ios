@@ -872,7 +872,19 @@ struct SceneFeedCard: View {
             // Branch on plugin availability so users without
             // the advancedRating plugin still get the native
             // Stash 5-star rating instead of a dead button.
-            if PluginContext.shared.hasAdvancedRating {
+            // `answered`, not just `hasAdvancedRating`. A failed
+            // enumeration made hasAdvancedRating false for the session
+            // with no retry, and false does not hide rating - it picks
+            // BasicRatingModal, which writes rating100 DIRECTLY. That
+            // is the field the plugin owns and recomputes from score
+            // tags on the same mutation, so the user sets 4 stars and
+            // watches it snap to 7.3. When the answer is unknown, take
+            // the branch that cannot do damage: the criterion modal
+            // writes score tags, which the plugin reads and a plain
+            // Stash simply ignores.
+            if PluginContext.shared.hasAdvancedRating
+                || !PluginContext.shared.answered
+            {
                 CriterionRatingModal(target: .scene(id: scene.id))
                     .presentationDetents([.large])
                     .presentationDragIndicator(.visible)

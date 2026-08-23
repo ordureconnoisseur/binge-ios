@@ -54,7 +54,21 @@ final class RatingConfigLoader {
             groups: groups,
             criteria: criteria.filter(\.enabled)
         )
-        parsedCache[domain] = cfg
+        // Cached only when the fetch actually answered.
+        //
+        // Storing the defaults-derived config unconditionally meant one
+        // 500 or timeout pinned binge to SCENE_DEFAULT_CRITERIA for the
+        // session - and the defaults do not match a real install: the
+        // plugin's performer criteria are "Body Overall" and
+        // "Energy & Presence" where the defaults say "Body" and
+        // "Energy". So existing score tags failed to parse and every
+        // row read unrated, the preview was computed over the wrong
+        // criterion set and HID the authoritative value, and tapping a
+        // star raised "open the plugin's settings panel" over a tag
+        // tree that was perfectly fine.
+        if raw != nil {
+            parsedCache[domain] = cfg
+        }
         return cfg
     }
 
@@ -81,7 +95,14 @@ final class RatingConfigLoader {
             let result = await Self.fetchPluginConfig(
                 baseURL: baseURL, apiKey: apiKey
             )
-            self?.cacheRaw(result)
+            // Same rule: a nil answer is a failure, not a fact. Left
+            // cached, and with rawFetchTask never cleared, every later
+            // await returned the same nil forever.
+            if result != nil {
+                self?.cacheRaw(result)
+            } else {
+                self?.rawFetchTask = nil
+            }
             return result
         }
         rawFetchTask = task

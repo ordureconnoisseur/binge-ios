@@ -220,7 +220,9 @@ struct CriterionRatingModal: View {
         _ criterion: RatingCriterion,
         score: Int?
     ) -> some View {
-        let isBusy = pendingCriterionId == criterion.id
+        // Any write in flight disables every row, matching the guard
+        // in setScore.
+        let isBusy = pendingCriterionId != nil
         HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(criterion.name)
@@ -359,6 +361,15 @@ struct CriterionRatingModal: View {
         criterion: RatingCriterion, score: Int?
     ) async {
         scoreHaptic += 1
+        // Modal-wide, not per row. The guard used to be
+        // `pendingCriterionId == criterion.id`, so only the tapped
+        // row's stars disabled - and scoring Chemistry then Aesthetics
+        // inside one round trip had both writes build from the same
+        // array, so the second landed over the first and Chemistry's
+        // score was discarded server-side. The defer below also
+        // cleared the busy state while the second write was still
+        // running, so the dimming lied about it.
+        if pendingCriterionId != nil { return }
         guard case .ready(
             let config, var tags, var ratings,
             let oldRating100, let precision
@@ -380,6 +391,35 @@ struct CriterionRatingModal: View {
                     + "the score-tag tree."
                 return
             }
+        }
+
+        // Re-read the entity's tags immediately before building the
+        // replacement array.
+        //
+        // sceneUpdate/performerUpdate REPLACE tag_ids wholesale, and
+        // `tags` here is whatever load() read when the sheet OPENED -
+        // so leaving the sheet up while Stash's own UI, forage or the
+        // autotagger added a tag, then tapping one star, wrote the
+        // stale list back and silently dropped the other client's tag.
+        // The window was the whole time the sheet was open. The Scribe
+        // twin already does exactly this, and throws when the read
+        // fails rather than writing blind.
+        do {
+            switch target {
+            case .scene(let id):
+                tags = try await svc.fetchSceneTagsAndRating(
+                    sceneId: id
+                ).tags
+            case .performer(let id):
+                tags = try await svc.fetchPerformerTagsAndRating(
+                    performerId: id
+                ).tags
+            }
+        } catch {
+            missingTagWarning =
+                "Couldn't re-read this scene's tags, so nothing was "
+                + "changed. Check that Stash is reachable and try again."
+            return
         }
 
         guard

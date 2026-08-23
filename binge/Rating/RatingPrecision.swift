@@ -33,12 +33,29 @@ final class RatingPrecisionLoader {
             let result = await Self.fetchPrecision(
                 baseURL: baseURL, apiKey: apiKey
             )
-            self?.cache(result)
-            return result
+            // Only a real answer is kept. Caching the 20 fallback -
+            // which fetchPrecision returns for a bad URL, a non-200, a
+            // decode failure, a missing ratingSystemOptions and any
+            // thrown error - pinned whole-star steps for the session
+            // after one blip. On a box set to TENTH the modal then
+            // previews 80 while the hook stores 73, which is the exact
+            // divergence this file exists to prevent, reached by a
+            // different route than the casing bug below.
+            if let result {
+                self?.cache(result)
+                return result
+            }
+            self?.fetchTask = nil
+            return Self.fallbackPrecision
         }
         fetchTask = task
         return await task.value
     }
+
+    /// What to preview with when Stash will not say. FULL, because a
+    /// coarse preview that is occasionally right beats a fine one that
+    /// is confidently wrong.
+    static let fallbackPrecision = 20
 
     func invalidate() {
         cached = nil
@@ -49,14 +66,18 @@ final class RatingPrecisionLoader {
         cached = value
     }
 
+    /// Optional, so "Stash would not say" and "Stash said FULL" stop
+    /// being the same value. They used to both be 20, which is why the
+    /// caller could not tell a failure worth retrying from an answer
+    /// worth keeping.
     private static func fetchPrecision(
         baseURL: String, apiKey: String
-    ) async -> Int {
+    ) async -> Int? {
         let trimmed = baseURL.trimmingCharacters(
             in: .init(charactersIn: "/ \n\r\t")
         )
         guard let url = URL(string: "\(trimmed)/graphql") else {
-            return 20
+            return nil
         }
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
@@ -70,7 +91,7 @@ final class RatingPrecisionLoader {
         do {
             let (data, resp) = try await CredentialSession.shared.data(for: req)
             if let http = resp as? HTTPURLResponse, http.statusCode != 200 {
-                return 20
+                return nil
             }
             guard
                 let json =
@@ -80,7 +101,7 @@ final class RatingPrecisionLoader {
                 let config = dataObj["configuration"] as? [String: Any],
                 let ui = config["ui"] as? [String: Any]
             else {
-                return 20
+                return nil
             }
             let opts = ui["ratingSystemOptions"] as? [String: Any]
             // Upper-cased before comparing. Stash stores these
@@ -103,7 +124,7 @@ final class RatingPrecisionLoader {
             default: return 20
             }
         } catch {
-            return 20
+            return nil
         }
     }
 }
