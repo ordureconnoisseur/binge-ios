@@ -220,7 +220,16 @@ struct SavedPage: View {
             }
         }
         .buttonStyle(.plain)
-        .onLongPressGesture(minimumDuration: 0.6) {
+        // Only on a collection that can actually be deleted. The
+        // gesture was on every tile, so long-pressing Favourites or
+        // Watch Later opened a dialog headed Delete "Favourites"? with
+        // a red Delete button - which delete() then refused in
+        // silence. A destructive button that does nothing is worse
+        // than no button. maximumDistance is explicit for the same
+        // reason HoldAndPull sets it: a finger resting on a tile
+        // before a drag should not open a delete dialog mid-scroll.
+        .onLongPressGesture(minimumDuration: 0.6, maximumDistance: 8) {
+            guard !coll.isDefault else { return }
             confirmDelete = coll
         }
     }

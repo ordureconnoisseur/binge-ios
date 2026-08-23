@@ -542,13 +542,22 @@ enum Queries {
         }
         """
 
-    /// Exact-match tag lookup by name. Used by the collections
-    /// service to find existing default tags (Favourite ★, Watch
-    /// Later 📁) before lazy-creating them.
+    /// Tag lookup by name. NOT exact on its own.
+    ///
+    /// Stash compiles `modifier: EQUALS` to a SQL LIKE, so `%` and `_`
+    /// in the name are WILDCARDS and the compare is case-insensitive.
+    /// Verified against a live box: asking for "Golden_Hours 📁"
+    /// returns "Golden Hours 📁", and asking for "%" returns all 2034
+    /// tags. With per_page: 1 and sort: "name" this handed back the
+    /// alphabetically first near-miss and called it the answer - which
+    /// then got destroyed, reparented, or written onto a scene.
+    ///
+    /// So it asks for a page and the CALLER picks the exact name. See
+    /// CollectionsService.exactTag.
     static let findTagByName = """
         query FindTagByName($name: String!) {
           findTags(
-            filter: { per_page: 1, sort: "name" },
+            filter: { per_page: 25, sort: "name" },
             tag_filter: {
               name: { value: $name, modifier: EQUALS }
             }

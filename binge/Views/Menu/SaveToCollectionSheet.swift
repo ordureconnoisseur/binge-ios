@@ -185,7 +185,15 @@ struct SaveToCollectionSheet: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .disabled(isPending)
+        // Disabled while ANY row is in flight, not just this one.
+        //
+        // setSceneInCollection reads the scene's live tags and writes
+        // the whole tag_ids array back. Two rows tapped inside one
+        // round trip both read the same array, and the second write
+        // lands over the first - so the scene silently vanished from
+        // one of the two collections the user had just ticked, while
+        // both rows showed a checkmark because each got its own reply.
+        .disabled(!pending.isEmpty)
     }
 
     // MARK: - Actions
@@ -251,7 +259,9 @@ struct SaveToCollectionSheet: View {
             if let cached = service.tagIds[coll.tagName] {
                 id = cached
             } else {
-                id = await service.tagId(for: coll)
+                // Reading which collections a scene is in must not
+                // create the collections it is not in.
+                id = await service.resolveTagId(for: coll)
             }
             if let id {
                 next[coll.tagName] = currentTagIds.contains(id)
