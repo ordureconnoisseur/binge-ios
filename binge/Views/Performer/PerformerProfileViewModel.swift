@@ -125,9 +125,25 @@ final class PerformerProfileViewModel {
         self.apiKey = apiKey
     }
 
+    /// Bumped by every load. A response whose token no longer
+    /// matches is stale and must not touch scenes, page or hasMore.
+    ///
+    /// load() guarded on `loading` and loadMore() on `loadingMore`, and
+    /// neither checked the other's - so changing the sort while a page
+    /// was in flight let both run. The loadMore response appended its
+    /// page of the OLD ordering to the now-empty list and wrote
+    /// page = 2; load()'s response then replaced scenes but never
+    /// rewrote page, which it had set before its await. The next
+    /// loadMore asked for page 3 and page 2 of the new sort - sixty
+    /// scenes - was never fetched and never appeared. The opposite
+    /// interleaving leaves two orderings concatenated.
+    private var generation = 0
+
     func load() async {
         if loading { return }
         loading = true
+        generation += 1
+        let token = generation
         defer { loading = false }
         // Reset pagination on (re)load so a refresh starts at page 1.
         page = 1
@@ -174,6 +190,7 @@ final class PerformerProfileViewModel {
                 !fetchesAllScenes
                 && scenesData.findScenes.scenes.count == pageSize
                 && scenes.count < scenesData.findScenes.count
+            if token != generation { return }
             self.story = buildStory(from: scenes)
         } catch {
             self.error = (error as? LocalizedError)?.errorDescription
@@ -189,6 +206,7 @@ final class PerformerProfileViewModel {
     /// is in flight (or after exhaustion) is a no-op.
     func loadMore() async {
         if loadingMore || !hasMore || loading { return }
+        let token = generation
         // "recent" loads the full set up front — there is no page 2.
         if fetchesAllScenes { return }
         loadingMore = true
@@ -207,6 +225,9 @@ final class PerformerProfileViewModel {
             )
             // Dedupe defensively — a scene added between page
             // fetches could land in both pages.
+            // Anything that started before the criteria changed is
+            // answering a question nobody is asking any more.
+            if token != generation { return }
             let existing = Set(scenes.map(\.id))
             let fresh = resp.findScenes.scenes.filter {
                 !existing.contains($0.id)
@@ -228,8 +249,21 @@ final class PerformerProfileViewModel {
     /// thrash the network.
     func setSort(_ next: PerformerSceneSort) async {
         guard next != sort else { return }
+        let previous = sort
         sort = next
         await load()
+        // load() opens with `if loading { return }`, and on a large
+        // performer the initial load takes seconds - on .recent it is
+        // per_page: -1, the whole set. Tapping a sort inside that
+        // window used to mutate `sort` and reload nothing: the header
+        // read "MOST VIEWS", the tile badges switched to views, and the
+        // tiles stayed date-ordered. Re-selecting the same option is
+        // refused by the guard above, so the user could not even
+        // correct it without picking a third. Putting the sort back
+        // keeps the label honest about what is on screen.
+        if scenes.isEmpty && loading {
+            sort = previous
+        }
     }
 
     /// Order demo scenes to mirror the live sorts (all DESC). The demo
@@ -428,12 +462,26 @@ final class PerformerProfileViewModel {
         stashDBLoaded = false
     }
 
+    /// A favourite write is in flight.
+    ///
+    /// Two taps inside one round trip used to fire two performerUpdate
+    /// mutations with opposite values: the server applied whichever
+    /// landed last, the client applied whichever RESPONSE returned
+    /// last, and nothing re-read afterwards. The rollback was worse - a
+    /// failure restored `!next` from its own captured intent, so tap
+    /// one failing overwrote tap two's newer optimistic value with one
+    /// derived from a tap the user had already superseded.
+    private(set) var favouriteBusy = false
+
     func toggleFavourite() {
+        if favouriteBusy { return }
         let next = !favourite
         favourite = next
         // Demo mode: flip the heart visually, write nothing to Stash.
         if DemoMode.isOn { return }
+        favouriteBusy = true
         Task {
+            defer { favouriteBusy = false }
             let client = StashClient(baseURL: baseURL, apiKey: apiKey)
             do {
                 let resp: PerformerFavoriteResponse = try await client.gql(
@@ -448,7 +496,9 @@ final class PerformerProfileViewModel {
                 print(
                     "[binge] performer favourite[\(performerId)] failed: \(error)"
                 )
-                favourite = !next  // roll back
+                // Safe to roll back to the captured intent only because
+                // favouriteBusy means no newer tap can exist.
+                favourite = !next
             }
         }
     }

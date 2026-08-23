@@ -240,8 +240,18 @@ struct PerformerProfileSheet: View {
                                 .font(.system(size: 17, weight: .semibold))
                                 .foregroundStyle(.white)
                                 .lineLimit(1)
-                            VerifiedBadge(favorite: p.favorite, size: 14)
-                                .padding(.leading, 4)
+                            // vm.favourite, not p.favorite.
+                            // PerformerDetail is an all-let struct, so
+                            // toggling cannot update it - only the view
+                            // model's mirror moves. Reading the frozen
+                            // field meant the badge colour never
+                            // changed in-session, which is exactly the
+                            // behaviour the comment above claims it has.
+                            VerifiedBadge(
+                                favorite: vm?.favourite ?? p.favorite,
+                                size: 14
+                            )
+                            .padding(.leading, 4)
                         }
                     } else {
                         Text(vm?.performer?.name ?? "")
@@ -591,6 +601,9 @@ struct PerformerProfileSheet: View {
                 )
         }
         .buttonStyle(.plain)
+        // A second tap inside the round trip fired an opposite
+        // mutation; the model refuses it, and the button says so.
+        .disabled(vm?.favouriteBusy ?? false)
         .padding(.horizontal, 22)
         .padding(.bottom, 14)
     }
