@@ -113,6 +113,33 @@ struct PerformerProfileSheet: View {
                 await vm?.loadStashDBScenes()
             }
         }
+        .overlay(alignment: .bottom) {
+            if vm?.filling == true {
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(.white)
+                    Text("Filling in from StashDB")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.white)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(.ultraThinMaterial, in: Capsule())
+                .padding(.bottom, 40)
+                .transition(.opacity)
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: vm?.filling)
+        .alert(
+            "Fill in from StashDB",
+            isPresented: Binding(
+                get: { vm?.fillMessage != nil },
+                set: { if !$0 { vm?.fillMessage = nil } }
+            ),
+            actions: { Button("OK", role: .cancel) {} },
+            message: { Text(vm?.fillMessage ?? "") }
+        )
         .fullScreenCover(isPresented: $storyOpen) {
             if let s = vm?.story {
                 StoryViewerSheet(
@@ -312,6 +339,19 @@ struct PerformerProfileSheet: View {
                                 "Refresh",
                                 systemImage: "arrow.clockwise"
                             )
+                        }
+                        // Only for a linked performer: without a
+                        // stash id there is nothing to fill from.
+                        if vm?.performer?.stashDBId != nil {
+                            Button {
+                                Task { await vm?.fillFromStashDB() }
+                            } label: {
+                                Label(
+                                    "Fill in from StashDB",
+                                    systemImage: "arrow.down.doc"
+                                )
+                            }
+                            .disabled(vm?.filling ?? false)
                         }
                         Button {
                             let trimmed = baseURL.trimmingCharacters(

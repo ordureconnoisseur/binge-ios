@@ -153,6 +153,22 @@ enum Mutations {
         }
         """
 
+    /// Write scraped columns onto a performer who already exists.
+    ///
+    /// The counterpart to performerCreate above, for the row that was
+    /// made by something other than a Follow. Stash's own tagger and
+    /// forage both create a performer from a scene match carrying a
+    /// name, an image and the stash_ids link and nothing else, so 136
+    /// of this library's 904 linked performers have no gender, no
+    /// birthdate, no country and - the one that costs a feature - no
+    /// urls, which is where the X handle that lights the story ring
+    /// lives.
+    static let performerUpdateFields = """
+        mutation PerformerUpdateFields($input: PerformerUpdateInput!) {
+          performerUpdate(input: $input) { id }
+        }
+        """
+
     /// Update a scene's tag_ids. Used by the rating modal —
     /// after a criterion score changes we build a new tag_ids
     /// list (existing tags minus the criterion's old score tag,
@@ -290,6 +306,16 @@ struct PerformerFavoriteResponse: Decodable {
     }
 }
 
+/// `performerUpdateFields` returns only the id - the caller already
+/// knows what it wrote, and re-reading the row here would race the
+/// profile reload that follows.
+struct PerformerUpdateFieldsResponse: Decodable {
+    let performerUpdate: Payload
+    struct Payload: Decodable {
+        let id: String
+    }
+}
+
 /// Wire response for scrapeSinglePerformer. Every field nullable —
 /// scrapers regularly return partial data and we don't want a
 /// single missing column to fail the whole decode.
@@ -345,6 +371,49 @@ struct PerformerCreateResponse: Decodable {
     struct Payload: Decodable {
         let id: String
         let name: String
+    }
+}
+
+/// Decoded `performerFillState`. Every column optional: the whole
+/// point is telling apart "Stash has nothing here" from "the user put
+/// something here".
+struct PerformerFillStateResponse: Decodable {
+    let findPerformer: Row?
+
+    struct Row: Decodable {
+        let id: String
+        let name: String
+        let disambiguation: String?
+        let gender: String?
+        let birthdate: String?
+        let deathDate: String?
+        let ethnicity: String?
+        let country: String?
+        let eyeColor: String?
+        let hairColor: String?
+        let heightCm: Int?
+        let weight: Int?
+        let measurements: String?
+        let fakeTits: String?
+        let careerLength: String?
+        let tattoos: String?
+        let piercings: String?
+        let details: String?
+        let aliasList: [String]?
+        let urls: [String]?
+
+        enum CodingKeys: String, CodingKey {
+            case id, name, disambiguation, gender, birthdate
+            case ethnicity, country, measurements, tattoos, piercings
+            case details, urls, weight
+            case deathDate = "death_date"
+            case eyeColor = "eye_color"
+            case hairColor = "hair_color"
+            case heightCm = "height_cm"
+            case fakeTits = "fake_tits"
+            case careerLength = "career_length"
+            case aliasList = "alias_list"
+        }
     }
 }
 
@@ -1020,6 +1089,43 @@ enum Queries {
             url
             urls
             stash_ids { endpoint stash_id }
+          }
+        }
+        """
+
+    /// Every column "Fill in from StashDB" is allowed to write, read
+    /// back before writing anything.
+    ///
+    /// findPerformer above is the profile's query and deliberately
+    /// carries only what the profile renders. Filling has to know
+    /// about columns nothing draws - measurements, tattoos, career
+    /// length - because writing over one the user had already filled
+    /// in would be the one unforgivable outcome here. So it asks for
+    /// the write set, not the read set, and skips every column that
+    /// comes back non-empty.
+    static let performerFillState = """
+        query PerformerFillState($id: ID!) {
+          findPerformer(id: $id) {
+            id
+            name
+            disambiguation
+            gender
+            birthdate
+            death_date
+            ethnicity
+            country
+            eye_color
+            hair_color
+            height_cm
+            weight
+            measurements
+            fake_tits
+            career_length
+            tattoos
+            piercings
+            details
+            alias_list
+            urls
           }
         }
         """

@@ -489,6 +489,76 @@ final class PerformerProfileViewModel {
         stashDBAuto = false
     }
 
+    /// A "Fill in from StashDB" write is in flight.
+    var filling = false
+    /// Result of the last fill, shown once in an alert then cleared.
+    var fillMessage: String?
+
+    /// Write StashDB's record onto the blank columns of this
+    /// performer's row.
+    ///
+    /// The row exists but is a stub: Stash's own tagger and forage
+    /// both create a performer from a scene match carrying a name, an
+    /// image and the stash_ids link, and nothing else. binge's own
+    /// Follow scrapes the full record, so these are not binge's doing,
+    /// but binge is where the cost shows: no gender for the feed's
+    /// gender filter to read, no bio, and no urls, which is the only
+    /// place either client looks for the X handle behind the story
+    /// ring. Filling the row repairs it in Stash for good rather than
+    /// papering over it per view, and both clients pick it up.
+    ///
+    /// FollowService.fillFromStashDB only ever writes a column Stash
+    /// has nothing in; see the note there.
+    func fillFromStashDB() async {
+        if filling { return }
+        guard let stashId = performer?.stashDBId else { return }
+        if DemoMode.isOn { return }
+        filling = true
+        defer { filling = false }
+        let svc = StashDBService(baseURL: baseURL, apiKey: apiKey)
+        guard let box = await svc.fetchBoxConfig() else {
+            fillMessage = "Couldn't reach StashDB just now."
+            return
+        }
+        let follow = FollowService(baseURL: baseURL, apiKey: apiKey)
+        do {
+            let filled = try await follow.fillFromStashDB(
+                localId: performerId,
+                stashId: stashId,
+                stashBoxIndex: box.index
+            )
+            if filled.isEmpty {
+                fillMessage =
+                    "Nothing to fill in. StashDB had nothing this "
+                    + "profile was missing."
+                return
+            }
+            // The urls that just landed are what decides whether there
+            // is X media and a PornHub feed to fetch, and both of those
+            // loaders run once per model. Reset them or the profile
+            // keeps the answer it worked out while the row was blank.
+            xLoaded = false
+            xPosts = []
+            pornhubLoaded = false
+            await load()
+            await loadXMedia()
+            await loadPornhub()
+            fillMessage = "Filled in \(Self.sentence(filled))."
+        } catch {
+            fillMessage =
+                (error as? LocalizedError)?.errorDescription
+                ?? "Couldn't fill this profile in. Try again."
+            print("[binge] fill[\(performerId)] failed: \(error)")
+        }
+    }
+
+    /// ["gender", "bio", "links"] -> "gender, bio and links".
+    private static func sentence(_ items: [String]) -> String {
+        if items.count <= 1 { return items.first ?? "" }
+        return items.dropLast().joined(separator: ", ")
+            + " and " + (items.last ?? "")
+    }
+
     /// A favourite write is in flight.
     ///
     /// Two taps inside one round trip used to fire two performerUpdate

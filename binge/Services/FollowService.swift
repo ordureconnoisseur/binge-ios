@@ -170,6 +170,207 @@ final class FollowService {
     }
 }
 
+extension FollowService {
+    /// Fill blank columns on a performer who is already in the library
+    /// from their StashDB record. Returns the labels of what was
+    /// written, empty when there was nothing to fill.
+    ///
+    /// Only ever writes a column Stash currently has nothing in. A
+    /// performer row is the user's, and a "refresh" that overwrote a
+    /// hand-corrected birthdate or a curated set of aliases would be
+    /// worse than the blank profile this exists to fix - so this fills
+    /// gaps and is incapable of doing anything else. The name and the
+    /// image are excluded outright: both are always populated, so
+    /// there is no gap to fill and no honest way to tell a stub's
+    /// scraped image from one the user picked.
+    ///
+    /// Socials go into `urls`, never into the deprecated twitter /
+    /// instagram / url columns, even though the scraper answers in
+    /// those. `urls` is what both clients read for the link chips, and
+    /// it is the only one BingeServerService.xHandleFromUrls looks at
+    /// - so an X link written to the old column would show a chip and
+    /// still leave the story ring dark.
+    func fillFromStashDB(
+        localId: String,
+        stashId: String,
+        stashBoxIndex: Int
+    ) async throws -> [String] {
+        let client = StashClient(baseURL: baseURL, apiKey: apiKey)
+
+        // What Stash holds now. Read first: without it there is no way
+        // to write only the gaps.
+        let stateResp: PerformerFillStateResponse = try await client.gql(
+            Queries.performerFillState,
+            variables: ["id": localId]
+        )
+        guard let local = stateResp.findPerformer else {
+            throw FillError.performerGone
+        }
+
+        let resp: ScrapeStashBoxPerformerResponse = try await client.gql(
+            Mutations.scrapeStashBoxPerformer,
+            variables: [
+                "stash_box_index": stashBoxIndex,
+                "stash_id": stashId,
+            ]
+        )
+        guard let scraped = resp.scrapeSinglePerformer?.first else {
+            // Distinct from "nothing to fill": the box was asked and
+            // had no answer, and telling the user those apart is the
+            // difference between "already complete" and "try later".
+            throw FillError.notOnStashDB
+        }
+
+        var input: [String: Any] = ["id": localId]
+        var filled: [String] = []
+
+        // A column counts as blank only when Stash has nothing in it.
+        func fill(
+            _ label: String,
+            _ key: String,
+            existing: String?,
+            value: String?
+        ) {
+            guard existing?.trimmedNonEmpty == nil,
+                let v = value?.trimmedNonEmpty
+            else { return }
+            input[key] = v
+            filled.append(label)
+        }
+
+        func fillInt(
+            _ label: String,
+            _ key: String,
+            existing: Int?,
+            value: String?
+        ) {
+            guard existing == nil,
+                let d = value?.leadingDouble, d > 0
+            else { return }
+            input[key] = Int(d)
+            filled.append(label)
+        }
+
+        fill("gender", "gender", existing: local.gender, value: scraped.gender)
+        fill(
+            "birth date", "birthdate",
+            existing: local.birthdate, value: scraped.birthdate
+        )
+        fill(
+            "death date", "death_date",
+            existing: local.deathDate, value: scraped.deathDate
+        )
+        fill(
+            "country", "country",
+            existing: local.country, value: scraped.country
+        )
+        fill(
+            "ethnicity", "ethnicity",
+            existing: local.ethnicity, value: scraped.ethnicity
+        )
+        fill(
+            "hair colour", "hair_color",
+            existing: local.hairColor, value: scraped.hairColor
+        )
+        fill(
+            "eye colour", "eye_color",
+            existing: local.eyeColor, value: scraped.eyeColor
+        )
+        fill(
+            "measurements", "measurements",
+            existing: local.measurements, value: scraped.measurements
+        )
+        fill(
+            "breast type", "fake_tits",
+            existing: local.fakeTits, value: scraped.fakeTits
+        )
+        fill(
+            "career length", "career_length",
+            existing: local.careerLength, value: scraped.careerLength
+        )
+        fill(
+            "tattoos", "tattoos",
+            existing: local.tattoos, value: scraped.tattoos
+        )
+        fill(
+            "piercings", "piercings",
+            existing: local.piercings, value: scraped.piercings
+        )
+        fill(
+            "disambiguation", "disambiguation",
+            existing: local.disambiguation, value: scraped.disambiguation
+        )
+        fill(
+            "bio", "details",
+            existing: local.details, value: scraped.details
+        )
+        fillInt(
+            "height", "height_cm",
+            existing: local.heightCm, value: scraped.height
+        )
+        fillInt(
+            "weight", "weight",
+            existing: local.weight, value: scraped.weight
+        )
+
+        if (local.aliasList ?? []).isEmpty,
+            let aliases = scraped.aliases?.trimmedNonEmpty
+        {
+            let list = aliases
+                .split(separator: ",")
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+                .filter { !$0.isEmpty }
+            if !list.isEmpty {
+                input["alias_list"] = list
+                filled.append("aliases")
+            }
+        }
+
+        if (local.urls ?? []).isEmpty {
+            // The scraper answers in the deprecated columns; they land
+            // in the modern array. See the note above.
+            var urls: [String] = []
+            for candidate in [
+                scraped.url, scraped.twitter, scraped.instagram,
+            ] {
+                guard let v = candidate?.trimmedNonEmpty else { continue }
+                if !urls.contains(v) { urls.append(v) }
+            }
+            if !urls.isEmpty {
+                input["urls"] = urls
+                filled.append("links")
+            }
+        }
+
+        // Nothing to do. Returning rather than writing keeps a
+        // no-op out of Stash's edit history.
+        if filled.isEmpty { return [] }
+
+        let _: PerformerUpdateFieldsResponse = try await client.gql(
+            Mutations.performerUpdateFields,
+            variables: ["input": input]
+        )
+        // Deliberately no cache invalidation: the linked-performer
+        // cache holds id, stash id, name, favourite and image, and
+        // none of those are writable from here.
+        return filled
+    }
+
+    enum FillError: LocalizedError {
+        case performerGone
+        case notOnStashDB
+
+        var errorDescription: String? {
+            switch self {
+            case .performerGone:
+                return "That performer is no longer in your library."
+            case .notOnStashDB:
+                return "StashDB had nothing for this performer just now."
+            }
+        }
+    }
+}
+
 private extension String {
     /// trimmed value if non-empty, nil otherwise — kills a lot
     /// of `value.trim().isEmpty ? nil : value.trim()` repetition.
