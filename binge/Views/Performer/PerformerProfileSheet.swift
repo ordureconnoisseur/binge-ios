@@ -663,7 +663,15 @@ struct PerformerProfileSheet: View {
             }
             .padding(.horizontal, 22)
             .padding(.top, 14)
-            if tiles.isEmpty {
+            if tiles.isEmpty && (vm?.stashDBLoading ?? false) {
+                // An empty library grid now goes and asks StashDB, so
+                // "No scenes" would be printed a moment before the
+                // tiles it is wrong about arrive.
+                ProgressView()
+                    .tint(.white.opacity(0.5))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 40)
+            } else if tiles.isEmpty {
                 Text("No scenes")
                     .font(.system(size: 13))
                     .foregroundStyle(.white.opacity(0.4))
@@ -773,15 +781,24 @@ struct PerformerProfileSheet: View {
     /// (matches the web's useIncludeStashDBInProfile pattern).
     @ViewBuilder
     private var stashDBToggle: some View {
-        let on = showStashDB && (vm?.performer?.stashDBId != nil)
+        // `on` covers both the global setting and the per-profile
+        // fallback (see PerformerProfileViewModel.stashDBAuto), so a
+        // profile showing StashDB tiles always shows the pill lit.
+        let auto = vm?.stashDBAuto ?? false
+        let on = (showStashDB || auto) && (vm?.performer?.stashDBId != nil)
         let canEnable = vm?.performer?.stashDBId != nil
         Button {
             guard canEnable else { return }
-            showStashDB.toggle()
-            if showStashDB {
-                Task { await vm?.loadStashDBScenes() }
-            } else {
+            if on {
+                // Off means off, whichever of the two turned it on.
+                // Toggling the setting alone would leave the fallback
+                // holding the tiles up, so the pill would go dark and
+                // nothing else would change.
+                showStashDB = false
                 vm?.clearStashDBScenes()
+            } else {
+                showStashDB = true
+                Task { await vm?.loadStashDBScenes() }
             }
         } label: {
             HStack(spacing: 5) {

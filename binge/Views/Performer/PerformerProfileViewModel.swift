@@ -61,6 +61,24 @@ final class PerformerProfileViewModel {
             as? Bool ?? true
     }
     var stashDBLoading: Bool = false
+    /// The mix-in was switched on by this profile rather than by the
+    /// user, because the library had nothing for this performer.
+    ///
+    /// A performer can be linked to StashDB and still have no scenes
+    /// here: binge creates a local row the moment she is named by a
+    /// StashDB match or followed from discovery. Tapping that name
+    /// opened a profile reading 0 SCENES / 0 LIKES / No scenes, which
+    /// is accurate and useless - StashDB knew about her scenes the
+    /// whole time, behind a pill most people never press. The web
+    /// client never lands anyone there at all: a matched name opens
+    /// the read-only StashDB profile, which shows the scenes at once.
+    ///
+    /// So this only fires on a profile that would otherwise be blank,
+    /// and deliberately does NOT write the global setting: turning the
+    /// mix-in off everywhere should not mean an empty page here, and
+    /// coming back to a performer whose scenes have since landed shows
+    /// the library again with the setting still off.
+    var stashDBAuto: Bool = false
     /// True once a StashDB fetch has completed (even if it yielded
     /// zero unowned scenes), so toggling the section off/on doesn't
     /// re-hit the network when the result was legitimately empty.
@@ -192,6 +210,11 @@ final class PerformerProfileViewModel {
                 && scenes.count < scenesData.findScenes.count
             if token != generation { return }
             self.story = buildStory(from: scenes)
+            // Nothing of hers in the library. See stashDBAuto.
+            if scenes.isEmpty, performer?.stashDBId != nil {
+                stashDBAuto = true
+                await loadStashDBScenes()
+            }
         } catch {
             self.error = (error as? LocalizedError)?.errorDescription
                 ?? "\(error)"
@@ -460,6 +483,10 @@ final class PerformerProfileViewModel {
     func clearStashDBScenes() {
         stashDBScenes = []
         stashDBLoaded = false
+        // Otherwise the next load() sees an empty library grid and
+        // switches the mix-in straight back on, which is the pill
+        // refusing to turn off.
+        stashDBAuto = false
     }
 
     /// A favourite write is in flight.
