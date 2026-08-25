@@ -139,6 +139,21 @@ final class FollowService {
             Mutations.performerCreate,
             variables: ["input": input]
         )
+        // Attach her to the scenes the library already holds. Best
+        // effort: a failure here leaves a real performer with an empty
+        // profile, which the Repair action on that profile can finish,
+        // whereas throwing would strand a performer who HAS been
+        // created behind an error saying the follow failed.
+        //
+        // Web has done this from its Follow modal since the feature
+        // landed; the phone never has, so following someone here
+        // produced the same zero-scene profile that this whole thread
+        // started from.
+        _ = await linkExistingScenes(
+            localPerformerId: resp.performerCreate.id,
+            stashDBPerformerId: stashId
+        )
+
         // Drop linked / owned caches so the next discovery or
         // bar render picks up the new performer + their scenes.
         // Trending lists are unaffected (Stash → StashDB still
@@ -171,6 +186,123 @@ final class FollowService {
 }
 
 extension FollowService {
+    /// What a linking pass did.
+    struct LinkExistingScenesResult {
+        /// How many of the library's StashDB-matched scenes are hers.
+        let matched: Int
+        /// How many the write covered. Equal to `matched` on success,
+        /// since ADD is idempotent - a scene already listing her is
+        /// left alone rather than counted twice.
+        let linked: Int
+        /// The write itself failed, so nothing was changed. Distinct
+        /// from matched == 0, which means she has none here.
+        let failed: Bool
+        /// StashDB could not be reached, so the candidate set is
+        /// unknown rather than empty.
+        let lookupFailed: Bool
+
+        static let empty = LinkExistingScenesResult(
+            matched: 0, linked: 0, failed: false, lookupFailed: false
+        )
+    }
+
+    /// Attach a performer to the scenes the library already holds for
+    /// her. Never removes anyone from anything.
+    ///
+    /// A performer row and the scenes she is in are separate facts in
+    /// Stash, and identifying a scene against StashDB does not link
+    /// anyone to it. Aurora Pink is the case that found this: three
+    /// files in the library carry her StashDB scene ids and all three
+    /// have an empty performers array, so her profile reported zero
+    /// scenes over a library that holds them.
+    ///
+    /// The join needs no name matching. A scene matched to StashDB
+    /// carries a stashdb.org entry in its own stash_ids, so "which of
+    /// my scenes are hers" is exactly the intersection of her StashDB
+    /// scenes with the StashDB scenes this library owns.
+    ///
+    /// A port of the web plugin's linkExistingScenesToPerformer, which
+    /// until now had no counterpart here at all - so following someone
+    /// on the phone left their new profile empty.
+    func linkExistingScenes(
+        localPerformerId: String,
+        stashDBPerformerId: String
+    ) async -> LinkExistingScenesResult {
+        let empty = LinkExistingScenesResult.empty
+        let stashDB = StashDBService(baseURL: baseURL, apiKey: apiKey)
+        guard let box = await stashDB.fetchBoxConfig() else {
+            return LinkExistingScenesResult(
+                matched: 0, linked: 0, failed: false, lookupFailed: true
+            )
+        }
+        let hers = await stashDB.fetchScenesForStashDBPerformer(
+            stashId: stashDBPerformerId,
+            apiKey: box.apiKey
+        )
+        // An empty answer is ambiguous: the fetch returns [] for a
+        // failed request as readily as for a performer with no scenes.
+        // Reported as a lookup failure so the caller never tells the
+        // user she has none when nobody knows.
+        if hers.isEmpty {
+            return LinkExistingScenesResult(
+                matched: 0, linked: 0, failed: false, lookupFailed: true
+            )
+        }
+        let hersById = Set(hers.map(\.id))
+
+        let client = StashClient(baseURL: baseURL, apiKey: apiKey)
+        let local: FindLocalStashDBScenesResponse
+        do {
+            local = try await client.gql(
+                Queries.findLocalStashDBScenes,
+                variables: [:]
+            )
+        } catch {
+            print("[binge] local stashdb scene scan failed: \(error)")
+            return LinkExistingScenesResult(
+                matched: 0, linked: 0, failed: false, lookupFailed: true
+            )
+        }
+
+        let candidates = local.findScenes.scenes.filter { row in
+            row.stashIds.contains {
+                $0.endpoint == Self.stashDBEndpoint
+                    && hersById.contains($0.stashId)
+            }
+        }.map(\.id)
+        if candidates.isEmpty { return empty }
+
+        do {
+            let _: BulkSceneUpdateResponse = try await client.gql(
+                Mutations.scenesAddPerformer,
+                variables: [
+                    "ids": candidates,
+                    "performerId": localPerformerId,
+                ]
+            )
+        } catch {
+            // Logged, because a silent zero is what made the missing
+            // link invisible in the first place.
+            print("[binge] linking existing scenes failed: \(error)")
+            return LinkExistingScenesResult(
+                matched: candidates.count,
+                linked: 0,
+                failed: true,
+                lookupFailed: false
+            )
+        }
+        // Her scene count changed, so anything keyed on ownership is
+        // now stale.
+        StashDBCache.shared.invalidate("owned")
+        StashDBCache.shared.memoClear()
+        return LinkExistingScenesResult(
+            matched: candidates.count,
+            linked: candidates.count,
+            failed: false,
+            lookupFailed: false
+        )
+    }
+
     /// Fill blank columns on a performer who is already in the library
     /// from their StashDB record. Returns the labels of what was
     /// written, empty when there was nothing to fill.

@@ -489,67 +489,116 @@ final class PerformerProfileViewModel {
         stashDBAuto = false
     }
 
-    /// A "Fill in from StashDB" write is in flight.
+    /// A repair write is in flight.
     var filling = false
-    /// Result of the last fill, shown once in an alert then cleared.
+    /// Result of the last repair, shown once in an alert then cleared.
     var fillMessage: String?
 
-    /// Write StashDB's record onto the blank columns of this
-    /// performer's row.
+    /// Put a stub performer row right, from StashDB.
     ///
-    /// The row exists but is a stub: Stash's own tagger and forage
-    /// both create a performer from a scene match carrying a name, an
-    /// image and the stash_ids link, and nothing else. binge's own
-    /// Follow scrapes the full record, so these are not binge's doing,
-    /// but binge is where the cost shows: no gender for the feed's
+    /// Two separate things are wrong with these rows and both look the
+    /// same from the profile:
+    ///
+    /// The row has no columns. Stash's own tagger and forage create a
+    /// performer from a scene match carrying a name, an image and the
+    /// stash_ids link and nothing else - no gender for the feed's
     /// gender filter to read, no bio, and no urls, which is the only
     /// place either client looks for the X handle behind the story
-    /// ring. Filling the row repairs it in Stash for good rather than
-    /// papering over it per view, and both clients pick it up.
+    /// ring. binge's own Follow scrapes the full record, so these are
+    /// not binge's doing, but binge is where the cost shows.
     ///
-    /// FollowService.fillFromStashDB only ever writes a column Stash
-    /// has nothing in; see the note there.
-    func fillFromStashDB() async {
+    /// And nobody is attached to her scenes. Identifying a scene
+    /// against StashDB does not link a performer to it, so the library
+    /// can hold several of hers with an empty performers array on every
+    /// one, and the profile reports zero scenes over them.
+    ///
+    /// Both writes only ever add. Columns are filled where Stash has
+    /// nothing, never overwritten; scenes are added to, never replaced.
+    func repairFromStashDB() async {
         if filling { return }
         guard let stashId = performer?.stashDBId else { return }
         if DemoMode.isOn { return }
         filling = true
         defer { filling = false }
-        let svc = StashDBService(baseURL: baseURL, apiKey: apiKey)
-        guard let box = await svc.fetchBoxConfig() else {
-            fillMessage = "Couldn't reach StashDB just now."
-            return
-        }
+
         let follow = FollowService(baseURL: baseURL, apiKey: apiKey)
+        var parts: [String] = []
+
+        // Scenes first, so the reload below shows them.
+        let link = await follow.linkExistingScenes(
+            localPerformerId: performerId,
+            stashDBPerformerId: stashId
+        )
+        if link.linked > 0 {
+            parts.append(
+                link.linked == 1
+                    ? "attached 1 scene you already had"
+                    : "attached \(link.linked) scenes you already had"
+            )
+        } else if link.failed {
+            parts.append("could not attach her scenes")
+        }
+
         do {
             let filled = try await follow.fillFromStashDB(
                 localId: performerId,
                 stashId: stashId,
-                stashBoxIndex: box.index
+                stashBoxIndex: try await boxIndex()
             )
-            if filled.isEmpty {
-                fillMessage =
-                    "Nothing to fill in. StashDB had nothing this "
-                    + "profile was missing."
-                return
+            if !filled.isEmpty {
+                parts.append("filled in \(Self.sentence(filled))")
             }
-            // The urls that just landed are what decides whether there
-            // is X media and a PornHub feed to fetch, and both of those
-            // loaders run once per model. Reset them or the profile
-            // keeps the answer it worked out while the row was blank.
-            xLoaded = false
-            xPosts = []
-            pornhubLoaded = false
-            await load()
-            await loadXMedia()
-            await loadPornhub()
-            fillMessage = "Filled in \(Self.sentence(filled))."
         } catch {
-            fillMessage =
+            print("[binge] repair[\(performerId)] fill failed: \(error)")
+            parts.append(
                 (error as? LocalizedError)?.errorDescription
-                ?? "Couldn't fill this profile in. Try again."
-            print("[binge] fill[\(performerId)] failed: \(error)")
+                    ?? "could not fill in the blanks"
+            )
         }
+
+        if parts.isEmpty {
+            fillMessage =
+                link.lookupFailed
+                ? "Couldn't reach StashDB just now."
+                : "Nothing to do. This profile already has everything "
+                    + "StashDB knows."
+            return
+        }
+
+        // The urls that may have just landed decide whether there is X
+        // media and a PornHub feed to fetch, and both loaders run once
+        // per model. Reset them or the profile keeps the answer it
+        // worked out while the row was blank.
+        xLoaded = false
+        xPosts = []
+        pornhubLoaded = false
+        stashDBLoaded = false
+        stashDBScenes = []
+        stashDBAuto = false
+        await load()
+        await loadXMedia()
+        await loadPornhub()
+        fillMessage = Self.capitalisedSentence(parts) + "."
+    }
+
+    /// The stash-box index the scraper needs. Separated so the fill
+    /// call site reads as one line.
+    private func boxIndex() async throws -> Int {
+        let svc = StashDBService(baseURL: baseURL, apiKey: apiKey)
+        guard let box = await svc.fetchBoxConfig() else {
+            throw FollowService.FillError.notOnStashDB
+        }
+        return box.index
+    }
+
+    /// ["attached 2 scenes", "filled in gender"] ->
+    /// "Attached 2 scenes, and filled in gender".
+    private static func capitalisedSentence(_ parts: [String]) -> String {
+        let joined = parts.count > 1
+            ? parts.dropLast().joined(separator: ", ") + ", and "
+                + (parts.last ?? "")
+            : (parts.first ?? "")
+        return joined.prefix(1).uppercased() + joined.dropFirst()
     }
 
     /// ["gender", "bio", "links"] -> "gender, bio and links".

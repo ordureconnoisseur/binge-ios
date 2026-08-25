@@ -153,6 +153,27 @@ enum Mutations {
         }
         """
 
+    /// Attach a performer to scenes the library already holds.
+    ///
+    /// ADD, not SET, and one request for the whole set: Stash resolves
+    /// ADD against the row it is updating, so there is no read to go
+    /// stale and no performer array to overwrite. Reading each scene
+    /// and writing the list back with her appended is correct within
+    /// one pass and wrong across two - two passes in flight, the
+    /// second reads before the first's write lands, and its
+    /// whole-array write removes the first performer again from every
+    /// scene the two share.
+    static let scenesAddPerformer = """
+        mutation ScenesAddPerformer($ids: [ID!], $performerId: ID!) {
+          bulkSceneUpdate(
+            input: {
+              ids: $ids,
+              performer_ids: { ids: [$performerId], mode: ADD }
+            }
+          ) { id }
+        }
+        """
+
     /// Write scraped columns onto a performer who already exists.
     ///
     /// The counterpart to performerCreate above, for the row that was
@@ -303,6 +324,31 @@ struct PerformerFavoriteResponse: Decodable {
     struct Payload: Decodable {
         let id: String
         let favorite: Bool
+    }
+}
+
+/// Local scenes that carry a stash id, with the local id to write to.
+struct FindLocalStashDBScenesResponse: Decodable {
+    let findScenes: Payload
+    struct Payload: Decodable {
+        let scenes: [Row]
+    }
+    struct Row: Decodable {
+        let id: String
+        let stashIds: [PerformerDetail.StashIdLink]
+
+        enum CodingKeys: String, CodingKey {
+            case id
+            case stashIds = "stash_ids"
+        }
+    }
+}
+
+/// bulkSceneUpdate answers with the rows it touched.
+struct BulkSceneUpdateResponse: Decodable {
+    let bulkSceneUpdate: [Row]?
+    struct Row: Decodable {
+        let id: String
     }
 }
 
@@ -1089,6 +1135,29 @@ enum Queries {
             url
             urls
             stash_ids { endpoint stash_id }
+          }
+        }
+        """
+
+    /// Local scenes carrying a stashdb.org stash_id, with their own
+    /// ids. findOwnedStashIds asks the same question and selects only
+    /// the stash_ids, because all it needs is a membership set; this
+    /// one has to know which local scene to write to.
+    static let findLocalStashDBScenes = """
+        query LocalStashDBScenes {
+          findScenes(
+            scene_filter: {
+              stash_id_endpoint: {
+                endpoint: "https://stashdb.org/graphql"
+                modifier: NOT_NULL
+              }
+            },
+            filter: { page: 1, per_page: -1 }
+          ) {
+            scenes {
+              id
+              stash_ids { endpoint stash_id }
+            }
           }
         }
         """

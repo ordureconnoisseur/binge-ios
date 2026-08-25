@@ -119,7 +119,7 @@ struct PerformerProfileSheet: View {
                     ProgressView()
                         .controlSize(.small)
                         .tint(.white)
-                    Text("Filling in from StashDB")
+                    Text("Repairing from StashDB")
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(.white)
                 }
@@ -132,7 +132,7 @@ struct PerformerProfileSheet: View {
         }
         .animation(.easeInOut(duration: 0.2), value: vm?.filling)
         .alert(
-            "Fill in from StashDB",
+            "Repair from StashDB",
             isPresented: Binding(
                 get: { vm?.fillMessage != nil },
                 set: { if !$0 { vm?.fillMessage = nil } }
@@ -341,14 +341,18 @@ struct PerformerProfileSheet: View {
                             )
                         }
                         // Only for a linked performer: without a
-                        // stash id there is nothing to fill from.
+                        // stash id there is nothing to repair from.
+                        // "Repair" rather than "Fill in" because it
+                        // does two things - attaches her to scenes the
+                        // library already holds, and fills the columns
+                        // Stash has nothing in.
                         if vm?.performer?.stashDBId != nil {
                             Button {
-                                Task { await vm?.fillFromStashDB() }
+                                Task { await vm?.repairFromStashDB() }
                             } label: {
                                 Label(
-                                    "Fill in from StashDB",
-                                    systemImage: "arrow.down.doc"
+                                    "Repair from StashDB",
+                                    systemImage: "bandage"
                                 )
                             }
                             .disabled(vm?.filling ?? false)
