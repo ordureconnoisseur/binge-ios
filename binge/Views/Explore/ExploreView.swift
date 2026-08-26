@@ -89,6 +89,12 @@ struct ExploreView: View {
             .background(Color.black.ignoresSafeArea())
             .statusBarHidden(tour.isRunning)
             .scrollDismissesKeyboard(.interactively)
+            // On the ScrollView, not an ancestor. Placed on
+            // tabContent it never bound - see the note in HomeView.
+            .contractsBottomNav()
+            // The system's darkened bottom edge treatment reads as a
+            // black band around a floating capsule.
+            .scrollEdgeEffectStyle(nil, for: .bottom)
             .refreshable {
                 await vm?.load()
             }

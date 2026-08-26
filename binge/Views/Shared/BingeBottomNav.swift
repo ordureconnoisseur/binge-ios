@@ -45,22 +45,29 @@ enum BingeTab: Hashable {
 
 struct BingeBottomNav: View {
     @Binding var selected: BingeTab
-    @State private var chrome = NavChrome.shared
     @Namespace private var glass
 
-    private var contracted: Bool { chrome.contracted }
 
-    private var iconSize: CGFloat { contracted ? 21 : 26 }
+    // PARKED: one fixed size, deliberately.
+    //
+    // Three things were being changed at once - the size behaviour, the
+    // layout footprint and the material - with no way to see the result
+    // and a scroll handler that turned out not to be running at all.
+    // Every "fix" was a guess about which of the three was wrong. The
+    // island has to look right standing still before it is worth
+    // animating, so these are constants for now and go back to
+    // `contracted ? a : b` in one edit once it does.
+    private var iconSize: CGFloat { 26 }
     /// The active pill, and so the row height. Measured off the
     /// reference rather than derived from the icon: theirs is 72x50pt
     /// in a 60pt bar, which leaves a 5pt margin above and below and
     /// makes it read as a raised chip. The first pass had 55x32 in a
     /// 56pt bar - half the area, floating in the middle - which is why
     /// it looked like a smudge instead of a selection.
-    private var pillWidth: CGFloat { contracted ? 56 : 72 }
-    private var pillHeight: CGFloat { contracted ? 28 : 50 }
-    private var vPadding: CGFloat { contracted ? 4 : 5 }
-    private var sideInset: CGFloat { contracted ? 50 : 22 }
+    private var pillWidth: CGFloat { 72 }
+    private var pillHeight: CGFloat { 50 }
+    private var vPadding: CGFloat { 5 }
+    private var sideInset: CGFloat { 22 }
 
 
     var body: some View {
@@ -80,21 +87,12 @@ struct BingeBottomNav: View {
         .padding(.horizontal, sideInset)
         .padding(.bottom, 6)
         .frame(maxWidth: .infinity)
-        // A CONSTANT height, and this is the whole trick.
-        //
-        // safeAreaInset insets the content by whatever this view
-        // measures, so a nav that changes height re-insets the feed on
-        // every contract and expand - the content visibly shunts up and
-        // down as you scroll, which is what "it moves everything" was.
-        // Pinning the footprint to the contracted size and letting the
-        // expanded capsule overflow UPWARD means the feed is inset once
-        // and never again, and the extra height is drawn over live
-        // content instead of pushing it.
-        .frame(height: Self.footprint, alignment: .bottom)
     }
 
-    /// Contracted capsule plus its bottom gap. Never changes.
-    private static let footprint: CGFloat = 28 + 4 * 2 + 6
+    /// What the feed is inset by, forever. RootView reserves exactly
+    /// this much with a Color.clear and draws the nav in an overlay, so
+    /// the capsule growing past it costs the layout nothing.
+    static let footprint: CGFloat = 50 + 5 * 2 + 6
 
     @ViewBuilder
     private func slot(
@@ -106,7 +104,6 @@ struct BingeBottomNav: View {
         Button {
             // "Bigger when using it": a tap is interaction, so the bar
             // comes back to full size even mid-flick.
-            chrome.setContracted(false)
             selected = tab
         } label: {
             Image(active ? filled : outline)
