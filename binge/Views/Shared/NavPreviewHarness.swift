@@ -27,6 +27,7 @@ struct NavPreviewHarness: View {
             // material does with content passing under it, and against
             // black it does almost nothing, which is exactly how the
             // first attempts came to look like a grey pill.
+            ScrollViewReader { proxy in
             ScrollView {
                 VStack(spacing: 10) {
                     ForEach(0..<14, id: \.self) { i in
@@ -43,12 +44,31 @@ struct NavPreviewHarness: View {
                                 .padding(10)
                         }
                         .clipShape(RoundedRectangle(cornerRadius: 14))
+                        .id(i)
                     }
                 }
                 .padding(.horizontal, 12)
             }
             .contractsBottomNav()
             .scrollEdgeEffectStyle(nil, for: .bottom)
+            // Drives itself, so the scroll rule can be screenshotted.
+            // The simulator has no scriptable tap or swipe, and the
+            // rule is about DIRECTION, so a static screenshot cannot
+            // show whether it works. -navAutoScroll scrolls down at
+            // 3s and back up at 7s; shoot at 5s and 9s.
+            .task {
+                guard CommandLine.arguments.contains("-navAutoScroll")
+                else { return }
+                try? await Task.sleep(for: .seconds(3))
+                withAnimation(.easeInOut(duration: 1)) {
+                    proxy.scrollTo(9, anchor: .top)
+                }
+                try? await Task.sleep(for: .seconds(4))
+                withAnimation(.easeInOut(duration: 1)) {
+                    proxy.scrollTo(1, anchor: .top)
+                }
+            }
+            }
 
             BingeBottomNav(selected: $tab)
         }
