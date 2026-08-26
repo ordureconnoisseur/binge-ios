@@ -567,7 +567,9 @@ struct HomeView: View {
                 .padding(.top, 4)
                 // Tail-pad so the last card has room below it
                 // before the tab bar overlay starts.
-                .padding(.bottom, 14)
+                // Room for the floating nav, which no longer takes
+                // any of its own. See RootView.
+                .padding(.bottom, 14 + BingeBottomNav.footprint)
                 .scrollTargetLayout()
             }
             .scrollPosition(

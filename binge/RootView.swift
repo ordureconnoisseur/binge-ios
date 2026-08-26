@@ -69,23 +69,22 @@ private struct MainShell: View {
         // composition. Putting it outside opts the whole layout
         // out of keyboard avoidance; the keyboard covers the nav,
         // which is the intended behaviour.
-        // REVERTED to the original VStack.
+        // ZStack, and NOT safeAreaInset.
         //
-        // Swapping this for safeAreaInset + overlay was meant to let the
-        // feed run under the glass. It also broke the reel: slides laid
-        // out taller than the viewport, so the video shrank to a strip
-        // at the top with a growing black void beneath it, worse with
-        // every swipe. The comment that used to live here warned that
-        // safeAreaInset "was getting eaten by the NavigationStack push
-        // transition" and I overrode it on the theory that applying it
-        // to tabContent rather than the parent was different. It was
-        // not.
+        // Two things have to be true at once: content must pass behind
+        // the glass, or the material has nothing to refract and reads
+        // as a grey pill; and the reel must lay out exactly as it did,
+        // because handing safeAreaInset the whole tabContent broke it
+        // twice - slides taller than the viewport, the video collapsed
+        // to a strip with a growing void beneath.
         //
-        // So the nav reserves its own space again and the content stops
-        // above it. That costs the glass its backdrop, which is the
-        // thing that makes it read as glass - so the floating look
-        // needs solving some other way, not by moving this.
-        VStack(spacing: 0) {
+        // So the nav simply floats on top and takes NO part in layout,
+        // and each surface makes its own room for it: scrolling tabs
+        // pad their content by BingeBottomNav.footprint, the reel pads
+        // its controls by the same amount and lets the video run full
+        // bleed behind the bar, which is what the reference does too.
+        // Nothing measures the nav, so nothing can be moved by it.
+        ZStack(alignment: .bottom) {
             tabContent
                 .environment(reelNavigator)
                 .environment(filterNavigator)

@@ -357,7 +357,9 @@ struct SceneSlideView: View {
                 }
                 .padding(.leading, 14)
                 .padding(.trailing, 76)
-                .padding(.bottom, 14)
+                // The slide runs full bleed behind the floating
+                // nav now, so the controls clear it explicitly.
+                .padding(.bottom, 14 + BingeBottomNav.footprint)
             }
 
             // Bottom-right block: action stack. Pinned independently
@@ -395,7 +397,9 @@ struct SceneSlideView: View {
                     )
                 }
                 .padding(.trailing, 14)
-                .padding(.bottom, 14)
+                // The slide runs full bleed behind the floating
+                // nav now, so the controls clear it explicitly.
+                .padding(.bottom, 14 + BingeBottomNav.footprint)
             }
 
             // Progress bar at the very bottom, edge-to-edge. No
