@@ -70,6 +70,12 @@ private struct MainShell: View {
             tabContent
                 .environment(reelNavigator)
                 .environment(filterNavigator)
+                // One attachment for every tab. onScrollPhaseChange
+                // finds the scroll view beneath it, so Home, Explore
+                // and Following all shrink the nav without each one
+                // having to remember to opt in - and a tab added later
+                // gets it for free.
+                .contractsBottomNav()
             // BingeBottomNav lives outside tabContent so it
             // sits OUTSIDE each tab's NavigationStack. A pushed
             // destination (drilled-in reel) inherits tabContent's
