@@ -66,26 +66,33 @@ private struct MainShell: View {
         // composition. Putting it outside opts the whole layout
         // out of keyboard avoidance; the keyboard covers the nav,
         // which is the intended behaviour.
-        VStack(spacing: 0) {
-            tabContent
-                .environment(reelNavigator)
-                .environment(filterNavigator)
-                // One attachment for every tab. onScrollPhaseChange
-                // finds the scroll view beneath it, so Home, Explore
-                // and Following all shrink the nav without each one
-                // having to remember to opt in - and a tab added later
-                // gets it for free.
-                .contractsBottomNav()
-            // BingeBottomNav lives outside tabContent so it
-            // sits OUTSIDE each tab's NavigationStack. A pushed
-            // destination (drilled-in reel) inherits tabContent's
-            // frame — which is the area ABOVE the navbar — so
-            // the reel's action stack + progress bar lay out
-            // above the nav, not under it. `.safeAreaInset` on
-            // the parent here was getting eaten by the
-            // NavigationStack push transition.
-            BingeBottomNav(selected: $tab)
-        }
+        tabContent
+            .environment(reelNavigator)
+            .environment(filterNavigator)
+            // One attachment for every tab. onScrollPhaseChange finds
+            // the scroll view beneath it, so Home, Explore and
+            // Following all shrink the nav without each one having to
+            // remember to opt in - and a tab added later gets it free.
+            .contractsBottomNav()
+            // safeAreaInset, not a VStack, and the difference is the
+            // whole visual point of a glass bar.
+            //
+            // A VStack ends the content where the nav begins, so the
+            // capsule floated in a black band with nothing to refract
+            // and read as a flat grey pill. safeAreaInset gives the two
+            // behaviours that were wanted all along and are hard to get
+            // any other way: a ScrollView takes it as a CONTENT inset,
+            // so the feed scrolls UNDER the glass and can still be
+            // scrolled clear of it, while a Spacer-based layout like
+            // the reel's controls takes it as a smaller FRAME and stays
+            // above the nav exactly as before.
+            //
+            // The nav is still outside every tab's NavigationStack,
+            // which is what the VStack was protecting: tabContent holds
+            // the stacks, and the inset is applied around it.
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                BingeBottomNav(selected: $tab)
+            }
         .overlay { tourCountdownOverlay }
         // Director drives the active tab during a walkthrough.
         .onChange(of: tour.tick) { _, _ in

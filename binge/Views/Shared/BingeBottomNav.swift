@@ -13,13 +13,13 @@ import SwiftUI
 // Three things this got wrong on the first pass, all of them about
 // composition rather than about which API to call:
 //
-// 1. The glass had nothing behind it. MainShell stacks the nav under
-//    the content, so the capsule sat over flat black, and glass with
-//    nothing to refract is just a grey pill - which is most of why it
-//    read as nothing like the reference. Now the nav reserves only its
-//    CONTRACTED height and the expanded state overflows upward over
-//    live content. Growing the bar therefore never pushes anything,
-//    and no frame changes reach the reel.
+// 1. The glass had nothing behind it. MainShell stacked the nav under
+//    the content, so the capsule floated in a black band with nothing
+//    to refract and read as a flat grey pill - which is most of why it
+//    looked nothing like the reference. Fixed in MainShell, which now
+//    hands the nav to safeAreaInset: the feed scrolls UNDER the glass
+//    while the reel's controls still lay out above it. See the note
+//    there.
 //
 // 2. The glass was not interactive. .interactive() is what makes it
 //    respond to a finger, and that is most of the "feel".
@@ -54,11 +54,6 @@ struct BingeBottomNav: View {
     private var vPadding: CGFloat { contracted ? 5 : 12 }
     private var sideInset: CGFloat { contracted ? 50 : 22 }
 
-    /// What the nav takes out of the layout: the contracted capsule
-    /// plus its bottom gap, and nothing more. Everything above that is
-    /// overflow drawn on top of the tab, which is what puts feed
-    /// content behind the glass.
-    private static let reservedHeight: CGFloat = 26 + 5 * 2 + 6
 
     var body: some View {
         GlassEffectContainer(spacing: 14) {
@@ -77,10 +72,6 @@ struct BingeBottomNav: View {
         .padding(.horizontal, sideInset)
         .padding(.bottom, 6)
         .frame(maxWidth: .infinity)
-        // Bottom-aligned so the extra height of the expanded state
-        // grows UPWARD, over the content, instead of downward into the
-        // home indicator.
-        .frame(height: Self.reservedHeight, alignment: .bottom)
     }
 
     @ViewBuilder
