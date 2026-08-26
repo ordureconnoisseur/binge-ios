@@ -13,7 +13,10 @@ struct RootView: View {
 
     var body: some View {
         let configured = !stashUrl.isEmpty && !stashApiKey.isEmpty
-        if !configured && !demoMode {
+        // Design harness, launch-argument only. See NavPreviewHarness.
+        if NavPreviewHarness.isRequested {
+            NavPreviewHarness()
+        } else if !configured && !demoMode {
             SettingsView(mode: .setup)
         } else {
             ZStack {
