@@ -38,6 +38,7 @@ final class NavChrome {
 
     func setContracted(_ value: Bool) {
         guard value != contracted else { return }
+        print("[nav] contracted -> \(value)")
         withAnimation(Self.animation) { contracted = value }
     }
 
@@ -53,6 +54,7 @@ final class NavChrome {
     /// Same rules and the same constants as the web plugin's
     /// useAutoHideTabBar, so the two clients behave alike.
     func noteScroll(from old: CGFloat, to new: CGFloat) {
+        print("[nav] scroll \(Int(old)) -> \(Int(new))")
         if new < Self.nearTop {
             setContracted(false)
             return
