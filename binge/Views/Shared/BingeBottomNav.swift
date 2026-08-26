@@ -36,8 +36,9 @@ import SwiftUI
 //                     captured      as points     here
 //   width  expanded     1056px         352         349  (393 - 2*22)
 //   width  contracted    880px         293         293  (393 - 2*50)
-//   height expanded       172px         57          56
+//   height expanded       180px         60          60
 //   height contracted     104px         35          36
+//   pill   expanded    215x150px       72x50       72x50
 enum BingeTab: Hashable {
     case home, foryou, explore, following, menu
 }
@@ -50,8 +51,15 @@ struct BingeBottomNav: View {
     private var contracted: Bool { chrome.contracted }
 
     private var iconSize: CGFloat { contracted ? 21 : 26 }
-    private var slotHeight: CGFloat { contracted ? 26 : 32 }
-    private var vPadding: CGFloat { contracted ? 5 : 12 }
+    /// The active pill, and so the row height. Measured off the
+    /// reference rather than derived from the icon: theirs is 72x50pt
+    /// in a 60pt bar, which leaves a 5pt margin above and below and
+    /// makes it read as a raised chip. The first pass had 55x32 in a
+    /// 56pt bar - half the area, floating in the middle - which is why
+    /// it looked like a smudge instead of a selection.
+    private var pillWidth: CGFloat { contracted ? 56 : 72 }
+    private var pillHeight: CGFloat { contracted ? 28 : 50 }
+    private var vPadding: CGFloat { contracted ? 4 : 5 }
     private var sideInset: CGFloat { contracted ? 50 : 22 }
 
 
@@ -93,18 +101,26 @@ struct BingeBottomNav: View {
                 .scaledToFit()
                 .frame(width: iconSize, height: iconSize)
                 .foregroundStyle(.white)
-                // Sized to the icon, not to the slot: a slot is a
-                // fifth of the bar and a capsule that wide would read
-                // as a segmented control.
-                .frame(width: iconSize * 2.1, height: slotHeight)
+                .frame(width: pillWidth, height: pillHeight)
                 .background {
                     if active {
+                        // Tinted, not plain. Clear glass on top of the
+                        // bar's own glass on top of a dark feed comes
+                        // out the same colour as the bar, so there was
+                        // nothing to see. The tint is what lifts the
+                        // chip off the surface it sits on.
+                        //
                         // One shared id, so moving between slots is a
                         // morph through the container rather than a
                         // shape sliding across it.
                         Capsule()
                             .fill(.clear)
-                            .glassEffect(.regular.interactive(), in: .capsule)
+                            .glassEffect(
+                                .regular
+                                    .tint(.white.opacity(0.22))
+                                    .interactive(),
+                                in: .capsule
+                            )
                             .glassEffectID("active", in: glass)
                     }
                 }
