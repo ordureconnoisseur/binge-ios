@@ -172,9 +172,16 @@ final class PlayerPool {
                         Date().timeIntervalSince(scheduledStart)
                             * 1000
                     )
+                    let audioTracks = q.currentItem?.tracks.filter {
+                        $0.assetTrack?.mediaType == .audio
+                    } ?? []
                     print(
                         "[PlayerPool] READY scene=\(sceneId) "
-                        + "after=\(pms)ms"
+                        + "after=\(pms)ms "
+                        + "muted=\(q.isMuted) volume=\(q.volume) "
+                        + "audioTracks=\(audioTracks.count) "
+                        + "audioEnabled="
+                        + "\(audioTracks.map(\.isEnabled))"
                     )
                     return
                 }
