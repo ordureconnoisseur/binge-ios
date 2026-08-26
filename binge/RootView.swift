@@ -105,6 +105,17 @@ private struct MainShell: View {
             tabContent
                 .environment(reelNavigator)
                 .environment(filterNavigator)
+                // Content runs to the PHYSICAL bottom, not to the top
+                // of the home-indicator inset.
+                //
+                // Without this the reel's video stopped ~34pt short and
+                // the capsule sat half on video and half on black,
+                // which no amount of tuning the glass could fix - it
+                // had nothing to refract across half its width. Every
+                // surface already pads its own content by
+                // BingeBottomNav.footprint, so nothing ends up
+                // unreachable underneath.
+                .ignoresSafeArea(edges: .bottom)
             BingeBottomNav(selected: $tab)
         }
         .overlay { tourCountdownOverlay }
