@@ -67,7 +67,15 @@ struct NavPreviewHarness: View {
                 ]
                 try? await Task.sleep(for: .seconds(2))
                 for t in order {
-                    tab = t
+                    // Same transaction the nav's own button uses.
+                    // Assigning bare here tested the harness rather
+                    // than the button and made the pill look like it
+                    // never animated.
+                    withAnimation(
+                        .spring(response: 0.42, dampingFraction: 0.78)
+                    ) {
+                        tab = t
+                    }
                     try? await Task.sleep(for: .milliseconds(900))
                 }
             }
