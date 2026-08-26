@@ -45,36 +45,35 @@ enum BingeTab: Hashable {
 
 struct BingeBottomNav: View {
     @Binding var selected: BingeTab
+    @State private var chrome = NavChrome.shared
     @Namespace private var glass
 
 
-    // PARKED: one fixed size, deliberately.
-    //
-    // Three things were being changed at once - the size behaviour, the
-    // layout footprint and the material - with no way to see the result
-    // and a scroll handler that turned out not to be running at all.
-    // Every "fix" was a guess about which of the three was wrong. The
-    // island has to look right standing still before it is worth
-    // animating, so these are constants for now and go back to
-    // `contracted ? a : b` in one edit once it does.
-    private var iconSize: CGFloat { 26 }
+    private var contracted: Bool { chrome.contracted }
+
+    // Two states. The contracted numbers come from the same recording
+    // as the expanded ones: 293pt wide against 349, 35pt tall against
+    // 60, with all five items still visible - the system's own
+    // tabBarMinimizeBehavior collapses to a single pill instead, which
+    // is why this is hand-rolled.
+    private var iconSize: CGFloat { contracted ? 21 : 26 }
     /// The active pill, and so the row height. Measured off the
     /// reference rather than derived from the icon: theirs is 72x50pt
     /// in a 60pt bar, which leaves a 5pt margin above and below and
     /// makes it read as a raised chip. The first pass had 55x32 in a
     /// 56pt bar - half the area, floating in the middle - which is why
     /// it looked like a smudge instead of a selection.
-    private var pillWidth: CGFloat { 74 }
+    private var pillWidth: CGFloat { contracted ? 56 : 74 }
     /// Inset on the row, so the end pills do not sit flush against the
     /// capsule. Measured: the reference leaves 5pt between the pill and
     /// the bar's edge, and dividing the bar into exact fifths leaves 0,
     /// which is why the leftmost item looked jammed into the corner.
     /// 9pt of row padding lands the end pill at that 5pt gap once the
     /// slot maths is done.
-    private var hPadding: CGFloat { 9 }
-    private var pillHeight: CGFloat { 50 }
-    private var vPadding: CGFloat { 5 }
-    private var sideInset: CGFloat { 22 }
+    private var hPadding: CGFloat { contracted ? 7 : 9 }
+    private var pillHeight: CGFloat { contracted ? 28 : 50 }
+    private var vPadding: CGFloat { contracted ? 4 : 5 }
+    private var sideInset: CGFloat { contracted ? 50 : 22 }
 
 
     var body: some View {
@@ -112,6 +111,10 @@ struct BingeBottomNav: View {
     /// space rather than sitting on top of it, and respecting the inset
     /// is what left mine floating 16pt too high.
     static let bottomOffset: CGFloat = 24
+    /// Expanded height, and deliberately the only one the layout
+    /// ever hears about: `footprint` feeds every surface's content
+    /// padding, so pinning it here means shrinking the bar cannot
+    /// reflow a feed.
     static let barHeight: CGFloat = 60
     /// Everything the nav occupies, from the screen's bottom edge up.
     static let footprint: CGFloat = bottomOffset + barHeight
