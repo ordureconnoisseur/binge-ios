@@ -321,6 +321,44 @@ struct SceneSlideView: View {
             // Right inset (.padding(.trailing, 76)) reserves a gap
             // so a long performer name + studio line can't run
             // under the action stack on the right.
+            // Progressive frost along the bottom, under the caption
+            // and the chrome but over the video.
+            //
+            // Without it the capsule is a lone bright object on
+            // whatever the video happens to be doing underneath, and
+            // white caption text competes with it. The reference lays a
+            // blur over the whole bottom band starting just above the
+            // scrub bar, which is what makes the scrub bar, the caption
+            // and the nav read as one piece of chrome instead of three
+            // things floating separately.
+            //
+            // Masked rather than a plain material: an even frost across
+            // the band would cut a hard horizontal line across the
+            // video. The gradient makes it arrive gradually and reach
+            // full strength behind the nav.
+            VStack(spacing: 0) {
+                Spacer()
+                Rectangle()
+                    .fill(.ultraThinMaterial)
+                    .mask(
+                        LinearGradient(
+                            stops: [
+                                .init(color: .clear, location: 0),
+                                .init(
+                                    color: .black.opacity(0.5),
+                                    location: 0.45
+                                ),
+                                .init(color: .black, location: 1),
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .frame(height: BingeBottomNav.scrubClearance + 34)
+            }
+            .allowsHitTesting(false)
+            .ignoresSafeArea(edges: .bottom)
+
             VStack(spacing: 0) {
                 Spacer()
                 HStack {
@@ -359,7 +397,7 @@ struct SceneSlideView: View {
                 .padding(.trailing, 76)
                 // The slide runs full bleed behind the floating
                 // nav now, so the controls clear it explicitly.
-                .padding(.bottom, 14 + BingeBottomNav.footprint)
+                .padding(.bottom, 14 + BingeBottomNav.scrubClearance)
             }
 
             // Bottom-right block: action stack. Pinned independently
@@ -399,7 +437,7 @@ struct SceneSlideView: View {
                 .padding(.trailing, 14)
                 // The slide runs full bleed behind the floating
                 // nav now, so the controls clear it explicitly.
-                .padding(.bottom, 14 + BingeBottomNav.footprint)
+                .padding(.bottom, 14 + BingeBottomNav.scrubClearance)
             }
 
             // Progress bar edge-to-edge, sitting directly ABOVE the
@@ -434,12 +472,10 @@ struct SceneSlideView: View {
                         await generateThumbnail(at: ratio)
                     }
                 )
-                // Clear the floating nav. The slide runs full bleed
-                // now, so "flush against the navbar" would put the
-                // scrub bar UNDER it - and the reference keeps it
-                // above, where you can still grab it while the bar
-                // stays visible.
-                .padding(.bottom, BingeBottomNav.footprint)
+                // Clear the floating nav, with air above it. Padding
+                // by the nav's height alone put the scrub bar flush
+                // against the capsule; the reference leaves 14.7pt.
+                .padding(.bottom, BingeBottomNav.scrubClearance)
             }
         }
         .task(id: speedToastTick) {

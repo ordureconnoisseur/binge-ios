@@ -93,14 +93,31 @@ struct BingeBottomNav: View {
             .glassEffect(.regular.interactive(), in: .capsule)
         }
         .padding(.horizontal, sideInset)
-        .padding(.bottom, 6)
+        .padding(.bottom, Self.bottomOffset)
         .frame(maxWidth: .infinity)
+        // Into the safe area, not above it. See bottomOffset.
+        .ignoresSafeArea(edges: .bottom)
     }
 
-    /// What the feed is inset by, forever. RootView reserves exactly
-    /// this much with a Color.clear and draws the nav in an overlay, so
-    /// the capsule growing past it costs the layout nothing.
-    static let footprint: CGFloat = 50 + 5 * 2 + 6
+    // Geometry, all measured off the reference at 3px per point on a
+    // 393pt screen. Kept as one block because they are related: move
+    // one and the others have to follow.
+    //
+    //   capsule bottom -> screen bottom   24.0pt
+    //   capsule height                    58.7pt
+    //   scrub bar -> capsule top          14.7pt
+    //
+    /// Gap under the capsule. Deliberately LESS than the home-indicator
+    /// safe area, which is ~34pt: the reference tucks the bar into that
+    /// space rather than sitting on top of it, and respecting the inset
+    /// is what left mine floating 16pt too high.
+    static let bottomOffset: CGFloat = 24
+    static let barHeight: CGFloat = 60
+    /// Everything the nav occupies, from the screen's bottom edge up.
+    static let footprint: CGFloat = bottomOffset + barHeight
+    /// Where the reel's scrub bar sits. Padding it by `footprint` alone
+    /// put it flush against the capsule; the reference leaves air.
+    static let scrubClearance: CGFloat = footprint + 15
 
     @ViewBuilder
     private func slot(
