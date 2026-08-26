@@ -697,11 +697,19 @@ struct SettingsView: View {
         } header: {
             Text("Streaming")
         } footer: {
+            // Kept honest against Scene.streamURL. The old wording said
+            // Auto routed HEVC via HLS, which stopped being true when
+            // direct HEVC became the default, so the one setting that
+            // decides this described the opposite of what it does.
             Text(
-                "Auto follows Stash's transcode rules — HEVC content "
-                    + "routes via HLS, everything else plays direct. "
-                    + "Force a specific type if you see playback "
-                    + "issues with the default."
+                "Auto plays H.264 and HEVC straight from the file, and "
+                    + "switches to a transcode by itself if an HEVC "
+                    + "scene stalls. VP9, AV1 and anything Stash can't "
+                    + "identify are transcoded, and MKV always is "
+                    + "whatever this is set to, because the container "
+                    + "cannot be played directly at all. Force a type "
+                    + "if you see playback issues, or pick HLS on a "
+                    + "slow connection for its smaller variants."
             )
         }
     }
