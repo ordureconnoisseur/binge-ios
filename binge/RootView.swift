@@ -39,7 +39,24 @@ struct RootView: View {
 // extend behind it visually if it wants to, but in practice both
 // HomeView and ReelView size themselves to the available frame.
 private struct MainShell: View {
-    @State private var tab: BingeTab = .home
+    // `-startTab foryou` opens straight onto a tab. Test-only, and the
+    // reason it exists: verifying the reel in the simulator needs the
+    // reel on screen, and the simulator has no scriptable tap.
+    @State private var tab: BingeTab = MainShell.launchTab
+
+    static var launchTab: BingeTab {
+        let args = CommandLine.arguments
+        guard let i = args.firstIndex(of: "-startTab"),
+            i + 1 < args.count
+        else { return .home }
+        switch args[i + 1] {
+        case "foryou": return .foryou
+        case "explore": return .explore
+        case "following": return .following
+        case "menu": return .menu
+        default: return .home
+        }
+    }
     // Automated walkthrough director (demo-capture only). Observed so
     // `.switchTab` commands drive the active tab and the pre-roll
     // countdown can overlay the whole shell.
