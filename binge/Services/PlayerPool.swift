@@ -54,6 +54,27 @@ final class PlayerPool {
         self.capacity = capacity
     }
 
+    /// One line, the first time a player is built, describing why the
+    /// device is or is not making a noise. Everything here is a
+    /// question that gets asked whenever someone reports silence: is
+    /// the category the one that ignores the ring switch, is the media
+    /// volume actually up, and is something else holding the session.
+    private static var loggedAudioState = false
+    private static func logAudioStateOnce() {
+        if loggedAudioState { return }
+        loggedAudioState = true
+        let s = AVAudioSession.sharedInstance()
+        print(
+            "[binge] audio category=\(s.category.rawValue) "
+            + "mode=\(s.mode.rawValue) "
+            + "options=\(s.categoryOptions.rawValue) "
+            + "outputVolume=\(s.outputVolume) "
+            + "otherAudioPlaying=\(s.isOtherAudioPlaying) "
+            + "silenceHint=\(s.secondaryAudioShouldBeSilencedHint) "
+            + "route=\(s.currentRoute.outputs.map(\.portType.rawValue))"
+        )
+    }
+
     /// Get a player for this scene. Cache hit refreshes lastUsed
     /// + returns the existing player. Cache miss creates a new
     /// player (and evicts the LRU entry if we'd exceed capacity).
@@ -114,6 +135,7 @@ final class PlayerPool {
         let q = AVQueuePlayer(playerItem: item)
         q.automaticallyWaitsToMinimizeStalling = false
         q.isMuted = muted
+        Self.logAudioStateOnce()
         // AVPlayerLooper queues a second item internally for
         // seamless looping. Slightly more memory than manual
         // seek-to-zero but the media services overhead of N
