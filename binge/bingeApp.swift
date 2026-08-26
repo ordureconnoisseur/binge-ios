@@ -23,27 +23,29 @@ struct BingeApp: App {
 
         Self.migrateSettingsKeys()
 
-        // Configure the audio session once at launch. Without this
-        // call iOS defaults to .soloAmbient / .ambient which
-        // doesn't reliably play audio when the device is locked
-        // or in silent mode, and the category can shift unexpectedly
-        // between app states.
-        //
-        // .playback         — plays even when device is muted /
-        //                     screen is locked; right category
-        //                     for a video app.
-        // .moviePlayback    — mode hint for the system.
-        // .mixWithOthers    — doesn't interrupt Music/Spotify. The
-        //                     user can keep their soundtrack going
-        //                     while watching binge muted (the
-        //                     default state) — and if they unmute,
-        //                     both play simultaneously (same as
-        //                     Instagram, not iOS Music ducking).
+        Self.configureAudioSession()
+    }
+
+    // Without this iOS defaults to .soloAmbient / .ambient, which does
+    // not reliably play audio with the screen locked or the ring switch
+    // silenced, and can shift between app states.
+    //
+    // .playback      plays regardless of the ring switch and with the
+    //                screen locked; the category for a video app.
+    // .moviePlayback mode hint for the system.
+    //
+    // No .mixWithOthers. It was here so a Spotify soundtrack could keep
+    // going "while watching binge muted (the default state)" - and mute
+    // was removed in e26141a, so the premise went with it. What the
+    // option costs is that a mixable session is not the primary audio
+    // app: no Now Playing entry, no lock screen or Control Centre
+    // transport, and the volume buttons are not unambiguously binge's.
+    // A video app that always plays sound should own the session.
+    private static func configureAudioSession() {
         do {
             try AVAudioSession.sharedInstance().setCategory(
                 .playback,
-                mode: .moviePlayback,
-                options: [.mixWithOthers]
+                mode: .moviePlayback
             )
             try AVAudioSession.sharedInstance().setActive(true)
         } catch {
@@ -84,6 +86,16 @@ struct BingeApp: App {
                 .onChange(of: scenePhase) { _, phase in
                     if phase == .active {
                         Task { await MultiviewQueueStore.shared.refresh(force: true) }
+                        // The session was configured once, at launch,
+                        // and nothing ever put it back. A phone call,
+                        // an alarm or Siri deactivates it, and every
+                        // player from then on renders into a session
+                        // that is not running - silent, with the app
+                        // showing no sign of it and nothing short of a
+                        // force quit to recover. setActive on an
+                        // already-active session is a no-op, so this
+                        // costs nothing in the normal case.
+                        Self.configureAudioSession()
                     }
                 }
         }
