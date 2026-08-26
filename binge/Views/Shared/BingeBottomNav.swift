@@ -127,8 +127,9 @@ struct BingeBottomNav: View {
     ) -> some View {
         let active = selected == tab
         Button {
-            // "Bigger when using it": a tap is interaction, so the bar
-            // comes back to full size even mid-flick.
+            // Bigger when you tap it. The other way back is scrolling
+            // up; see NavChrome.noteScroll.
+            chrome.setContracted(false)
             selected = tab
         } label: {
             Image(active ? filled : outline)

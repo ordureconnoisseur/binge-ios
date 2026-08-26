@@ -11,8 +11,14 @@ import SwiftUI
 final class NavChrome {
     static let shared = NavChrome()
 
-    /// True while a scroll is in flight anywhere that opted in.
-    private(set) var contracted = false
+    /// True while the bar is in its small state.
+    private(set) var contracted: Bool
+
+    private init() {
+        // Lets a screenshot catch the small state, which otherwise
+        // needs a scroll gesture the simulator cannot be told to make.
+        contracted = CommandLine.arguments.contains("-navContracted")
+    }
 
     /// Spring rather than a duration: the bar is being pushed around by
     /// a finger, and an ease curve reads as the animation catching up
@@ -22,34 +28,62 @@ final class NavChrome {
         dampingFraction: 0.82
     )
 
+    /// Within this much of the top the bar is always full size, so a
+    /// feed you have just opened never greets you with shrunken chrome.
+    private static let nearTop: CGFloat = 80
+    /// Ignore movement smaller than this. Rubber-band wobble and
+    /// sub-pixel events would otherwise flip the bar back and forth,
+    /// and at this size that reads as a twitch rather than a response.
+    private static let deadzone: CGFloat = 5
+
     func setContracted(_ value: Bool) {
         guard value != contracted else { return }
-        print("[nav] contracted \(contracted) -> \(value)")
         withAnimation(Self.animation) { contracted = value }
     }
 
-    /// Scrolling shrinks the bar and is not allowed to grow it again.
+    /// Direction, not activity.
     ///
-    /// Expanding on scroll-idle meant the bar pulsed back to full size
-    /// every time a flick settled, which is most of a browsing session:
-    /// it read as the chrome twitching rather than as a state. Big is
-    /// for when you are using the nav, so only a tap brings it back.
-    func noteScrolling() {
-        setContracted(true)
+    /// The first version shrank on any scroll phase and grew again on
+    /// idle, so the bar sprang back to full size every time a flick
+    /// settled - which is most of a browsing session, and reads as the
+    /// chrome twitching rather than as a state. Big is for when you are
+    /// reaching for it: on the way back up, or on a tap. Going down it
+    /// gets out of the way and stays there.
+    ///
+    /// Same rules and the same constants as the web plugin's
+    /// useAutoHideTabBar, so the two clients behave alike.
+    func noteScroll(from old: CGFloat, to new: CGFloat) {
+        if new < Self.nearTop {
+            setContracted(false)
+            return
+        }
+        let delta = new - old
+        if delta > Self.deadzone {
+            setContracted(true)
+        } else if delta < -Self.deadzone {
+            setContracted(false)
+        }
     }
 }
 
 extension View {
-    /// Shrink the floating nav while this scroll view is moving.
+    /// Shrink the floating nav as this scroll view moves down, and
+    /// restore it on the way back up.
     ///
-    /// onScrollPhaseChange rather than a debounced offset watcher: the
-    /// phases already distinguish a finger on the glass from momentum
-    /// from a stopped view, so there is no timer to tune. Only the
-    /// non-idle phases are acted on - see noteScrolling.
+    /// onScrollGeometryChange, not onScrollPhaseChange: the phases say
+    /// whether a scroll is happening but not which way it is going, and
+    /// the direction is the whole rule.
+    ///
+    /// It also has to be attached to the ScrollView itself. On an
+    /// ancestor above a NavigationStack it silently never binds - a
+    /// live capture of 72 log lines contained zero state changes - and
+    /// that cost several rounds of tuning sizes on a bar whose state
+    /// was never once being set.
     func contractsBottomNav() -> some View {
-        onScrollPhaseChange { old, phase in
-            print("[nav] phase \(old) -> \(phase)")
-            if phase != .idle { NavChrome.shared.noteScrolling() }
+        onScrollGeometryChange(for: CGFloat.self) { geo in
+            geo.contentOffset.y
+        } action: { old, new in
+            NavChrome.shared.noteScroll(from: old, to: new)
         }
     }
 }
