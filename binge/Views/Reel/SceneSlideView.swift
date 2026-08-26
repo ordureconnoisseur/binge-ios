@@ -402,12 +402,11 @@ struct SceneSlideView: View {
                 .padding(.bottom, 14 + BingeBottomNav.footprint)
             }
 
-            // Progress bar at the very bottom, edge-to-edge. No
-            // horizontal padding so it lines up with the screen
-            // edges and the nav above; no bottom padding so it
-            // sits flush against the navbar. IG Reels treats this
-            // strip as part of the chrome rather than a floating
-            // element.
+            // Progress bar edge-to-edge, sitting directly ABOVE the
+            // floating nav. No horizontal padding so it lines up with
+            // the screen edges. IG Reels puts it exactly here: while
+            // scrubbing it thickens and grows a thumbnail preview and
+            // a time readout, with the nav still visible underneath.
             VStack(spacing: 0) {
                 Spacer()
                 SceneProgressBar(
@@ -435,6 +434,12 @@ struct SceneSlideView: View {
                         await generateThumbnail(at: ratio)
                     }
                 )
+                // Clear the floating nav. The slide runs full bleed
+                // now, so "flush against the navbar" would put the
+                // scrub bar UNDER it - and the reference keeps it
+                // above, where you can still grab it while the bar
+                // stays visible.
+                .padding(.bottom, BingeBottomNav.footprint)
             }
         }
         .task(id: speedToastTick) {

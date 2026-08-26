@@ -64,7 +64,14 @@ struct BingeBottomNav: View {
     /// makes it read as a raised chip. The first pass had 55x32 in a
     /// 56pt bar - half the area, floating in the middle - which is why
     /// it looked like a smudge instead of a selection.
-    private var pillWidth: CGFloat { 72 }
+    private var pillWidth: CGFloat { 74 }
+    /// Inset on the row, so the end pills do not sit flush against the
+    /// capsule. Measured: the reference leaves 5pt between the pill and
+    /// the bar's edge, and dividing the bar into exact fifths leaves 0,
+    /// which is why the leftmost item looked jammed into the corner.
+    /// 9pt of row padding lands the end pill at that 5pt gap once the
+    /// slot maths is done.
+    private var hPadding: CGFloat { 9 }
     private var pillHeight: CGFloat { 50 }
     private var vPadding: CGFloat { 5 }
     private var sideInset: CGFloat { 22 }
@@ -82,6 +89,7 @@ struct BingeBottomNav: View {
                 slot(.menu, outline: "MenuIcon", filled: "MenuIcon")
             }
             .padding(.vertical, vPadding)
+            .padding(.horizontal, hPadding)
             .glassEffect(.regular.interactive(), in: .capsule)
         }
         .padding(.horizontal, sideInset)
