@@ -118,6 +118,12 @@ private struct MainShell: View {
                 .ignoresSafeArea(edges: .bottom)
             BingeBottomNav(selected: $tab)
         }
+        // On the STACK, not just on its children. The nav ignoring the
+        // inset internally does not help while the ZStack still aligns
+        // it to the safe-area edge: the 34pt home-indicator inset was
+        // being added to the nav's own 24pt offset, putting the capsule
+        // at 59pt off the bottom instead of 24.
+        .ignoresSafeArea(edges: .bottom)
         .overlay { tourCountdownOverlay }
         // Director drives the active tab during a walkthrough.
         .onChange(of: tour.tick) { _, _ in
