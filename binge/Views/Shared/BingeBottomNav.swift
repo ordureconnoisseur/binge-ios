@@ -120,7 +120,16 @@ struct BingeBottomNav: View {
                 .scaledToFit()
                 .frame(width: iconSize, height: iconSize)
                 .foregroundStyle(.white)
-                .frame(width: pillWidth, height: pillHeight)
+                // The SLOT is elastic; only the pill drawn behind it
+                // is a fixed size, and a background never influences
+                // the size of what it sits behind.
+                //
+                // Sizing the slot itself to pillWidth made 74pt each
+                // slot's MINIMUM, so the bar demanded
+                // 5*74 + 2*9 + 2*22 = 432pt on a 393pt screen, could
+                // not shrink because the frame was fixed, and clipped
+                // off both edges.
+                .frame(maxWidth: .infinity, minHeight: pillHeight)
                 .background {
                     if active {
                         // Tinted, not plain. Clear glass on top of the
@@ -141,9 +150,9 @@ struct BingeBottomNav: View {
                                 in: .capsule
                             )
                             .glassEffectID("active", in: glass)
+                            .frame(width: pillWidth, height: pillHeight)
                     }
                 }
-                .frame(maxWidth: .infinity)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
