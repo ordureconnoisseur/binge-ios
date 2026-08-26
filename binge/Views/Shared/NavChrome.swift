@@ -24,6 +24,7 @@ final class NavChrome {
 
     func setContracted(_ value: Bool) {
         guard value != contracted else { return }
+        print("[nav] contracted \(contracted) -> \(value)")
         withAnimation(Self.animation) { contracted = value }
     }
 
@@ -46,7 +47,8 @@ extension View {
     /// from a stopped view, so there is no timer to tune. Only the
     /// non-idle phases are acted on - see noteScrolling.
     func contractsBottomNav() -> some View {
-        onScrollPhaseChange { _, phase in
+        onScrollPhaseChange { old, phase in
+            print("[nav] phase \(old) -> \(phase)")
             if phase != .idle { NavChrome.shared.noteScrolling() }
         }
     }
