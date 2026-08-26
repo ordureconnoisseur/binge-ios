@@ -26,19 +26,28 @@ final class NavChrome {
         guard value != contracted else { return }
         withAnimation(Self.animation) { contracted = value }
     }
+
+    /// Scrolling shrinks the bar and is not allowed to grow it again.
+    ///
+    /// Expanding on scroll-idle meant the bar pulsed back to full size
+    /// every time a flick settled, which is most of a browsing session:
+    /// it read as the chrome twitching rather than as a state. Big is
+    /// for when you are using the nav, so only a tap brings it back.
+    func noteScrolling() {
+        setContracted(true)
+    }
 }
 
 extension View {
     /// Shrink the floating nav while this scroll view is moving.
     ///
     /// onScrollPhaseChange rather than a debounced offset watcher: the
-    /// phases already distinguish a finger on the glass (.tracking,
-    /// .dragging) from momentum (.decelerating) from a stopped view
-    /// (.idle), so there is no timer to tune and no window where a
-    /// flick has ended but the bar is still waiting to find out.
+    /// phases already distinguish a finger on the glass from momentum
+    /// from a stopped view, so there is no timer to tune. Only the
+    /// non-idle phases are acted on - see noteScrolling.
     func contractsBottomNav() -> some View {
         onScrollPhaseChange { _, phase in
-            NavChrome.shared.setContracted(phase != .idle)
+            if phase != .idle { NavChrome.shared.noteScrolling() }
         }
     }
 }

@@ -80,7 +80,21 @@ struct BingeBottomNav: View {
         .padding(.horizontal, sideInset)
         .padding(.bottom, 6)
         .frame(maxWidth: .infinity)
+        // A CONSTANT height, and this is the whole trick.
+        //
+        // safeAreaInset insets the content by whatever this view
+        // measures, so a nav that changes height re-insets the feed on
+        // every contract and expand - the content visibly shunts up and
+        // down as you scroll, which is what "it moves everything" was.
+        // Pinning the footprint to the contracted size and letting the
+        // expanded capsule overflow UPWARD means the feed is inset once
+        // and never again, and the extra height is drawn over live
+        // content instead of pushing it.
+        .frame(height: Self.footprint, alignment: .bottom)
     }
+
+    /// Contracted capsule plus its bottom gap. Never changes.
+    private static let footprint: CGFloat = 28 + 4 * 2 + 6
 
     @ViewBuilder
     private func slot(
