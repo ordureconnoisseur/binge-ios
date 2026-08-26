@@ -573,6 +573,21 @@ struct HomeView: View {
             .scrollPosition(
                 id: $activeFeedEntryId, anchor: .center
             )
+            // On the ScrollView itself, not on an ancestor.
+            //
+            // This lived on tabContent in RootView, outside every tab's
+            // NavigationStack, and never fired once: a capture of 72
+            // log lines from a live session contained zero phase
+            // changes. onScrollPhaseChange does not cross that
+            // boundary, so the nav's contracted state was never set and
+            // every size value tuned since was dead code.
+            .contractsBottomNav()
+            // The system draws its own darkened edge treatment behind a
+            // bottom bar as content passes under it. Against a floating
+            // capsule that is a black band around the pill rather than
+            // anything glassy, so it is turned off and the glass does
+            // the whole job.
+            .scrollEdgeEffectStyle(nil, for: .bottom)
             .statusBarHidden(tour.isRunning)
             .background(Color.black.ignoresSafeArea())
             .refreshable {

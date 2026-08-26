@@ -69,11 +69,6 @@ private struct MainShell: View {
         tabContent
             .environment(reelNavigator)
             .environment(filterNavigator)
-            // One attachment for every tab. onScrollPhaseChange finds
-            // the scroll view beneath it, so Home, Explore and
-            // Following all shrink the nav without each one having to
-            // remember to opt in - and a tab added later gets it free.
-            .contractsBottomNav()
             // safeAreaInset, not a VStack, and the difference is the
             // whole visual point of a glass bar.
             //
