@@ -2,7 +2,8 @@ import SwiftUI
 
 // Floating Liquid Glass nav, in the shape Instagram's iOS 26 build
 // uses: a capsule hovering over the content rather than a bar sitting
-// under it, shrinking while you scroll and coming back when you stop.
+// under it, shrinking as you scroll down and coming back on the way up
+// or on a tap.
 //
 // Not TabView. iOS 26 ships .tabBarMinimizeBehavior(.onScrollDown),
 // which is the obvious thing to reach for and is NOT what the
@@ -10,104 +11,133 @@ import SwiftUI
 // compact pill showing only the selected tab, while Instagram keeps
 // all five icons up and scales the whole capsule down.
 //
-// Three things this got wrong on the first pass, all of them about
-// composition rather than about which API to call:
+// Sizes come from a matched pair of reference shots - the same moment,
+// once scrolled and once at the top - measured at 3px per point on a
+// 393pt screen:
 //
-// 1. The glass had nothing behind it. MainShell stacked the nav under
-//    the content, so the capsule floated in a black band with nothing
-//    to refract and read as a flat grey pill - which is most of why it
-//    looked nothing like the reference. Fixed in MainShell, which now
-//    hands the nav to safeAreaInset: the feed scrolls UNDER the glass
-//    while the reel's controls still lay out above it. See the note
-//    there.
+//                  expanded   contracted
+//   width            344.3       295.3
+//   height            58.0        48.7
+//   bottom gap        23.0        27.7
+//   pill              74x50
+//   pill from end      5.0
 //
-// 2. The glass was not interactive. .interactive() is what makes it
-//    respond to a finger, and that is most of the "feel".
-//
-// 3. The active pill was a plain white fill. In this design it is
-//    itself glass, and giving it a glassEffectID inside the container
-//    is what makes it MORPH between slots instead of sliding as a
-//    solid shape. That morph is the liquid in Liquid Glass.
-//
-// Sizes are measured off a screen recording of the real thing. Its
-// frames are 1180px wide for a 393pt screen, so a captured pixel is a
-// third of a point:
-//
-//                     captured      as points     here
-//   width  expanded     1056px         352         349  (393 - 2*22)
-//   width  contracted    880px         293         293  (393 - 2*50)
-//   height expanded       180px         60          60
-//   height contracted     104px         35          36
-//   pill   expanded    215x150px       72x50       72x50
-enum BingeTab: Hashable {
+// The shrink is gentler than it looks - about 9pt of height - and the
+// bar rises ~5pt rather than staying put, so it pulls in towards its
+// own centre.
+enum BingeTab: Hashable, CaseIterable {
     case home, foryou, explore, following, menu
+
+    var outlineAsset: String {
+        switch self {
+        case .home: return "HomeOutline"
+        case .foryou: return "ReelOutline"
+        case .explore: return "SearchIcon"
+        case .following: return "UserIcon"
+        case .menu: return "MenuIcon"
+        }
+    }
+
+    /// Search / Following / Menu have no filled variant; the pill
+    /// behind them carries the active state.
+    var filledAsset: String {
+        switch self {
+        case .home: return "HomeFilled"
+        case .foryou: return "ReelFilled"
+        default: return outlineAsset
+        }
+    }
 }
 
 struct BingeBottomNav: View {
     @Binding var selected: BingeTab
     @State private var chrome = NavChrome.shared
-    @Namespace private var glass
-
 
     private var contracted: Bool { chrome.contracted }
 
     /// How the pill crosses the bar. Slightly looser than the resize
-    /// spring: the pill covers real distance, and at the resize's
-    /// response it arrives before the eye has followed it.
+    /// spring: it covers real distance, and at the resize's response it
+    /// arrives before the eye has followed it.
     private static let pillTravel = Animation.spring(
         response: 0.42,
         dampingFraction: 0.78
     )
 
-    // Both states measured off a matched pair of reference shots - the
-    // same moment, once scrolled and once at the top - at 3px per point
-    // on a 393pt screen:
-    //
-    //                  expanded   contracted
-    //   width            344.3       295.3
-    //   height            58.0        48.7
-    //   bottom gap        23.0        27.7
-    //
-    // The shrink is far gentler than it looks: about 9pt of height and
-    // 49pt of width, and the bar RISES ~5pt rather than staying put, so
-    // it pulls in towards its own centre. An earlier guess collapsed it
-    // to 36pt tall, which is why it read as a squashed strip instead of
-    // the same object seen smaller. All five items stay visible either
-    // way - the system's own tabBarMinimizeBehavior collapses to a
-    // single pill instead, which is why this is hand-rolled.
     private var iconSize: CGFloat { contracted ? 22 : 26 }
-    /// The active pill, and so the row height. Measured off the
-    /// reference rather than derived from the icon: theirs is 72x50pt
-    /// in a 60pt bar, which leaves a 5pt margin above and below and
-    /// makes it read as a raised chip. The first pass had 55x32 in a
-    /// 56pt bar - half the area, floating in the middle - which is why
-    /// it looked like a smudge instead of a selection.
     private var pillWidth: CGFloat { contracted ? 63 : 74 }
-    /// Inset on the row, so the end pills do not sit flush against the
-    /// capsule. Measured: the reference leaves 5pt between the pill and
-    /// the bar's edge, and dividing the bar into exact fifths leaves 0,
-    /// which is why the leftmost item looked jammed into the corner.
-    /// 9pt of row padding lands the end pill at that 5pt gap once the
-    /// slot maths is done.
-    private var hPadding: CGFloat { contracted ? 8 : 9 }
     private var pillHeight: CGFloat { contracted ? 41 : 50 }
     private var vPadding: CGFloat { 4 }
     private var sideInset: CGFloat { contracted ? 44 : 23 }
+    /// Row inset, so the end pills do not sit flush against the
+    /// capsule: the reference leaves 5pt and exact fifths leave none.
+    private var hPadding: CGFloat { contracted ? 8 : 9 }
 
+    static let bottomOffset: CGFloat = 23
+    /// Expanded height, and deliberately the only one the layout ever
+    /// hears about: `footprint` feeds every surface's content padding,
+    /// so pinning it here means shrinking the bar cannot reflow a feed.
+    static let barHeight: CGFloat = 58
+    static let footprint: CGFloat = bottomOffset + barHeight
+    /// Where the reel's scrub bar sits. Padding it by `footprint` alone
+    /// put it flush against the capsule; the reference leaves air.
+    static let scrubClearance: CGFloat = footprint + 15
+
+    private var activeIndex: Int {
+        BingeTab.allCases.firstIndex(of: selected) ?? 0
+    }
 
     var body: some View {
         GlassEffectContainer(spacing: 14) {
-            HStack(spacing: 0) {
-                slot(.home, outline: "HomeOutline", filled: "HomeFilled")
-                slot(.foryou, outline: "ReelOutline", filled: "ReelFilled")
-                // Search / Following / Menu have no filled variant;
-                // the pill behind them carries the active state now.
-                slot(.explore, outline: "SearchIcon", filled: "SearchIcon")
-                slot(.following, outline: "UserIcon", filled: "UserIcon")
-                slot(.menu, outline: "MenuIcon", filled: "MenuIcon")
+            // ONE pill that moves, not five that appear and disappear.
+            //
+            // The first version put a conditional pill in each slot's
+            // background and relied on glassEffectID to morph between
+            // them. It never moved: a 30fps capture of the transition
+            // showed the pill's centre jumping between fixed positions
+            // with no intermediate frames across 111 samples. Pairing
+            // an insertion in one subtree with a removal in another is
+            // something SwiftUI can be asked to do and frequently will
+            // not; a single view whose offset changes is something it
+            // cannot get wrong.
+            GeometryReader { geo in
+                let slotW =
+                    (geo.size.width - hPadding * 2)
+                    / CGFloat(BingeTab.allCases.count)
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(.clear)
+                        // Tinted, not plain. Clear glass on top of the
+                        // bar's own glass over a dark feed comes out
+                        // the same colour as the bar, leaving nothing
+                        // to see.
+                        .glassEffect(
+                            .regular
+                                .tint(.white.opacity(0.22))
+                                .interactive(),
+                            in: .capsule
+                        )
+                        .frame(width: pillWidth, height: pillHeight)
+                        .offset(
+                            x: hPadding
+                                + slotW * CGFloat(activeIndex)
+                                + (slotW - pillWidth) / 2
+                        )
+
+                    HStack(spacing: 0) {
+                        ForEach(BingeTab.allCases, id: \.self) { tab in
+                            slot(tab)
+                        }
+                    }
+                    .padding(.horizontal, hPadding)
+                }
+                .frame(
+                    width: geo.size.width,
+                    height: geo.size.height,
+                    alignment: .leading
+                )
             }
+            .frame(height: pillHeight)
             .padding(.vertical, vPadding)
-            .padding(.horizontal, hPadding)
             .glassEffect(.regular.interactive(), in: .capsule)
         }
         .padding(.horizontal, sideInset)
@@ -117,91 +147,22 @@ struct BingeBottomNav: View {
         .ignoresSafeArea(edges: .bottom)
     }
 
-    // Geometry, all measured off the reference at 3px per point on a
-    // 393pt screen. Kept as one block because they are related: move
-    // one and the others have to follow.
-    //
-    //   capsule bottom -> screen bottom   24.0pt
-    //   capsule height                    58.7pt
-    //   scrub bar -> capsule top          14.7pt
-    //
-    /// Gap under the capsule. Deliberately LESS than the home-indicator
-    /// safe area, which is ~34pt: the reference tucks the bar into that
-    /// space rather than sitting on top of it, and respecting the inset
-    /// is what left mine floating 16pt too high.
-    static let bottomOffset: CGFloat = 23
-    /// Expanded height, and deliberately the only one the layout
-    /// ever hears about: `footprint` feeds every surface's content
-    /// padding, so pinning it here means shrinking the bar cannot
-    /// reflow a feed.
-    static let barHeight: CGFloat = 58
-    /// Everything the nav occupies, from the screen's bottom edge up.
-    static let footprint: CGFloat = bottomOffset + barHeight
-    /// Where the reel's scrub bar sits. Padding it by `footprint` alone
-    /// put it flush against the capsule; the reference leaves air.
-    static let scrubClearance: CGFloat = footprint + 15
-
     @ViewBuilder
-    private func slot(
-        _ tab: BingeTab,
-        outline: String,
-        filled: String
-    ) -> some View {
+    private func slot(_ tab: BingeTab) -> some View {
         let active = selected == tab
         Button {
             // Bigger when you tap it. The other way back is scrolling
             // up; see NavChrome.noteScroll.
             chrome.setContracted(false)
-            // Explicitly animated, and this is what was missing.
-            //
-            // glassEffectID tells SwiftUI the pill in the old slot and
-            // the pill in the new one are the SAME shape, so it can
-            // morph between them - but it only does that inside an
-            // animation transaction. Assigning `selected` bare gave it
-            // no transaction to join, so the pill vanished from one
-            // slot and appeared in the other with nothing in between.
-            // Now it travels across the bar to what you tapped.
             withAnimation(Self.pillTravel) { selected = tab }
         } label: {
-            Image(active ? filled : outline)
+            Image(active ? tab.filledAsset : tab.outlineAsset)
                 .renderingMode(.template)
                 .resizable()
                 .scaledToFit()
                 .frame(width: iconSize, height: iconSize)
                 .foregroundStyle(.white)
-                // The SLOT is elastic; only the pill drawn behind it
-                // is a fixed size, and a background never influences
-                // the size of what it sits behind.
-                //
-                // Sizing the slot itself to pillWidth made 74pt each
-                // slot's MINIMUM, so the bar demanded
-                // 5*74 + 2*9 + 2*22 = 432pt on a 393pt screen, could
-                // not shrink because the frame was fixed, and clipped
-                // off both edges.
                 .frame(maxWidth: .infinity, minHeight: pillHeight)
-                .background {
-                    if active {
-                        // Tinted, not plain. Clear glass on top of the
-                        // bar's own glass on top of a dark feed comes
-                        // out the same colour as the bar, so there was
-                        // nothing to see. The tint is what lifts the
-                        // chip off the surface it sits on.
-                        //
-                        // One shared id, so moving between slots is a
-                        // morph through the container rather than a
-                        // shape sliding across it.
-                        Capsule()
-                            .fill(.clear)
-                            .glassEffect(
-                                .regular
-                                    .tint(.white.opacity(0.22))
-                                    .interactive(),
-                                in: .capsule
-                            )
-                            .glassEffectID("active", in: glass)
-                            .frame(width: pillWidth, height: pillHeight)
-                    }
-                }
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
