@@ -56,6 +56,21 @@ struct NavPreviewHarness: View {
             // rule is about DIRECTION, so a static screenshot cannot
             // show whether it works. -navAutoScroll scrolls down at
             // 3s and back up at 7s; shoot at 5s and 9s.
+            // Cycles the selection so the pill's travel can be caught
+            // mid-flight. A still cannot show whether a shape moved or
+            // teleported, and the simulator has no scriptable tap.
+            .task {
+                guard CommandLine.arguments.contains("-navCycleTabs")
+                else { return }
+                let order: [BingeTab] = [
+                    .home, .explore, .menu, .foryou, .following,
+                ]
+                try? await Task.sleep(for: .seconds(2))
+                for t in order {
+                    tab = t
+                    try? await Task.sleep(for: .milliseconds(900))
+                }
+            }
             .task {
                 guard CommandLine.arguments.contains("-navAutoScroll")
                 else { return }

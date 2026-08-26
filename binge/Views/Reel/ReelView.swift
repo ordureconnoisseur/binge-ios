@@ -359,6 +359,12 @@ struct ReelView: View {
             .frame(width: geo.size.width, height: geo.size.height)
             .scrollTargetBehavior(.paging)
             .scrollPosition(id: $activeId)
+            // The reel drives the nav as well. A paging swipe is not
+            // "scrolling a list", which is why it was left out at
+            // first, but the reel is where most of the swiping happens
+            // and having the chrome sit still there while every other
+            // surface responds reads as the feature being broken.
+            .contractsBottomNav()
             // Hold the list still while the 2x gesture owns the finger,
             // so pulling down to latch the speed does not also drag the
             // reel. Off again the moment the finger lifts.

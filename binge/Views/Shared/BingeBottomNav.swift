@@ -51,6 +51,14 @@ struct BingeBottomNav: View {
 
     private var contracted: Bool { chrome.contracted }
 
+    /// How the pill crosses the bar. Slightly looser than the resize
+    /// spring: the pill covers real distance, and at the resize's
+    /// response it arrives before the eye has followed it.
+    private static let pillTravel = Animation.spring(
+        response: 0.42,
+        dampingFraction: 0.78
+    )
+
     // Both states measured off a matched pair of reference shots - the
     // same moment, once scrolled and once at the top - at 3px per point
     // on a 393pt screen:
@@ -144,7 +152,16 @@ struct BingeBottomNav: View {
             // Bigger when you tap it. The other way back is scrolling
             // up; see NavChrome.noteScroll.
             chrome.setContracted(false)
-            selected = tab
+            // Explicitly animated, and this is what was missing.
+            //
+            // glassEffectID tells SwiftUI the pill in the old slot and
+            // the pill in the new one are the SAME shape, so it can
+            // morph between them - but it only does that inside an
+            // animation transaction. Assigning `selected` bare gave it
+            // no transaction to join, so the pill vanished from one
+            // slot and appeared in the other with nothing in between.
+            // Now it travels across the bar to what you tapped.
+            withAnimation(Self.pillTravel) { selected = tab }
         } label: {
             Image(active ? filled : outline)
                 .renderingMode(.template)
