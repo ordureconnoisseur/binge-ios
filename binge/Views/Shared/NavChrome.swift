@@ -15,9 +15,14 @@ final class NavChrome {
     private(set) var contracted: Bool
 
     private init() {
-        // Lets a screenshot catch the small state, which otherwise
-        // needs a scroll gesture the simulator cannot be told to make.
-        contracted = CommandLine.arguments.contains("-navContracted")
+        #if DEBUG
+            // Lets a screenshot catch the small state, which otherwise
+            // needs a scroll gesture the simulator cannot be told to
+            // make.
+            contracted = CommandLine.arguments.contains("-navContracted")
+        #else
+            contracted = false
+        #endif
     }
 
     /// Spring rather than a duration: the bar is being pushed around by

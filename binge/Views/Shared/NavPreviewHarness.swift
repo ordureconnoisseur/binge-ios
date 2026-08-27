@@ -1,5 +1,7 @@
 import SwiftUI
 
+#if DEBUG
+
 // A design harness for the floating nav, reachable only by launching
 // with `-navPreview`. Nothing in the shipping app links to it.
 //
@@ -107,3 +109,4 @@ struct NavPreviewHarness: View {
         ]
     }
 }
+#endif

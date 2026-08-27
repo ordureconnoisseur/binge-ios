@@ -11,11 +11,30 @@ struct RootView: View {
     @AppStorage("binge.demoMode") private var demoMode: Bool = false
     private var stashApiKey: String { KeychainStore.shared.stashApiKey }
 
+    /// False in release: the harness does not exist there.
+    private var isNavPreview: Bool {
+        #if DEBUG
+            NavPreviewHarness.isRequested
+        #else
+            false
+        #endif
+    }
+
+    @ViewBuilder
+    private var debugNavPreview: some View {
+        #if DEBUG
+            NavPreviewHarness()
+        #else
+            EmptyView()
+        #endif
+    }
+
     var body: some View {
         let configured = !stashUrl.isEmpty && !stashApiKey.isEmpty
-        // Design harness, launch-argument only. See NavPreviewHarness.
-        if NavPreviewHarness.isRequested {
-            NavPreviewHarness()
+        // Design harness, launch-argument only and debug-only. See
+        // NavPreviewHarness.
+        if isNavPreview {
+            debugNavPreview
         } else if !configured && !demoMode {
             SettingsView(mode: .setup)
         } else {
@@ -45,6 +64,9 @@ private struct MainShell: View {
     @State private var tab: BingeTab = MainShell.launchTab
 
     static var launchTab: BingeTab {
+        #if !DEBUG
+            return .home
+        #else
         let args = CommandLine.arguments
         guard let i = args.firstIndex(of: "-startTab"),
             i + 1 < args.count
@@ -56,6 +78,7 @@ private struct MainShell: View {
         case "menu": return .menu
         default: return .home
         }
+        #endif
     }
     // Automated walkthrough director (demo-capture only). Observed so
     // `.switchTab` commands drive the active tab and the pre-roll
