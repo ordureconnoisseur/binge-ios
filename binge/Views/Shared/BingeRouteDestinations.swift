@@ -65,7 +65,27 @@ struct BingeRouteDestinations: ViewModifier {
                         // UIWindow because `geo.safeAreaInsets`
                         // collapses to 0 once the parent
                         // ignores the safe area.
-                        .ignoresSafeArea(edges: .top)
+                        //
+                        // Bottom as well as top. The reel TAB gets
+                        // .ignoresSafeArea(.bottom) from MainShell and
+                        // so runs full bleed under the floating nav; a
+                        // PUSHED reel is a navigationDestination and
+                        // inherits none of that, so its content stopped
+                        // at the home-indicator inset while the nav
+                        // carried on below it. That left a black band
+                        // and a visible seam under the caption when you
+                        // opened a scene from Home, and nothing wrong
+                        // at all in the reel tab - which is exactly the
+                        // shape of the report.
+                        //
+                        // Safe to widen: this view's own bottom spacing
+                        // is fixed constants (BingeBottomNav.footprint
+                        // and scrubClearance), not geo.safeAreaInsets,
+                        // so collapsing the inset to zero costs it
+                        // nothing. The top case still needs
+                        // BingeSafeArea.top read from UIWindow for the
+                        // same reason.
+                        .ignoresSafeArea(edges: [.top, .bottom])
 
                 case .performer(let localId):
                     // Push a library performer profile onto the
