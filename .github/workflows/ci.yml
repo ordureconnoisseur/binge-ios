@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  logic-tests:
+    name: Logic tests
+    # Self-hosted only. mini-macos is a macOS host runner on the Mac mini.
+    # GitHub-hosted macOS bills at 10x, and the Linux runner the forage repo
+    # uses cannot build an iOS app.
+    runs-on: [self-hosted, macOS, mini-macos]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Run the logic tests
+        # run.sh copies binge/Models/Scene.swift into the SwiftPM package and
+        # runs `swift test`. The last line of its output comes from the
+        # swift-testing runner, which finds nothing and prints "Test run with
+        # 0 tests in 0 suites passed" - ignore it. The real result is the
+        # XCTest summary ("Executed N tests, with 0 failures") and, more to
+        # the point, the exit code: run.sh is `set -euo pipefail` and ends on
+        # `swift test`, so a failing case exits non-zero and fails this job.
+        run: bash logic-tests/run.sh
+
+  release-build:
+    name: Release build
+    runs-on: [self-hosted, macOS, mini-macos]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Put Homebrew on PATH
+        run: echo "/opt/homebrew/bin" >> "$GITHUB_PATH"
+
+      - name: Generate the Xcode project
+        # binge.xcodeproj is generated from project.yml.
+        run: xcodegen generate
+
+      - name: Build Release for the simulator
+        # Release is the point of this job: it proves the DEBUG-only
+        # scaffolding compiles out of a release build.
+        #
+        # Simulator destination on purpose. A device build needs code signing,
+        # which needs the GUI session's unlocked login keychain; a simulator
+        # build signs ad-hoc ("Sign to Run Locally") and needs no keychain,
+        # no profile and no Apple Developer portal round-trip.
+        run: |
+          xcodebuild \
+            -project binge.xcodeproj \
+            -scheme binge \
+            -configuration Release \
+            -destination "platform=iOS Simulator,name=iPhone 17 Pro" \
+            -derivedDataPath build/CIData \
+            build
