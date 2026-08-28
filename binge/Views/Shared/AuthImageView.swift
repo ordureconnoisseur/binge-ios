@@ -23,6 +23,66 @@ import UIKit
 // Diagnostic prints fire on non-200 status, decode failure, or
 // network error so silent black squares stop being a mystery.
 struct AuthImageView: View {
+    /// A URL safe to print. The daemon's media proxies carry the Stash
+    /// API key as an `apikey=` query parameter, so logging the whole URL
+    /// wrote the user's credential to the device console, where a failing
+    /// thumbnail on a misconfigured daemon is exactly when it happens.
+    static func loggable(_ url: URL) -> String {
+        guard var parts = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        else { return url.path }
+        parts.queryItems = parts.queryItems?.map { item in
+            item.name.lowercased() == "apikey"
+                ? URLQueryItem(name: item.name, value: "REDACTED")
+                : item
+        }
+        return parts.string ?? url.path
+    }
+
+    /// Whether the Stash API key may be sent to this URL.
+    ///
+    /// The key belongs to the user's Stash, and the only other place it
+    /// is ever meant to go is their own daemon, which proxies media on
+    /// their behalf. Anything else, however it reached us, gets the
+    /// request without it: a missing image is a far smaller problem
+    /// than a credential handed to a stranger's CDN.
+    /// Origin, not host.
+    ///
+    /// This compared hosts alone, so a URL that merely shared a name
+    /// with the configured Stash collected the key on any scheme and
+    /// any port. The daemon supplies these strings - cover, avatar and
+    /// thumb URLs all arrive over the wire - so an http URL naming the
+    /// https Stash host put the key on the wire in cleartext, which the
+    /// app's arbitrary-loads exception happily allows.
+    private static func sameOrigin(_ a: URL?, _ b: URL?) -> Bool {
+        guard let a, let b,
+            let ah = a.host?.lowercased(), !ah.isEmpty,
+            let bh = b.host?.lowercased(), !bh.isEmpty
+        else { return false }
+        func port(_ u: URL) -> Int {
+            u.port ?? (u.scheme?.lowercased() == "https" ? 443 : 80)
+        }
+        return ah == bh
+            && a.scheme?.lowercased() == b.scheme?.lowercased()
+            && port(a) == port(b)
+    }
+
+    static func mayReceiveKey(_ url: URL) -> Bool {
+        guard let host = url.host?.lowercased(), !host.isEmpty else {
+            return false
+        }
+        let stash = URL(
+            string: UserDefaults.standard.string(forKey: "binge.stashUrl") ?? ""
+        )
+        if sameOrigin(url, stash) { return true }
+        let daemonRaw = BingeServerService.currentURL()
+        if sameOrigin(url, URL(string: daemonRaw)),
+            BingeServerService.isTrustedURL(daemonRaw)
+        {
+            return true
+        }
+        return false
+    }
+
     let url: URL
     let apiKey: String
     var contentMode: ContentMode = .fit
@@ -98,13 +158,21 @@ struct AuthImageView: View {
         .task(id: url) {
             failed = false
             var req = URLRequest(url: url)
-            if !apiKey.isEmpty {
+            // Whether the key may go to this host is decided here, not
+            // by whoever built the view. Most call sites correctly pass
+            // "" for off-site imagery, but the story cover and the
+            // performer avatar pass the real key alongside a URL that
+            // can be any host the daemon named: a redgifs or imgur
+            // thumbnail was enough to send the user's Stash API key to
+            // a third party. A rule every call site has to remember is
+            // a rule that gets forgotten.
+            if !apiKey.isEmpty, Self.mayReceiveKey(url) {
                 req.setValue(apiKey, forHTTPHeaderField: "ApiKey")
             }
             do {
-                let (data, resp) = try await URLSession.shared.data(for: req)
+                let (data, resp) = try await CredentialSession.shared.data(for: req)
                 if let http = resp as? HTTPURLResponse, http.statusCode != 200 {
-                    print("[binge] image \(url.absoluteString) status=\(http.statusCode)")
+                    print("[binge] image \(Self.loggable(url)) status=\(http.statusCode)")
                     await MainActor.run { failed = true }
                     return
                 }
@@ -112,11 +180,11 @@ struct AuthImageView: View {
                 if let img = downsampled {
                     await MainActor.run { image = img }
                 } else {
-                    print("[binge] image \(url.absoluteString) decode failed, \(data.count) bytes")
+                    print("[binge] image \(Self.loggable(url)) decode failed, \(data.count) bytes")
                     await MainActor.run { failed = true }
                 }
             } catch {
-                print("[binge] image \(url.absoluteString) error: \(error)")
+                print("[binge] image \(Self.loggable(url)) error: \(error)")
                 await MainActor.run { failed = true }
             }
         }

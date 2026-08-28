@@ -61,6 +61,24 @@ final class PerformerProfileViewModel {
             as? Bool ?? true
     }
     var stashDBLoading: Bool = false
+    /// The mix-in was switched on by this profile rather than by the
+    /// user, because the library had nothing for this performer.
+    ///
+    /// A performer can be linked to StashDB and still have no scenes
+    /// here: binge creates a local row the moment she is named by a
+    /// StashDB match or followed from discovery. Tapping that name
+    /// opened a profile reading 0 SCENES / 0 LIKES / No scenes, which
+    /// is accurate and useless - StashDB knew about her scenes the
+    /// whole time, behind a pill most people never press. The web
+    /// client never lands anyone there at all: a matched name opens
+    /// the read-only StashDB profile, which shows the scenes at once.
+    ///
+    /// So this only fires on a profile that would otherwise be blank,
+    /// and deliberately does NOT write the global setting: turning the
+    /// mix-in off everywhere should not mean an empty page here, and
+    /// coming back to a performer whose scenes have since landed shows
+    /// the library again with the setting still off.
+    var stashDBAuto: Bool = false
     /// True once a StashDB fetch has completed (even if it yielded
     /// zero unowned scenes), so toggling the section off/on doesn't
     /// re-hit the network when the result was legitimately empty.
@@ -125,9 +143,25 @@ final class PerformerProfileViewModel {
         self.apiKey = apiKey
     }
 
+    /// Bumped by every load. A response whose token no longer
+    /// matches is stale and must not touch scenes, page or hasMore.
+    ///
+    /// load() guarded on `loading` and loadMore() on `loadingMore`, and
+    /// neither checked the other's - so changing the sort while a page
+    /// was in flight let both run. The loadMore response appended its
+    /// page of the OLD ordering to the now-empty list and wrote
+    /// page = 2; load()'s response then replaced scenes but never
+    /// rewrote page, which it had set before its await. The next
+    /// loadMore asked for page 3 and page 2 of the new sort - sixty
+    /// scenes - was never fetched and never appeared. The opposite
+    /// interleaving leaves two orderings concatenated.
+    private var generation = 0
+
     func load() async {
         if loading { return }
         loading = true
+        generation += 1
+        let token = generation
         defer { loading = false }
         // Reset pagination on (re)load so a refresh starts at page 1.
         page = 1
@@ -174,7 +208,13 @@ final class PerformerProfileViewModel {
                 !fetchesAllScenes
                 && scenesData.findScenes.scenes.count == pageSize
                 && scenes.count < scenesData.findScenes.count
+            if token != generation { return }
             self.story = buildStory(from: scenes)
+            // Nothing of hers in the library. See stashDBAuto.
+            if scenes.isEmpty, performer?.stashDBId != nil {
+                stashDBAuto = true
+                await loadStashDBScenes()
+            }
         } catch {
             self.error = (error as? LocalizedError)?.errorDescription
                 ?? "\(error)"
@@ -189,6 +229,7 @@ final class PerformerProfileViewModel {
     /// is in flight (or after exhaustion) is a no-op.
     func loadMore() async {
         if loadingMore || !hasMore || loading { return }
+        let token = generation
         // "recent" loads the full set up front — there is no page 2.
         if fetchesAllScenes { return }
         loadingMore = true
@@ -207,6 +248,9 @@ final class PerformerProfileViewModel {
             )
             // Dedupe defensively — a scene added between page
             // fetches could land in both pages.
+            // Anything that started before the criteria changed is
+            // answering a question nobody is asking any more.
+            if token != generation { return }
             let existing = Set(scenes.map(\.id))
             let fresh = resp.findScenes.scenes.filter {
                 !existing.contains($0.id)
@@ -228,8 +272,21 @@ final class PerformerProfileViewModel {
     /// thrash the network.
     func setSort(_ next: PerformerSceneSort) async {
         guard next != sort else { return }
+        let previous = sort
         sort = next
         await load()
+        // load() opens with `if loading { return }`, and on a large
+        // performer the initial load takes seconds - on .recent it is
+        // per_page: -1, the whole set. Tapping a sort inside that
+        // window used to mutate `sort` and reload nothing: the header
+        // read "MOST VIEWS", the tile badges switched to views, and the
+        // tiles stayed date-ordered. Re-selecting the same option is
+        // refused by the guard above, so the user could not even
+        // correct it without picking a third. Putting the sort back
+        // keeps the label honest about what is on screen.
+        if scenes.isEmpty && loading {
+            sort = previous
+        }
     }
 
     /// Order demo scenes to mirror the live sorts (all DESC). The demo
@@ -388,7 +445,10 @@ final class PerformerProfileViewModel {
         // Through the cache, not around it. This is a sweep of every
         // scene in the library, and the uncached call re-ran it on every
         // profile open while Home's copy sat cached beside it.
-        let owned = await svc.cachedOwnedStashIds()
+        // An unknown answer is treated as "owns everything" here, so a
+        // failed lookup understates what is new rather than offering an
+        // Add button for a scene already in the library.
+        let ownedMaybe = await svc.cachedOwnedStashIds()
         let raw = await svc.fetchScenesForStashDBPerformer(
             stashId: stashId,
             apiKey: box.apiKey
@@ -397,6 +457,22 @@ final class PerformerProfileViewModel {
         // already visible in the library grid via their local
         // entry; surfacing them again on stashdb tiles would
         // just be noise.
+        // An unknown ownership answer shows nothing rather than
+        // offering an Add button for a scene already in the library -
+        // Add creates a second, fileless row carrying a stash_id the
+        // library already uses, and Stash does not enforce uniqueness
+        // on that.
+        guard let owned = ownedMaybe else {
+            // Show nothing, but do NOT record this as loaded. Setting
+            // the flag here made an unknown answer indistinguishable
+            // from "this performer has no unowned StashDB scenes",
+            // permanently: loadStashDBScenes early-returns on the flag,
+            // so one restart while the first profile opened emptied the
+            // section for the life of the sheet, discarding a StashDB
+            // fetch that had already succeeded.
+            stashDBScenes = []
+            return
+        }
         stashDBScenes = raw.filter { !owned.contains($0.id) }
         stashDBLoaded = true
     }
@@ -407,14 +483,151 @@ final class PerformerProfileViewModel {
     func clearStashDBScenes() {
         stashDBScenes = []
         stashDBLoaded = false
+        // Otherwise the next load() sees an empty library grid and
+        // switches the mix-in straight back on, which is the pill
+        // refusing to turn off.
+        stashDBAuto = false
     }
 
+    /// A repair write is in flight.
+    var filling = false
+    /// Result of the last repair, shown once in an alert then cleared.
+    var fillMessage: String?
+
+    /// Put a stub performer row right, from StashDB.
+    ///
+    /// Two separate things are wrong with these rows and both look the
+    /// same from the profile:
+    ///
+    /// The row has no columns. Stash's own tagger and forage create a
+    /// performer from a scene match carrying a name, an image and the
+    /// stash_ids link and nothing else - no gender for the feed's
+    /// gender filter to read, no bio, and no urls, which is the only
+    /// place either client looks for the X handle behind the story
+    /// ring. binge's own Follow scrapes the full record, so these are
+    /// not binge's doing, but binge is where the cost shows.
+    ///
+    /// And nobody is attached to her scenes. Identifying a scene
+    /// against StashDB does not link a performer to it, so the library
+    /// can hold several of hers with an empty performers array on every
+    /// one, and the profile reports zero scenes over them.
+    ///
+    /// Both writes only ever add. Columns are filled where Stash has
+    /// nothing, never overwritten; scenes are added to, never replaced.
+    func repairFromStashDB() async {
+        if filling { return }
+        guard let stashId = performer?.stashDBId else { return }
+        if DemoMode.isOn { return }
+        filling = true
+        defer { filling = false }
+
+        let follow = FollowService(baseURL: baseURL, apiKey: apiKey)
+        var parts: [String] = []
+
+        // Scenes first, so the reload below shows them.
+        let link = await follow.linkExistingScenes(
+            localPerformerId: performerId,
+            stashDBPerformerId: stashId
+        )
+        if link.linked > 0 {
+            parts.append(
+                link.linked == 1
+                    ? "attached 1 scene you already had"
+                    : "attached \(link.linked) scenes you already had"
+            )
+        } else if link.failed {
+            parts.append("could not attach her scenes")
+        }
+
+        do {
+            let filled = try await follow.fillFromStashDB(
+                localId: performerId,
+                stashId: stashId,
+                stashBoxIndex: try await boxIndex()
+            )
+            if !filled.isEmpty {
+                parts.append("filled in \(Self.sentence(filled))")
+            }
+        } catch {
+            print("[binge] repair[\(performerId)] fill failed: \(error)")
+            parts.append(
+                (error as? LocalizedError)?.errorDescription
+                    ?? "could not fill in the blanks"
+            )
+        }
+
+        if parts.isEmpty {
+            fillMessage =
+                link.lookupFailed
+                ? "Couldn't reach StashDB just now."
+                : "Nothing to do. This profile already has everything "
+                    + "StashDB knows."
+            return
+        }
+
+        // The urls that may have just landed decide whether there is X
+        // media and a PornHub feed to fetch, and both loaders run once
+        // per model. Reset them or the profile keeps the answer it
+        // worked out while the row was blank.
+        xLoaded = false
+        xPosts = []
+        pornhubLoaded = false
+        stashDBLoaded = false
+        stashDBScenes = []
+        stashDBAuto = false
+        await load()
+        await loadXMedia()
+        await loadPornhub()
+        fillMessage = Self.capitalisedSentence(parts) + "."
+    }
+
+    /// The stash-box index the scraper needs. Separated so the fill
+    /// call site reads as one line.
+    private func boxIndex() async throws -> Int {
+        let svc = StashDBService(baseURL: baseURL, apiKey: apiKey)
+        guard let box = await svc.fetchBoxConfig() else {
+            throw FollowService.FillError.notOnStashDB
+        }
+        return box.index
+    }
+
+    /// ["attached 2 scenes", "filled in gender"] ->
+    /// "Attached 2 scenes, and filled in gender".
+    private static func capitalisedSentence(_ parts: [String]) -> String {
+        let joined = parts.count > 1
+            ? parts.dropLast().joined(separator: ", ") + ", and "
+                + (parts.last ?? "")
+            : (parts.first ?? "")
+        return joined.prefix(1).uppercased() + joined.dropFirst()
+    }
+
+    /// ["gender", "bio", "links"] -> "gender, bio and links".
+    private static func sentence(_ items: [String]) -> String {
+        if items.count <= 1 { return items.first ?? "" }
+        return items.dropLast().joined(separator: ", ")
+            + " and " + (items.last ?? "")
+    }
+
+    /// A favourite write is in flight.
+    ///
+    /// Two taps inside one round trip used to fire two performerUpdate
+    /// mutations with opposite values: the server applied whichever
+    /// landed last, the client applied whichever RESPONSE returned
+    /// last, and nothing re-read afterwards. The rollback was worse - a
+    /// failure restored `!next` from its own captured intent, so tap
+    /// one failing overwrote tap two's newer optimistic value with one
+    /// derived from a tap the user had already superseded.
+    private(set) var favouriteBusy = false
+
     func toggleFavourite() {
+        if favouriteBusy { return }
         let next = !favourite
         favourite = next
         // Demo mode: flip the heart visually, write nothing to Stash.
         if DemoMode.isOn { return }
+        favouriteBusy = true
         Task {
+            defer { favouriteBusy = false }
             let client = StashClient(baseURL: baseURL, apiKey: apiKey)
             do {
                 let resp: PerformerFavoriteResponse = try await client.gql(
@@ -429,7 +642,9 @@ final class PerformerProfileViewModel {
                 print(
                     "[binge] performer favourite[\(performerId)] failed: \(error)"
                 )
-                favourite = !next  // roll back
+                // Safe to roll back to the captured intent only because
+                // favouriteBusy means no newer tap can exist.
+                favourite = !next
             }
         }
     }

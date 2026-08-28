@@ -33,12 +33,29 @@ final class RatingPrecisionLoader {
             let result = await Self.fetchPrecision(
                 baseURL: baseURL, apiKey: apiKey
             )
-            self?.cache(result)
-            return result
+            // Only a real answer is kept. Caching the 20 fallback -
+            // which fetchPrecision returns for a bad URL, a non-200, a
+            // decode failure, a missing ratingSystemOptions and any
+            // thrown error - pinned whole-star steps for the session
+            // after one blip. On a box set to TENTH the modal then
+            // previews 80 while the hook stores 73, which is the exact
+            // divergence this file exists to prevent, reached by a
+            // different route than the casing bug below.
+            if let result {
+                self?.cache(result)
+                return result
+            }
+            self?.fetchTask = nil
+            return Self.fallbackPrecision
         }
         fetchTask = task
         return await task.value
     }
+
+    /// What to preview with when Stash will not say. FULL, because a
+    /// coarse preview that is occasionally right beats a fine one that
+    /// is confidently wrong.
+    static let fallbackPrecision = 20
 
     func invalidate() {
         cached = nil
@@ -49,14 +66,18 @@ final class RatingPrecisionLoader {
         cached = value
     }
 
+    /// Optional, so "Stash would not say" and "Stash said FULL" stop
+    /// being the same value. They used to both be 20, which is why the
+    /// caller could not tell a failure worth retrying from an answer
+    /// worth keeping.
     private static func fetchPrecision(
         baseURL: String, apiKey: String
-    ) async -> Int {
+    ) async -> Int? {
         let trimmed = baseURL.trimmingCharacters(
             in: .init(charactersIn: "/ \n\r\t")
         )
         guard let url = URL(string: "\(trimmed)/graphql") else {
-            return 20
+            return nil
         }
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
@@ -68,9 +89,9 @@ final class RatingPrecisionLoader {
             withJSONObject: ["query": "query { configuration { ui } }"]
         )
         do {
-            let (data, resp) = try await URLSession.shared.data(for: req)
+            let (data, resp) = try await CredentialSession.shared.data(for: req)
             if let http = resp as? HTTPURLResponse, http.statusCode != 200 {
-                return 20
+                return nil
             }
             guard
                 let json =
@@ -80,11 +101,22 @@ final class RatingPrecisionLoader {
                 let config = dataObj["configuration"] as? [String: Any],
                 let ui = config["ui"] as? [String: Any]
             else {
-                return 20
+                return nil
             }
             let opts = ui["ratingSystemOptions"] as? [String: Any]
-            if (opts?["type"] as? String) == "DECIMAL" { return 1 }
-            switch opts?["starPrecision"] as? String {
+            // Upper-cased before comparing. Stash stores these
+            // lowercase - this box has starPrecision "tenth" and type
+            // "stars" - so every case below was dead and the default of
+            // 20 was the only reachable answer, while the plugin's
+            // Python hook upper-cases and gets 1. The preview was
+            // computed at the wrong precision on every rated scene, and
+            // since the modal shows the preview whenever anything is
+            // scored, the authoritative rating it had just fetched was
+            // never displayed.
+            if (opts?["type"] as? String)?.uppercased() == "DECIMAL" {
+                return 1
+            }
+            switch (opts?["starPrecision"] as? String)?.uppercased() {
             case "FULL": return 20
             case "HALF": return 10
             case "QUARTER": return 5
@@ -92,7 +124,7 @@ final class RatingPrecisionLoader {
             default: return 20
             }
         } catch {
-            return 20
+            return nil
         }
     }
 }

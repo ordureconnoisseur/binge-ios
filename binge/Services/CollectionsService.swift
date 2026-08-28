@@ -184,9 +184,52 @@ final class CollectionsService {
         }
     }
 
-    /// Resolve a collection's tag id. Lazily creates the tag in
-    /// Stash if it doesn't exist (only the default tags hit this
-    /// path — user-created tags always have ids cached by load).
+    /// The one row whose name is byte-identical to what was asked
+    /// for, out of everything the LIKE matched.
+    ///
+    /// Every caller of findTagByName has to go through this. Taking
+    /// `.tags.first` meant a collection named with an underscore or a
+    /// percent resolved to a DIFFERENT tag's id.
+    private func exactTag(
+        _ client: StashClient, named name: String
+    ) async throws -> StashTag? {
+        let lookup: FindTagsResponse = try await client.gql(
+            Queries.findTagByName,
+            variables: ["name": name]
+        )
+        return lookup.findTags.tags.first { $0.name == name }
+    }
+
+    /// Resolve a collection's tag id WITHOUT creating anything.
+    ///
+    /// Split out from tagId because tagId is a find-or-create, and
+    /// four read-only surfaces were calling it: the cover fetch, the
+    /// membership refresh, the detail page, and - worst - delete.
+    /// So merely opening the Saved tab wrote three tags into the
+    /// user's Stash before they had saved anything, one of them in the
+    /// rating plugin's namespace; and pressing Delete created the tag
+    /// it was about to destroy.
+    func resolveTagId(for collection: CollectionDef) async -> String? {
+        if DemoMode.isOn { return "demo-\(collection.tagName)" }
+        if let cached = tagIds[collection.tagName] { return cached }
+        let client = StashClient(baseURL: baseURL, apiKey: apiKey)
+        do {
+            guard let existing = try await exactTag(
+                client, named: collection.tagName
+            ) else { return nil }
+            tagIds[collection.tagName] = existing.id
+            return existing.id
+        } catch {
+            print(
+                "[binge] resolveTagId failed for "
+                    + "\(collection.tagName): \(error)"
+            )
+            return nil
+        }
+    }
+
+    /// Resolve a collection's tag id, creating the tag if it is not
+    /// there. Only callers that are about to WRITE may use this.
     /// Pre-existing tags from before the parent-hierarchy change
     /// get reparented in place on first run.
     func tagId(for collection: CollectionDef) async -> String? {
@@ -202,11 +245,9 @@ final class CollectionsService {
             collection.tagName != Self.favouritesTagName
         do {
             // Try to find by name first.
-            let lookup: FindTagsResponse = try await client.gql(
-                Queries.findTagByName,
-                variables: ["name": collection.tagName]
-            )
-            if let existing = lookup.findTags.tags.first {
+            if let existing = try await exactTag(
+                client, named: collection.tagName
+            ) {
                 if reparentAllowed,
                     let parentId = await ensureParentTagId()
                 {
@@ -268,15 +309,17 @@ final class CollectionsService {
         }
         let client = StashClient(baseURL: baseURL, apiKey: apiKey)
         do {
-            // Find-or-create. findTagByName lookup avoids
-            // duplicates if the user races a create against an
-            // existing tag.
-            let lookup: FindTagsResponse = try await client.gql(
-                Queries.findTagByName,
-                variables: ["name": tagName]
-            )
+            // Find-or-create, on an EXACT name.
+            //
+            // Taking the first LIKE match here was the worst of the
+            // three: creating a collection called "Golden_Hours"
+            // matched the existing "Golden Hours", ADOPTED its id,
+            // reparented it, and filed it under the new name - so the
+            // grid showed two tiles pointing at one tag with 40
+            // scenes on it. Deleting the tile the user had just made
+            // then destroyed the original collection.
             let id: String
-            if let existing = lookup.findTags.tags.first {
+            if let existing = try await exactTag(client, named: tagName) {
                 id = existing.id
                 if let parentId = await ensureParentTagId() {
                     await reparent(
@@ -328,9 +371,28 @@ final class CollectionsService {
             tagIds.removeValue(forKey: collection.tagName)
             return true
         }
-        guard let id = await tagId(for: collection) else { return false }
+        // resolveTagId, not tagId. tagId is a find-or-CREATE, so this
+        // used to mint the tag it was about to destroy - and, when the
+        // lookup near-missed, reparent an innocent bystander seconds
+        // before trying to destroy it.
+        guard let id = await resolveTagId(for: collection) else {
+            return false
+        }
         let client = StashClient(baseURL: baseURL, apiKey: apiKey)
         do {
+            // Last check before an irreversible write. The id may have
+            // come from a cache filled before the tag was renamed in
+            // Stash's own UI, and tagDestroy strips the tag from every
+            // scene, image, gallery and performer carrying it.
+            guard let confirmed = try await exactTag(
+                client, named: collection.tagName
+            ), confirmed.id == id else {
+                print(
+                    "[binge] refusing to destroy \(id): no longer named "
+                        + "\(collection.tagName)"
+                )
+                return false
+            }
             let _: TagDestroyResponse = try await client.gql(
                 Mutations.tagDestroy,
                 variables: ["id": id]
@@ -344,13 +406,12 @@ final class CollectionsService {
         }
     }
 
-    /// Toggle a scene's membership in a collection. Caller passes
-    /// the scene's CURRENT tag ids (BingeScene.tags); we resolve
-    /// the collection's tag id, diff, and sceneUpdate.
+    /// Toggle a scene's membership in a collection. Reads the scene's
+    /// current tags from Stash, resolves the collection's tag id,
+    /// diffs, and sceneUpdate.
     /// Returns the new membership state on success, nil on error.
     func setSceneInCollection(
         sceneId: String,
-        currentTagIds: [String],
         collection: CollectionDef,
         next: Bool
     ) async -> Bool? {
@@ -358,13 +419,38 @@ final class CollectionsService {
         // but nothing is written to Stash.
         if DemoMode.isOn { return next }
         guard let id = await tagId(for: collection) else { return nil }
+        let client = StashClient(baseURL: baseURL, apiKey: apiKey)
+        // Read the scene's tags now rather than taking them from the
+        // caller. They used to be passed in, and the only thing any
+        // caller had was BingeScene.tags: the array fetched when the
+        // reel or the feed loaded, held for the session and never
+        // refreshed. Since this mutation replaces the whole array, an
+        // ordinary sequence destroyed data. Rate a scene, which writes
+        // score tags through a path that does read fresh, then save it
+        // to a collection: the save rebuilt the array from the older
+        // copy, the score tags were not in it, and they were gone. The
+        // Advanced Rating hook then recomputed the rating from what
+        // survived. The same fix landed in the web plugin.
+        let currentTagIds: [String]
+        do {
+            let live: SceneTagIdsResponse = try await client.gql(
+                Mutations.sceneTagIds,
+                variables: ["id": sceneId]
+            )
+            // Fail closed: a scene we cannot read is not a scene with
+            // no tags, and writing that back would strip it.
+            guard let tags = live.findScene?.tags else { return nil }
+            currentTagIds = tags.map(\.id)
+        } catch {
+            print("[binge] setSceneInCollection read failed [\(sceneId)]: \(error)")
+            return nil
+        }
         let has = currentTagIds.contains(id)
         if has == next { return next }
         let newIds: [String] =
             next
             ? currentTagIds + [id]
             : currentTagIds.filter { $0 != id }
-        let client = StashClient(baseURL: baseURL, apiKey: apiKey)
         do {
             let _: SceneUpdateTagsResponse = try await client.gql(
                 Mutations.sceneUpdateTags,
@@ -391,7 +477,8 @@ final class CollectionsService {
             return DemoContent.collectionScenes(for: collection.tagName)
                 .prefix(4).compactMap { $0.paths.screenshot }
         }
-        guard let id = await tagId(for: collection) else { return [] }
+        // Read-only surface: resolving must not create.
+        guard let id = await resolveTagId(for: collection) else { return [] }
         let client = StashClient(baseURL: baseURL, apiKey: apiKey)
         do {
             let resp: CoverForTagResponse = try await client.gql(

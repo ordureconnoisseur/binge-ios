@@ -39,9 +39,40 @@ final class PlayerPool {
 
     private var entries: [String: Entry] = [:]
     private let capacity: Int
+    /// The scene on screen. Never evicted, whatever the clock says.
+    ///
+    /// lastUsed is only refreshed by player(for:), whose callers are a
+    /// row's onAppear and the prewarm of the NEXT scene - so becoming
+    /// active never touched the pool, and the active entry aged while
+    /// its neighbours were kept fresh. At capacity 3 it became the LRU
+    /// minimum, so scrolling back one slide evicted the player of the
+    /// slide now on screen: the video went black mid-playback, and
+    /// nothing observed the eviction to recover it.
+    private var protectedId: String?
 
     init(capacity: Int) {
         self.capacity = capacity
+    }
+
+    /// One line, the first time a player is built, describing why the
+    /// device is or is not making a noise. Everything here is a
+    /// question that gets asked whenever someone reports silence: is
+    /// the category the one that ignores the ring switch, is the media
+    /// volume actually up, and is something else holding the session.
+    private static var loggedAudioState = false
+    private static func logAudioStateOnce() {
+        if loggedAudioState { return }
+        loggedAudioState = true
+        let s = AVAudioSession.sharedInstance()
+        print(
+            "[binge] audio category=\(s.category.rawValue) "
+            + "mode=\(s.mode.rawValue) "
+            + "options=\(s.categoryOptions.rawValue) "
+            + "outputVolume=\(s.outputVolume) "
+            + "otherAudioPlaying=\(s.isOtherAudioPlaying) "
+            + "silenceHint=\(s.secondaryAudioShouldBeSilencedHint) "
+            + "route=\(s.currentRoute.outputs.map(\.portType.rawValue))"
+        )
     }
 
     /// Get a player for this scene. Cache hit refreshes lastUsed
@@ -64,6 +95,16 @@ final class PlayerPool {
             entry.lastUsed = Date()
             entries[scene.id] = entry
             entry.player.isMuted = muted
+            // Handed back at normal speed. A pooled player keeps the
+            // defaultRate it was last given, and play() resumes at it,
+            // so a slide that had been latched to 2x came back fast on
+            // a scene that had not been - with fresh view state saying
+            // 1x, so nothing on screen explained it and nothing would
+            // have reset it. Whoever wants 2x asks for it again.
+            entry.player.defaultRate = 1
+            if entry.player.timeControlStatus != .paused {
+                entry.player.rate = 1
+            }
             print(
                 "[PlayerPool] HIT  scene=\(scene.id) "
                 + "pool=\(entries.count)/\(capacity)"
@@ -80,9 +121,7 @@ final class PlayerPool {
         }
         let asset = AVURLAsset(
             url: url,
-            options: [
-                "AVURLAssetHTTPHeaderFieldsKey": ["ApiKey": apiKey]
-            ]
+            options: CredentialSession.assetOptions(for: url, apiKey: apiKey)
         )
         let item = AVPlayerItem(asset: asset)
         // Tune for first-frame speed: AVPlayer defaults to ~25s
@@ -96,6 +135,7 @@ final class PlayerPool {
         let q = AVQueuePlayer(playerItem: item)
         q.automaticallyWaitsToMinimizeStalling = false
         q.isMuted = muted
+        Self.logAudioStateOnce()
         // AVPlayerLooper queues a second item internally for
         // seamless looping. Slightly more memory than manual
         // seek-to-zero but the media services overhead of N
@@ -113,7 +153,7 @@ final class PlayerPool {
         print(
             "[PlayerPool] MISS scene=\(scene.id) "
             + "create=\(ms)ms pool=\(entries.count)/\(capacity) "
-            + "url=\(url.absoluteString.prefix(80))"
+            + "url=\(BingeScene.redacted(url))"
         )
         // Surface buffer-ready timing too — the actual "video
         // appears" moment depends on the asset's first frame
@@ -132,9 +172,16 @@ final class PlayerPool {
                         Date().timeIntervalSince(scheduledStart)
                             * 1000
                     )
+                    let audioTracks = q.currentItem?.tracks.filter {
+                        $0.assetTrack?.mediaType == .audio
+                    } ?? []
                     print(
                         "[PlayerPool] READY scene=\(sceneId) "
-                        + "after=\(pms)ms"
+                        + "after=\(pms)ms "
+                        + "muted=\(q.isMuted) volume=\(q.volume) "
+                        + "audioTracks=\(audioTracks.count) "
+                        + "audioEnabled="
+                        + "\(audioTracks.map(\.isEnabled))"
                     )
                     return
                 }
@@ -177,8 +224,7 @@ final class PlayerPool {
     /// recovery path the user has.
     func evict(sceneId: String) {
         guard let entry = entries[sceneId] else { return }
-        entry.player.pause()
-        entry.player.replaceCurrentItem(with: nil)
+        tearDown(entry)
         entries.removeValue(forKey: sceneId)
         print(
             "[PlayerPool] EVICT scene=\(sceneId) reason=manual "
@@ -197,6 +243,13 @@ final class PlayerPool {
         }
     }
 
+    /// Mark the scene now on screen. Refreshes its clock and keeps it
+    /// out of reach of the LRU until another scene takes its place.
+    func setActive(sceneId: String?) {
+        protectedId = sceneId
+        if let sceneId { touch(sceneId: sceneId) }
+    }
+
     /// Pause every player in the pool.
     func pauseAll() {
         for (_, entry) in entries { entry.player.pause() }
@@ -205,10 +258,24 @@ final class PlayerPool {
     /// Drain the pool, keeping only the listed scene ids.
     func evictExcept(keepers: Set<String>) {
         for (id, entry) in entries where !keepers.contains(id) {
-            entry.player.pause()
-            entry.player.replaceCurrentItem(with: nil)
+            tearDown(entry)
             entries.removeValue(forKey: id)
         }
+    }
+
+    /// Stop the looper before emptying the queue it owns.
+    ///
+    /// replaceCurrentItem(with: nil) on an AVQueuePlayer while a live
+    /// AVPlayerLooper is observing it is outside the documented
+    /// contract: the looper can re-enqueue its template item in the
+    /// window before the entry is dropped, leaving an item and its
+    /// decode session attached to a player the pool believes it has
+    /// emptied. disableLooping first, then removeAllItems, which is the
+    /// AVQueuePlayer-correct call.
+    private func tearDown(_ entry: Entry) {
+        entry.player.pause()
+        entry.looper.disableLooping()
+        entry.player.removeAllItems()
     }
 
     /// Diagnostic — current pool depth.
@@ -217,12 +284,15 @@ final class PlayerPool {
     private func evictIfNeeded() {
         while entries.count > capacity {
             guard
-                let oldest = entries.min(by: {
-                    $0.value.lastUsed < $1.value.lastUsed
-                })
-            else { return }
-            oldest.value.player.pause()
-            oldest.value.player.replaceCurrentItem(with: nil)
+                let oldest = entries
+                    .filter({ $0.key != protectedId })
+                    .min(by: { $0.value.lastUsed < $1.value.lastUsed })
+            else {
+                // Everything left is protected. Better to sit one over
+                // capacity for a moment than to blank the screen.
+                return
+            }
+            tearDown(oldest.value)
             entries.removeValue(forKey: oldest.key)
             print(
                 "[PlayerPool] EVICT scene=\(oldest.key) "

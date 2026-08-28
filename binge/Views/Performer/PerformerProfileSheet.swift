@@ -113,6 +113,33 @@ struct PerformerProfileSheet: View {
                 await vm?.loadStashDBScenes()
             }
         }
+        .overlay(alignment: .bottom) {
+            if vm?.filling == true {
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(.white)
+                    Text("Repairing from StashDB")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.white)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(.ultraThinMaterial, in: Capsule())
+                .padding(.bottom, 40)
+                .transition(.opacity)
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: vm?.filling)
+        .alert(
+            "Repair from StashDB",
+            isPresented: Binding(
+                get: { vm?.fillMessage != nil },
+                set: { if !$0 { vm?.fillMessage = nil } }
+            ),
+            actions: { Button("OK", role: .cancel) {} },
+            message: { Text(vm?.fillMessage ?? "") }
+        )
         .fullScreenCover(isPresented: $storyOpen) {
             if let s = vm?.story {
                 StoryViewerSheet(
@@ -240,8 +267,18 @@ struct PerformerProfileSheet: View {
                                 .font(.system(size: 17, weight: .semibold))
                                 .foregroundStyle(.white)
                                 .lineLimit(1)
-                            VerifiedBadge(favorite: p.favorite, size: 14)
-                                .padding(.leading, 4)
+                            // vm.favourite, not p.favorite.
+                            // PerformerDetail is an all-let struct, so
+                            // toggling cannot update it - only the view
+                            // model's mirror moves. Reading the frozen
+                            // field meant the badge colour never
+                            // changed in-session, which is exactly the
+                            // behaviour the comment above claims it has.
+                            VerifiedBadge(
+                                favorite: vm?.favourite ?? p.favorite,
+                                size: 14
+                            )
+                            .padding(.leading, 4)
                         }
                     } else {
                         Text(vm?.performer?.name ?? "")
@@ -302,6 +339,23 @@ struct PerformerProfileSheet: View {
                                 "Refresh",
                                 systemImage: "arrow.clockwise"
                             )
+                        }
+                        // Only for a linked performer: without a
+                        // stash id there is nothing to repair from.
+                        // "Repair" rather than "Fill in" because it
+                        // does two things - attaches her to scenes the
+                        // library already holds, and fills the columns
+                        // Stash has nothing in.
+                        if vm?.performer?.stashDBId != nil {
+                            Button {
+                                Task { await vm?.repairFromStashDB() }
+                            } label: {
+                                Label(
+                                    "Repair from StashDB",
+                                    systemImage: "bandage"
+                                )
+                            }
+                            .disabled(vm?.filling ?? false)
                         }
                         Button {
                             let trimmed = baseURL.trimmingCharacters(
@@ -591,6 +645,9 @@ struct PerformerProfileSheet: View {
                 )
         }
         .buttonStyle(.plain)
+        // A second tap inside the round trip fired an opposite
+        // mutation; the model refuses it, and the button says so.
+        .disabled(vm?.favouriteBusy ?? false)
         .padding(.horizontal, 22)
         .padding(.bottom, 14)
     }
@@ -650,7 +707,15 @@ struct PerformerProfileSheet: View {
             }
             .padding(.horizontal, 22)
             .padding(.top, 14)
-            if tiles.isEmpty {
+            if tiles.isEmpty && (vm?.stashDBLoading ?? false) {
+                // An empty library grid now goes and asks StashDB, so
+                // "No scenes" would be printed a moment before the
+                // tiles it is wrong about arrive.
+                ProgressView()
+                    .tint(.white.opacity(0.5))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 40)
+            } else if tiles.isEmpty {
                 Text("No scenes")
                     .font(.system(size: 13))
                     .foregroundStyle(.white.opacity(0.4))
@@ -760,15 +825,24 @@ struct PerformerProfileSheet: View {
     /// (matches the web's useIncludeStashDBInProfile pattern).
     @ViewBuilder
     private var stashDBToggle: some View {
-        let on = showStashDB && (vm?.performer?.stashDBId != nil)
+        // `on` covers both the global setting and the per-profile
+        // fallback (see PerformerProfileViewModel.stashDBAuto), so a
+        // profile showing StashDB tiles always shows the pill lit.
+        let auto = vm?.stashDBAuto ?? false
+        let on = (showStashDB || auto) && (vm?.performer?.stashDBId != nil)
         let canEnable = vm?.performer?.stashDBId != nil
         Button {
             guard canEnable else { return }
-            showStashDB.toggle()
-            if showStashDB {
-                Task { await vm?.loadStashDBScenes() }
-            } else {
+            if on {
+                // Off means off, whichever of the two turned it on.
+                // Toggling the setting alone would leave the fallback
+                // holding the tiles up, so the pill would go dark and
+                // nothing else would change.
+                showStashDB = false
                 vm?.clearStashDBScenes()
+            } else {
+                showStashDB = true
+                Task { await vm?.loadStashDBScenes() }
             }
         } label: {
             HStack(spacing: 5) {

@@ -64,6 +64,19 @@ enum Mutations {
         }
         """
 
+    /// A scene's tags as Stash holds them right now.
+    ///
+    /// sceneUpdate replaces the whole tag array, so a write built from
+    /// anything older than this deletes whatever was added in between.
+    static let sceneTagIds = """
+        query SceneTagIds($id: ID!) {
+          findScene(id: $id) {
+            id
+            tags { id name }
+          }
+        }
+        """
+
     /// Generic scene update — used by setSceneTags to swap the
     /// scene's tag list when toggling collection membership. Same
     /// mutation Stash uses everywhere; we only ever send tag_ids.
@@ -98,13 +111,27 @@ enum Mutations {
     /// PerformerCreateInput). v0.2: we hit StashDB directly for
     /// detail rendering and only use this for the
     /// followStashDBPerformer flow.
+    /// The stash_id goes in `query`, not `performer_id`.
+    ///
+    /// performer_id is typed ID and this declares String!, so the
+    /// document failed VALIDATION - Stash answered 422 and the scrape
+    /// never ran. FollowService only prints the error, so every
+    /// followed performer was created from the minimal fallback: name,
+    /// image and the stash_ids link, with no gender, birthdate,
+    /// country, measurements or aliases. Missing gender in particular
+    /// means AllowedGendersStore has nothing to classify them by.
+    ///
+    /// Declaring it ID! is not the fix: performer_id is a LOCAL Stash
+    /// performer id, so a StashDB UUID reaches the resolver and dies in
+    /// strconv.Atoi. `query` accepts a stash_id and Stash resolves a
+    /// bare UUID there as a direct lookup - verified against a live box.
     static let scrapeStashBoxPerformer = """
         query ScrapeStashBoxPerformer(
             $stash_box_index: Int!, $stash_id: String!
         ) {
           scrapeSinglePerformer(
             source: { stash_box_index: $stash_box_index },
-            input: { performer_id: $stash_id }
+            input: { query: $stash_id }
           ) {
             name disambiguation gender url twitter instagram
             birthdate ethnicity country eye_color hair_color
@@ -123,6 +150,43 @@ enum Mutations {
     static let performerCreate = """
         mutation PerformerCreate($input: PerformerCreateInput!) {
           performerCreate(input: $input) { id name }
+        }
+        """
+
+    /// Attach a performer to scenes the library already holds.
+    ///
+    /// ADD, not SET, and one request for the whole set: Stash resolves
+    /// ADD against the row it is updating, so there is no read to go
+    /// stale and no performer array to overwrite. Reading each scene
+    /// and writing the list back with her appended is correct within
+    /// one pass and wrong across two - two passes in flight, the
+    /// second reads before the first's write lands, and its
+    /// whole-array write removes the first performer again from every
+    /// scene the two share.
+    static let scenesAddPerformer = """
+        mutation ScenesAddPerformer($ids: [ID!], $performerId: ID!) {
+          bulkSceneUpdate(
+            input: {
+              ids: $ids,
+              performer_ids: { ids: [$performerId], mode: ADD }
+            }
+          ) { id }
+        }
+        """
+
+    /// Write scraped columns onto a performer who already exists.
+    ///
+    /// The counterpart to performerCreate above, for the row that was
+    /// made by something other than a Follow. Stash's own tagger and
+    /// forage both create a performer from a scene match carrying a
+    /// name, an image and the stash_ids link and nothing else, so 136
+    /// of this library's 904 linked performers have no gender, no
+    /// birthdate, no country and - the one that costs a feature - no
+    /// urls, which is where the X handle that lights the story ring
+    /// lives.
+    static let performerUpdateFields = """
+        mutation PerformerUpdateFields($input: PerformerUpdateInput!) {
+          performerUpdate(input: $input) { id }
         }
         """
 
@@ -263,6 +327,41 @@ struct PerformerFavoriteResponse: Decodable {
     }
 }
 
+/// Local scenes that carry a stash id, with the local id to write to.
+struct FindLocalStashDBScenesResponse: Decodable {
+    let findScenes: Payload
+    struct Payload: Decodable {
+        let scenes: [Row]
+    }
+    struct Row: Decodable {
+        let id: String
+        let stashIds: [PerformerDetail.StashIdLink]
+
+        enum CodingKeys: String, CodingKey {
+            case id
+            case stashIds = "stash_ids"
+        }
+    }
+}
+
+/// bulkSceneUpdate answers with the rows it touched.
+struct BulkSceneUpdateResponse: Decodable {
+    let bulkSceneUpdate: [Row]?
+    struct Row: Decodable {
+        let id: String
+    }
+}
+
+/// `performerUpdateFields` returns only the id - the caller already
+/// knows what it wrote, and re-reading the row here would race the
+/// profile reload that follows.
+struct PerformerUpdateFieldsResponse: Decodable {
+    let performerUpdate: Payload
+    struct Payload: Decodable {
+        let id: String
+    }
+}
+
 /// Wire response for scrapeSinglePerformer. Every field nullable —
 /// scrapers regularly return partial data and we don't want a
 /// single missing column to fail the whole decode.
@@ -318,6 +417,49 @@ struct PerformerCreateResponse: Decodable {
     struct Payload: Decodable {
         let id: String
         let name: String
+    }
+}
+
+/// Decoded `performerFillState`. Every column optional: the whole
+/// point is telling apart "Stash has nothing here" from "the user put
+/// something here".
+struct PerformerFillStateResponse: Decodable {
+    let findPerformer: Row?
+
+    struct Row: Decodable {
+        let id: String
+        let name: String
+        let disambiguation: String?
+        let gender: String?
+        let birthdate: String?
+        let deathDate: String?
+        let ethnicity: String?
+        let country: String?
+        let eyeColor: String?
+        let hairColor: String?
+        let heightCm: Int?
+        let weight: Int?
+        let measurements: String?
+        let fakeTits: String?
+        let careerLength: String?
+        let tattoos: String?
+        let piercings: String?
+        let details: String?
+        let aliasList: [String]?
+        let urls: [String]?
+
+        enum CodingKeys: String, CodingKey {
+            case id, name, disambiguation, gender, birthdate
+            case ethnicity, country, measurements, tattoos, piercings
+            case details, urls, weight
+            case deathDate = "death_date"
+            case eyeColor = "eye_color"
+            case hairColor = "hair_color"
+            case heightCm = "height_cm"
+            case fakeTits = "fake_tits"
+            case careerLength = "career_length"
+            case aliasList = "alias_list"
+        }
     }
 }
 
@@ -485,7 +627,8 @@ enum Queries {
           $perPage: Int!,
           $sort: String!,
           $direction: SortDirectionEnum!,
-          $sceneFilter: SceneFilterType
+          $sceneFilter: SceneFilterType,
+          $q: String
         ) {
           findScenes(
             scene_filter: $sceneFilter,
@@ -493,7 +636,8 @@ enum Queries {
               page: $page,
               per_page: $perPage,
               sort: $sort,
-              direction: $direction
+              direction: $direction,
+              q: $q
             }
           ) {
             count
@@ -515,13 +659,22 @@ enum Queries {
         }
         """
 
-    /// Exact-match tag lookup by name. Used by the collections
-    /// service to find existing default tags (Favourite ★, Watch
-    /// Later 📁) before lazy-creating them.
+    /// Tag lookup by name. NOT exact on its own.
+    ///
+    /// Stash compiles `modifier: EQUALS` to a SQL LIKE, so `%` and `_`
+    /// in the name are WILDCARDS and the compare is case-insensitive.
+    /// Verified against a live box: asking for "Golden_Hours 📁"
+    /// returns "Golden Hours 📁", and asking for "%" returns all 2034
+    /// tags. With per_page: 1 and sort: "name" this handed back the
+    /// alphabetically first near-miss and called it the answer - which
+    /// then got destroyed, reparented, or written onto a scene.
+    ///
+    /// So it asks for a page and the CALLER picks the exact name. See
+    /// CollectionsService.exactTag.
     static let findTagByName = """
         query FindTagByName($name: String!) {
           findTags(
-            filter: { per_page: 1, sort: "name" },
+            filter: { per_page: 25, sort: "name" },
             tag_filter: {
               name: { value: $name, modifier: EQUALS }
             }
@@ -986,6 +1139,66 @@ enum Queries {
         }
         """
 
+    /// Local scenes carrying a stashdb.org stash_id, with their own
+    /// ids. findOwnedStashIds asks the same question and selects only
+    /// the stash_ids, because all it needs is a membership set; this
+    /// one has to know which local scene to write to.
+    static let findLocalStashDBScenes = """
+        query LocalStashDBScenes {
+          findScenes(
+            scene_filter: {
+              stash_id_endpoint: {
+                endpoint: "https://stashdb.org/graphql"
+                modifier: NOT_NULL
+              }
+            },
+            filter: { page: 1, per_page: -1 }
+          ) {
+            scenes {
+              id
+              stash_ids { endpoint stash_id }
+            }
+          }
+        }
+        """
+
+    /// Every column "Fill in from StashDB" is allowed to write, read
+    /// back before writing anything.
+    ///
+    /// findPerformer above is the profile's query and deliberately
+    /// carries only what the profile renders. Filling has to know
+    /// about columns nothing draws - measurements, tattoos, career
+    /// length - because writing over one the user had already filled
+    /// in would be the one unforgivable outcome here. So it asks for
+    /// the write set, not the read set, and skips every column that
+    /// comes back non-empty.
+    static let performerFillState = """
+        query PerformerFillState($id: ID!) {
+          findPerformer(id: $id) {
+            id
+            name
+            disambiguation
+            gender
+            birthdate
+            death_date
+            ethnicity
+            country
+            eye_color
+            hair_color
+            height_cm
+            weight
+            measurements
+            fake_tits
+            career_length
+            tattoos
+            piercings
+            details
+            alias_list
+            urls
+          }
+        }
+        """
+
     /// Library scenes for a given performer, newest-first. Reuses
     /// BingeScene's selection set so the same decoder + screenshot
     /// helpers work for the grid thumbnails.
@@ -1430,6 +1643,15 @@ struct TagCreateResponse: Decodable {
 
 struct TagDestroyResponse: Decodable {
     let tagDestroy: Bool
+}
+
+/// The scene's live tags, read immediately before a tag write.
+struct SceneTagIdsResponse: Decodable {
+    let findScene: Payload?
+    struct Payload: Decodable {
+        let id: String
+        let tags: [StashTag]
+    }
 }
 
 struct SceneUpdateTagsResponse: Decodable {

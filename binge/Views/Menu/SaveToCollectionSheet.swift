@@ -185,7 +185,15 @@ struct SaveToCollectionSheet: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .disabled(isPending)
+        // Disabled while ANY row is in flight, not just this one.
+        //
+        // setSceneInCollection reads the scene's live tags and writes
+        // the whole tag_ids array back. Two rows tapped inside one
+        // round trip both read the same array, and the second write
+        // lands over the first - so the scene silently vanished from
+        // one of the two collections the user had just ticked, while
+        // both rows showed a checkmark because each got its own reply.
+        .disabled(!pending.isEmpty)
     }
 
     // MARK: - Actions
@@ -199,16 +207,19 @@ struct SaveToCollectionSheet: View {
         pending.insert(coll.tagName)
         defer { pending.remove(coll.tagName) }
 
+        // The service reads the scene's tags itself now. It used to
+        // take them from here, and what was here was the copy captured
+        // when this sheet opened, which is how tags written since then
+        // were deleted by a save.
         let result = await service.setSceneInCollection(
             sceneId: scene.id,
-            currentTagIds: currentTagIds,
             collection: coll,
             next: next
         )
         if let r = result {
             memberships[coll.tagName] = r
-            // Keep currentTagIds in sync so the next toggle on a
-            // different collection uses the updated list.
+            // Kept in sync only so the local membership row is right;
+            // it is no longer what the next write is built from.
             if let id = service.tagIds[coll.tagName] {
                 if r && !currentTagIds.contains(id) {
                     currentTagIds.append(id)
@@ -248,7 +259,9 @@ struct SaveToCollectionSheet: View {
             if let cached = service.tagIds[coll.tagName] {
                 id = cached
             } else {
-                id = await service.tagId(for: coll)
+                // Reading which collections a scene is in must not
+                // create the collections it is not in.
+                id = await service.resolveTagId(for: coll)
             }
             if let id {
                 next[coll.tagName] = currentTagIds.contains(id)

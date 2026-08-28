@@ -97,6 +97,20 @@ enum SubjectRef: Identifiable, Hashable {
     }
 }
 
+/// What the caller is saying about one criterion.
+///
+/// A dictionary of plain Int cannot express this. Removing a key to
+/// mean "cleared" is indistinguishable from never having set it, and
+/// that ambiguity is exactly what went wrong on the web side twice:
+/// one version stripped every configured criterion and destroyed the
+/// scores it was not given, the next stripped only the ones carrying a
+/// number and made clearing a score impossible. Present means the
+/// caller owns this criterion; absent means it is not theirs to touch.
+enum ScoreIntent: Equatable {
+    case set(Int)
+    case clear
+}
+
 /// Normalised subject the modal renders against — same field
 /// set whether the subject is a scene or performer. The closure
 /// `save` is the one branch the modal still routes through.
@@ -118,7 +132,9 @@ struct LoadedSubject {
 
     struct SaveArgs {
         let reviewText: String
-        let scoresByCriterion: [String: Int]
+        /// Keyed by criterion id. A criterion present here is one this
+        /// save speaks for; one absent is left exactly as it is.
+        let scoresByCriterion: [String: ScoreIntent]
         let autoCreate: Bool
     }
 }

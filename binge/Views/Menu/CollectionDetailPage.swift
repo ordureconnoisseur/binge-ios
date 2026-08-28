@@ -175,7 +175,8 @@ struct CollectionDetailPage: View {
         page = 1
         scenes = []
         hasMore = false
-        guard let id = await service.tagId(for: collection) else {
+        // Read-only surface: opening a collection must not create it.
+        guard let id = await service.resolveTagId(for: collection) else {
             error = "Couldn't resolve collection tag"
             return
         }

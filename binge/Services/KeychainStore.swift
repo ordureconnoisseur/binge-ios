@@ -22,6 +22,11 @@ import Security
 @Observable
 @MainActor
 final class KeychainStore {
+    /// Set when a Keychain write was refused. Surfaced in Settings so a
+    /// device where the Keychain is unavailable says so, rather than
+    /// appearing to work until the next launch loses the key.
+    private(set) var lastWriteFailed = false
+
     static let shared = KeychainStore()
 
     private let service = "com.ordureconnoisseur.binge"
@@ -54,11 +59,25 @@ final class KeychainStore {
                     forKey: legacyUserDefaultsKey
                 )
             } else {
-                // Fallback: keep the value in UserDefaults so the
-                // app remains functional even if Keychain ops
-                // misbehave (sandbox / entitlement issues, etc).
-                UserDefaults.standard.set(
-                    newValue, forKey: legacyUserDefaultsKey
+                // No plaintext fallback.
+                //
+                // This used to write the key to UserDefaults when the
+                // Keychain write failed for any reason, silently, and
+                // leave it there. The class doc promises the key is
+                // never in UserDefaults and StashClient repeats that
+                // promise, so nothing downstream expected it to be. A
+                // free provisioning profile returning
+                // errSecMissingEntitlement was enough to put the Stash
+                // API key in the app's plist, readable from an
+                // unencrypted backup, with the app still working and
+                // nothing to notice.
+                //
+                // Failing loudly is the better trade: the key is asked
+                // for again, which is recoverable, rather than stored
+                // somewhere it was promised not to be.
+                lastWriteFailed = true
+                UserDefaults.standard.removeObject(
+                    forKey: legacyUserDefaultsKey
                 )
             }
         }
@@ -190,8 +209,18 @@ private enum Keychain {
         // when the user opens it without re-prompting.
         let attrs: [String: Any] = [
             kSecValueData as String: data,
+            // ThisDeviceOnly. The plain AfterFirstUnlock class is
+            // included in iCloud and encrypted local backups and
+            // restores onto a different device, which is the exact
+            // property this class was created to avoid: the doc above
+            // says the point of using the Keychain over UserDefaults is
+            // that UserDefaults syncs through backups. It reasons about
+            // the lock-state axis correctly and never mentions the
+            // backup one. Restoring a backup onto a second device
+            // carried the Stash API key, and the URL item beside it
+            // says where to point it.
             kSecAttrAccessible as String:
-                kSecAttrAccessibleAfterFirstUnlock,
+                kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
         ]
         let updateStatus = SecItemUpdate(
             query as CFDictionary,

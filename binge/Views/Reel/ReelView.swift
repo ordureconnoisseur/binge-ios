@@ -165,6 +165,13 @@ struct ReelView: View {
             withAnimation { activeId = scenes[idx + 1].id }
         }
         .onDisappear {
+            // Leaving the reel drains the pool. Without this the three
+            // players, their loopers and their queued items stayed
+            // alive for the rest of the process, holding decode
+            // sessions while Home, the story viewer and the scene sheet
+            // each built their own.
+            PlayerPool.shared.setActive(sceneId: nil)
+            PlayerPool.shared.evictExcept(keepers: [])
             // A drilled-in reel (chain / timeline, or one the user
             // converted to a tag feed by tapping a #hashtag in the
             // caption sheet) shares the single FilterNavigator with
@@ -176,6 +183,10 @@ struct ReelView: View {
             }
         }
         .onChange(of: activeId) { _, newId in
+            // Tell the pool which slide is on screen, so its LRU cannot
+            // evict the player the user is watching. Becoming active
+            // otherwise never touches the pool.
+            PlayerPool.shared.setActive(sceneId: newId)
             guard let newId else { return }
             guard let idx = scenes.firstIndex(where: { $0.id == newId })
             else { return }
@@ -348,6 +359,12 @@ struct ReelView: View {
             .frame(width: geo.size.width, height: geo.size.height)
             .scrollTargetBehavior(.paging)
             .scrollPosition(id: $activeId)
+            // The reel drives the nav as well. A paging swipe is not
+            // "scrolling a list", which is why it was left out at
+            // first, but the reel is where most of the swiping happens
+            // and having the chrome sit still there while every other
+            // surface responds reads as the feature being broken.
+            .contractsBottomNav()
             // Hold the list still while the 2x gesture owns the finger,
             // so pulling down to latch the speed does not also drag the
             // reel. Off again the moment the finger lifts.
@@ -485,6 +502,13 @@ struct ReelView: View {
                 "perPage": perPage,
                 "sort": sort,
                 "direction": direction,
+                // The saved filter's text search. It was decoded and
+                // then never sent, so a filter built around a search
+                // term played the scenes it was written to exclude -
+                // Stash's own UI returns nothing for a filter this
+                // reel answered with 33 scenes. findScenesExplore
+                // already passed q; this one did not.
+                "q": sf.findFilter?.q ?? "",
             ]
             // `sceneFilter` is a GraphQL nullable input — only
             // include it when the saved filter actually carries

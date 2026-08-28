@@ -92,7 +92,12 @@ enum ForageService {
             )
             let url = (r.configuration.plugins.binge?.forageUrl ?? "")
                 .trimmingCharacters(in: .whitespacesAndNewlines)
-            if !url.isEmpty {
+            // Checked like the binge-server seed beside it. This
+            // value comes off the Stash server rather than from the
+            // person holding the phone, and probeReachable below
+            // announces this device to whatever it names, on every
+            // launch and on every keystroke in the Settings field.
+            if !url.isEmpty, BingeServerService.isTrustedURL(url) {
                 UserDefaults.standard.set(url, forKey: urlStorageKey)
             }
         } catch {
@@ -111,13 +116,17 @@ enum ForageService {
         let base = currentURL()
         // Not configured — don't build a relative URL out of "/healthz".
         if base.isEmpty { return false }
+        // No credential rides on this one, but it still tells whoever
+        // owns that address that this device exists and when it wakes,
+        // so it is not sent anywhere the app would refuse to authenticate.
+        guard BingeServerService.isTrustedURL(base) else { return false }
         guard let url = URL(string: base + "/healthz") else {
             return false
         }
         var req = URLRequest(url: url)
         req.timeoutInterval = 8
         do {
-            let (data, resp) = try await URLSession.shared.data(for: req)
+            let (data, resp) = try await CredentialSession.shared.data(for: req)
             guard let http = resp as? HTTPURLResponse,
                 (200..<300).contains(http.statusCode)
             else { return false }
@@ -170,7 +179,7 @@ enum ForageService {
         req.timeoutInterval = 15
         do {
             req.httpBody = try JSONEncoder().encode(payload)
-            let (data, resp) = try await URLSession.shared.data(for: req)
+            let (data, resp) = try await CredentialSession.shared.data(for: req)
             guard let http = resp as? HTTPURLResponse else {
                 return .failure("No HTTP response")
             }

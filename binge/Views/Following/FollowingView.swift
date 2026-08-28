@@ -54,6 +54,12 @@ struct FollowingView: View {
             }
             .background(Color.black.ignoresSafeArea())
             .statusBarHidden(tour.isRunning)
+            // On the ScrollView, not an ancestor. Placed on
+            // tabContent it never bound - see the note in HomeView.
+            .contractsBottomNav()
+            // The system's darkened bottom edge treatment reads as a
+            // black band around a floating capsule.
+            .scrollEdgeEffectStyle(nil, for: .bottom)
             // Drag-down to dismiss the search keyboard — feels
             // natural and avoids needing an explicit "Done" button.
             .scrollDismissesKeyboard(.interactively)

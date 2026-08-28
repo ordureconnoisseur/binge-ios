@@ -46,6 +46,8 @@ struct SceneSlideView: View {
     private let muted = false
     @AppStorage("binge.autoScroll") private var autoScroll: Bool = false
 
+    @Environment(\.scenePhase) private var scenePhase
+
     @State private var tour = TourDirector.shared
     @State private var player: AVPlayer?
     /// Per-cell counter. Resets to scene.oCounter on remount.
@@ -319,6 +321,44 @@ struct SceneSlideView: View {
             // Right inset (.padding(.trailing, 76)) reserves a gap
             // so a long performer name + studio line can't run
             // under the action stack on the right.
+            // Progressive frost along the bottom, under the caption
+            // and the chrome but over the video.
+            //
+            // Without it the capsule is a lone bright object on
+            // whatever the video happens to be doing underneath, and
+            // white caption text competes with it. The reference lays a
+            // blur over the whole bottom band starting just above the
+            // scrub bar, which is what makes the scrub bar, the caption
+            // and the nav read as one piece of chrome instead of three
+            // things floating separately.
+            //
+            // Masked rather than a plain material: an even frost across
+            // the band would cut a hard horizontal line across the
+            // video. The gradient makes it arrive gradually and reach
+            // full strength behind the nav.
+            VStack(spacing: 0) {
+                Spacer()
+                Rectangle()
+                    .fill(.ultraThinMaterial)
+                    .mask(
+                        LinearGradient(
+                            stops: [
+                                .init(color: .clear, location: 0),
+                                .init(
+                                    color: .black.opacity(0.5),
+                                    location: 0.45
+                                ),
+                                .init(color: .black, location: 1),
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .frame(height: BingeBottomNav.scrubClearance + 34)
+            }
+            .allowsHitTesting(false)
+            .ignoresSafeArea(edges: .bottom)
+
             VStack(spacing: 0) {
                 Spacer()
                 HStack {
@@ -355,7 +395,9 @@ struct SceneSlideView: View {
                 }
                 .padding(.leading, 14)
                 .padding(.trailing, 76)
-                .padding(.bottom, 14)
+                // The slide runs full bleed behind the floating
+                // nav now, so the controls clear it explicitly.
+                .padding(.bottom, 14 + BingeBottomNav.scrubClearance)
             }
 
             // Bottom-right block: action stack. Pinned independently
@@ -393,15 +435,16 @@ struct SceneSlideView: View {
                     )
                 }
                 .padding(.trailing, 14)
-                .padding(.bottom, 14)
+                // The slide runs full bleed behind the floating
+                // nav now, so the controls clear it explicitly.
+                .padding(.bottom, 14 + BingeBottomNav.scrubClearance)
             }
 
-            // Progress bar at the very bottom, edge-to-edge. No
-            // horizontal padding so it lines up with the screen
-            // edges and the nav above; no bottom padding so it
-            // sits flush against the navbar. IG Reels treats this
-            // strip as part of the chrome rather than a floating
-            // element.
+            // Progress bar edge-to-edge, sitting directly ABOVE the
+            // floating nav. No horizontal padding so it lines up with
+            // the screen edges. IG Reels puts it exactly here: while
+            // scrubbing it thickens and grows a thumbnail preview and
+            // a time readout, with the nav still visible underneath.
             VStack(spacing: 0) {
                 Spacer()
                 SceneProgressBar(
@@ -429,6 +472,10 @@ struct SceneSlideView: View {
                         await generateThumbnail(at: ratio)
                     }
                 )
+                // Clear the floating nav, with air above it. Padding
+                // by the nav's height alone put the scrub bar flush
+                // against the capsule; the reference leaves 14.7pt.
+                .padding(.bottom, BingeBottomNav.scrubClearance)
             }
         }
         .task(id: speedToastTick) {
@@ -439,6 +486,20 @@ struct SceneSlideView: View {
         }
         .bingeHaptic(.impact, trigger: turboHaptic)
         .bingeHaptic(.success, trigger: lockHaptic)
+        // Resume after the app comes back.
+        //
+        // There was no scenePhase observer anywhere in the reel, and no
+        // audio background mode, so iOS sets the rate to 0 on background
+        // and AVPlayer does not resume on its own. Returning to the app
+        // left a frozen frame with nothing to explain it: isActive never
+        // changed, no sheet opened, and the only way to get video back
+        // was to swipe away and swipe back - which, on this pool, can
+        // itself cost a rebuild and the user's position in the scene.
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active else { return }
+            guard isActive, !isHolding, !anyOverlayOpen else { return }
+            player?.play()
+        }
         .onChange(of: isActive) { _, nowActive in
             if nowActive {
                 let ready =
@@ -456,6 +517,18 @@ struct SceneSlideView: View {
                 // branch — so the kick task was being missed
                 // for the most common case (scroll into a
                 // pre-mounted slide). Wire it up here too.
+                // A fresh activation gets a fresh auto-advance and a
+                // fresh rebuild allowance.
+                //
+                // hasAutoAdvanced latched true for the whole mount, so
+                // scrolling back to a slide that had already
+                // auto-advanced left it looping forever with auto-scroll
+                // silently dead on it. didRebuildPlayer capped the
+                // stuck-player recovery at one per mount, so a slide
+                // whose player was evicted twice stayed black with no
+                // way back.
+                hasAutoAdvanced = false
+                didRebuildPlayer = nil
                 kickIfStuck(player)
                 applyRate(turboLocked ? 2 : 1, to: player)
                 onActivate?(scene)
@@ -465,6 +538,15 @@ struct SceneSlideView: View {
                 // should return to the speed it was left at.
                 turboHolding = false
                 pullConsumed = false
+                // isHolding is cleared here too. It is set by the
+                // long-press and cleared only when SwiftUI reports the
+                // press ending - which it does not do if the view is
+                // torn out from under the finger or the app resigns
+                // active mid-press. Latched, it leaves the play glyph on
+                // screen and blocks the overlay-resume branch, so
+                // opening and closing a sheet left the video paused with
+                // no way to resume but scrolling away and back.
+                isHolding = false
                 applyRate(1, to: player)
             }
         }
@@ -499,12 +581,34 @@ struct SceneSlideView: View {
             // feeding the chain algo.
             if isActive { onActivate?(scene) }
         }
+        // NOTE: currently unreachable. Both call sites are
+        // ForEach(scenes, id: \.id) with an explicit .id(scene.id), so
+        // view identity IS the scene id and this view can never be
+        // handed a different scene. Kept because it is correct for the
+        // day the explicit .id() goes away, but nothing load-bearing may
+        // live here alone - hasAutoAdvanced and didRebuildPlayer were
+        // reset only here, so within a mount they latched forever. Both
+        // are now reset on activation as well, which does fire.
         .onChange(of: scene.id) { _, _ in
             detachTimeObserver()
             posterVisible = true
             hasAutoAdvanced = false
             didRebuildPlayer = nil
             fallbackURL = nil
+            // Everything below belongs to the scene that just left.
+            // This view is reused for a different scene, which is why
+            // this handler exists, and these were being carried over:
+            // the O count showed the previous scene's number until
+            // something refreshed it, and a latched 2x arrived on an
+            // unrelated scene with no toast and no explanation, since
+            // the activation handler re-applies it.
+            localOCounter = scene.oCounter ?? 0
+            turboLocked = false
+            turboHolding = false
+            turboAbandoned = false
+            pullConsumed = false
+            turboEngagedAt = nil
+            isHolding = false
             attachPlayer()
         }
         .onDisappear {
@@ -539,7 +643,19 @@ struct SceneSlideView: View {
             SaveToCollectionSheet(scene: scene)
         }
         .sheet(isPresented: $rateOpen) {
-            if PluginContext.shared.hasAdvancedRating {
+            // `answered`, not just `hasAdvancedRating`. A failed
+            // enumeration made hasAdvancedRating false for the session
+            // with no retry, and false does not hide rating - it picks
+            // BasicRatingModal, which writes rating100 DIRECTLY. That
+            // is the field the plugin owns and recomputes from score
+            // tags on the same mutation, so the user sets 4 stars and
+            // watches it snap to 7.3. When the answer is unknown, take
+            // the branch that cannot do damage: the criterion modal
+            // writes score tags, which the plugin reads and a plain
+            // Stash simply ignores.
+            if PluginContext.shared.hasAdvancedRating
+                || !PluginContext.shared.answered
+            {
                 CriterionRatingModal(target: .scene(id: scene.id))
                     .presentationDetents([.large])
                     .presentationDragIndicator(.visible)

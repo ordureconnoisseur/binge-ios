@@ -150,11 +150,13 @@ struct BasicRatingModal: View {
         let svc = RatingService(baseURL: baseURL, apiKey: apiKey)
         switch target {
         case .scene(let id):
-            let r = await svc.fetchSceneTagsAndRating(sceneId: id)
-            rating100 = r.rating100
+            let r = try? await svc.fetchSceneTagsAndRating(sceneId: id)
+            rating100 = r?.rating100
         case .performer(let id):
-            let r = await svc.fetchPerformerTagsAndRating(performerId: id)
-            rating100 = r.rating100
+            let r = try? await svc.fetchPerformerTagsAndRating(
+                performerId: id
+            )
+            rating100 = r?.rating100
         }
         loading = false
     }

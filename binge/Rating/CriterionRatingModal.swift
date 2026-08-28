@@ -220,7 +220,9 @@ struct CriterionRatingModal: View {
         _ criterion: RatingCriterion,
         score: Int?
     ) -> some View {
-        let isBusy = pendingCriterionId == criterion.id
+        // Any write in flight disables every row, matching the guard
+        // in setScore.
+        let isBusy = pendingCriterionId != nil
         HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(criterion.name)
@@ -315,17 +317,34 @@ struct CriterionRatingModal: View {
             baseURL: baseURL, apiKey: apiKey
         )
         let svc = RatingService(baseURL: baseURL, apiKey: apiKey)
-        async let entityTask: (tags: [RatingTag], rating100: Int?) = {
-            switch target {
-            case .scene(let id):
-                return await svc.fetchSceneTagsAndRating(sceneId: id)
-            case .performer(let id):
-                return await svc.fetchPerformerTagsAndRating(performerId: id)
+        async let entityTask: (tags: [RatingTag], rating100: Int?)? = {
+            do {
+                switch target {
+                case .scene(let id):
+                    return try await svc.fetchSceneTagsAndRating(sceneId: id)
+                case .performer(let id):
+                    return try await svc.fetchPerformerTagsAndRating(
+                        performerId: id
+                    )
+                }
+            } catch {
+                return nil
             }
         }()
         let config = await configTask
         let precision = await precisionTask
-        let entity = await entityTask
+        // The error branch, which until now was unreachable: state was
+        // only ever assigned .ready, so the "Couldn't load" UI could not
+        // appear. That mattered because a failed tag read arrived as an
+        // empty tag list, and the next star tapped wrote that emptiness
+        // back as the scene's whole tag array.
+        guard let entity = await entityTask else {
+            state = .error(
+                "Couldn't read this item's tags, so nothing was changed."
+                    + " Check that Stash is reachable and try again."
+            )
+            return
+        }
         let ratings = parseRatingsFromTags(
             entity.tags, criteria: config.criteria
         )
@@ -342,6 +361,15 @@ struct CriterionRatingModal: View {
         criterion: RatingCriterion, score: Int?
     ) async {
         scoreHaptic += 1
+        // Modal-wide, not per row. The guard used to be
+        // `pendingCriterionId == criterion.id`, so only the tapped
+        // row's stars disabled - and scoring Chemistry then Aesthetics
+        // inside one round trip had both writes build from the same
+        // array, so the second landed over the first and Chemistry's
+        // score was discarded server-side. The defer below also
+        // cleared the busy state while the second write was still
+        // running, so the dimming lied about it.
+        if pendingCriterionId != nil { return }
         guard case .ready(
             let config, var tags, var ratings,
             let oldRating100, let precision
@@ -363,6 +391,35 @@ struct CriterionRatingModal: View {
                     + "the score-tag tree."
                 return
             }
+        }
+
+        // Re-read the entity's tags immediately before building the
+        // replacement array.
+        //
+        // sceneUpdate/performerUpdate REPLACE tag_ids wholesale, and
+        // `tags` here is whatever load() read when the sheet OPENED -
+        // so leaving the sheet up while Stash's own UI, forage or the
+        // autotagger added a tag, then tapping one star, wrote the
+        // stale list back and silently dropped the other client's tag.
+        // The window was the whole time the sheet was open. The Scribe
+        // twin already does exactly this, and throws when the read
+        // fails rather than writing blind.
+        do {
+            switch target {
+            case .scene(let id):
+                tags = try await svc.fetchSceneTagsAndRating(
+                    sceneId: id
+                ).tags
+            case .performer(let id):
+                tags = try await svc.fetchPerformerTagsAndRating(
+                    performerId: id
+                ).tags
+            }
+        } catch {
+            missingTagWarning =
+                "Couldn't re-read this scene's tags, so nothing was "
+                + "changed. Check that Stash is reachable and try again."
+            return
         }
 
         guard
@@ -405,20 +462,26 @@ struct CriterionRatingModal: View {
             // The plugin's hook just recomputed rating100 — re-
             // read to pick up its value (don't trust our local
             // preview which uses our precision interpretation).
-            let refreshed: (tags: [RatingTag], rating100: Int?)
+            let refreshed: (tags: [RatingTag], rating100: Int?)?
             switch target {
             case .scene(let id):
-                refreshed = await svc.fetchSceneTagsAndRating(sceneId: id)
+                refreshed = try? await svc.fetchSceneTagsAndRating(sceneId: id)
             case .performer(let id):
-                refreshed = await svc.fetchPerformerTagsAndRating(performerId: id)
+                refreshed = try? await svc.fetchPerformerTagsAndRating(
+                    performerId: id
+                )
             }
+            // A re-read we could not do leaves the list we just wrote
+            // in place rather than blanking it - that list came from a
+            // live read moments ago, so it is the best thing we have.
+            let after = refreshed ?? (tags: updatedTags, rating100: nil)
             state = .ready(
                 config: config,
-                tags: refreshed.tags,
+                tags: after.tags,
                 ratings: parseRatingsFromTags(
-                    refreshed.tags, criteria: config.criteria
+                    after.tags, criteria: config.criteria
                 ),
-                rating100: refreshed.rating100,
+                rating100: after.rating100,
                 precision: precision
             )
             // Notify observers (card chrome, profile header)
@@ -430,27 +493,33 @@ struct CriterionRatingModal: View {
                 userInfo: [
                     "domain": target.domain.rawValue,
                     "id": target.id,
-                    "rating100": refreshed.rating100 as Any,
+                    "rating100": after.rating100 as Any,
                 ]
             )
         } catch {
             // Roll back optimistic state — re-read from server
             // to be safe (some Stash plugins normalize tags on
             // write, so server may differ from filtered-local).
-            let rolled: (tags: [RatingTag], rating100: Int?)
+            let rolled: (tags: [RatingTag], rating100: Int?)?
             switch target {
             case .scene(let id):
-                rolled = await svc.fetchSceneTagsAndRating(sceneId: id)
+                rolled = try? await svc.fetchSceneTagsAndRating(sceneId: id)
             case .performer(let id):
-                rolled = await svc.fetchPerformerTagsAndRating(performerId: id)
+                rolled = try? await svc.fetchPerformerTagsAndRating(
+                    performerId: id
+                )
             }
+            // A failed write followed by a failed re-read must NOT
+            // leave an empty tag list sitting in state: the next star
+            // tapped would write that emptiness back. Keep what we had.
+            let back = rolled ?? (tags: tags, rating100: nil)
             state = .ready(
                 config: config,
-                tags: rolled.tags,
+                tags: back.tags,
                 ratings: parseRatingsFromTags(
-                    rolled.tags, criteria: config.criteria
+                    back.tags, criteria: config.criteria
                 ),
-                rating100: rolled.rating100,
+                rating100: back.rating100,
                 precision: precision
             )
             print("[binge] rating apply failed: \(error)")

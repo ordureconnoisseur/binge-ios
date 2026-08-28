@@ -42,6 +42,11 @@ struct SettingsView: View {
     @AppStorage("binge.includeX") private var includeX: Bool = true
     @AppStorage("binge.includePornhub") private var includePornhub: Bool = true
     @AppStorage("binge.bingeServerUrl") private var bingeServerUrl: String = ""
+    /// Re-evaluates the trust banner when an origin is confirmed. The
+    /// decision itself lives in UserDefaults, which SwiftUI does not
+    /// observe on its own.
+    @AppStorage(BingeServerService.trustRevisionKey)
+    private var daemonTrustRevision: Int = 0
     #if DEBUG
     @AppStorage("binge.forageUrl") private var forageUrl: String = ""
     @AppStorage("binge.forageWatchTarget") private var forageWatchTarget: String = "any"
@@ -692,11 +697,19 @@ struct SettingsView: View {
         } header: {
             Text("Streaming")
         } footer: {
+            // Kept honest against Scene.streamURL. The old wording said
+            // Auto routed HEVC via HLS, which stopped being true when
+            // direct HEVC became the default, so the one setting that
+            // decides this described the opposite of what it does.
             Text(
-                "Auto follows Stash's transcode rules — HEVC content "
-                    + "routes via HLS, everything else plays direct. "
-                    + "Force a specific type if you see playback "
-                    + "issues with the default."
+                "Auto plays H.264 and HEVC straight from the file, and "
+                    + "switches to a transcode by itself if an HEVC "
+                    + "scene stalls. VP9, AV1 and anything Stash can't "
+                    + "identify are transcoded, and MKV always is "
+                    + "whatever this is set to, because the container "
+                    + "cannot be played directly at all. Force a type "
+                    + "if you see playback issues, or pick HLS on a "
+                    + "slow connection for its smaller variants."
             )
         }
     }
@@ -798,7 +811,70 @@ struct SettingsView: View {
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .keyboardType(.URL)
+                // Typing an address here is what makes it a deliberate
+                // choice, which is the whole difference between this
+                // and a URL that arrived from Stash's plugin config.
+                // Recorded on commit rather than per keystroke, so a
+                // half-typed host never gets vouched for.
+                .onSubmit {
+                    BingeServerService.confirmDaemonOrigin(bingeServerUrl)
+                }
                 BingeServerHealthDot()
+            }
+            // A public address the app has not been told to use is not
+            // refused silently. The daemon degrades quietly by design,
+            // so without this the Reddit, PornHub and X rows would just
+            // stop appearing and nothing would say why.
+            // currentURL(), not the raw field text. Every real gate in
+            // the app evaluates the trimmed, slash-stripped,
+            // empty-means-default form; this was the one place that did
+            // not, so a pasted value carrying whitespace could show the
+            // banner while the gate disagreed.
+            // daemonTrustRevision is read so confirming an origin
+            // re-evaluates this banner. The decision lives in
+            // UserDefaults, which is not observable on its own.
+            if !bingeServerUrl.isEmpty, daemonTrustRevision >= 0,
+                !BingeServerService.isTrustedURL(
+                    BingeServerService.currentURL()
+                )
+            {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("This address is not being used yet")
+                        .font(.footnote.weight(.semibold))
+                    Text(
+                        // Not "it is a public address". The banner also
+                        // fires on a schemeless LAN entry and on a
+                        // typo'd scheme, and telling someone their own
+                        // 192.168 address is public - then offering a
+                        // button that cannot help - is worse than
+                        // saying nothing.
+                        "binge will not send your Stash API key to this "
+                            + "address until you confirm you meant it. "
+                            + "It must start with https:// and be yours."
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    Button("Use this address") {
+                        BingeServerService.confirmDaemonOrigin(
+                            BingeServerService.currentURL()
+                        )
+                        // Nudge the views that read the trust decision.
+                        // Assigning the same string is not a change, so
+                        // nothing keyed on it re-runs; the revision
+                        // counter is what the probes watch.
+                        BingeServerService.bumpTrustRevision()
+                    }
+                    // An entry with no scheme or no host has no origin
+                    // to record, so confirming it would silently do
+                    // nothing.
+                    .disabled(
+                        BingeServerService.originOf(
+                            BingeServerService.currentURL()
+                        ) == nil
+                    )
+                    .font(.caption.weight(.semibold))
+                }
+                .padding(.vertical, 2)
             }
         } header: {
             Text("binge-server URL")
@@ -807,7 +883,9 @@ struct SettingsView: View {
                 "HTTP address of the binge-server daemon. Default "
                     + "is \(BingeServerService.defaultURL) — change "
                     + "this if you run the daemon on a different "
-                    + "host or port. The status dot pings /healthz."
+                    + "host or port. The status dot pings /healthz. "
+                    + "A public address is only used once you have "
+                    + "entered it here yourself."
             )
         }
     }
@@ -1098,6 +1176,8 @@ private struct ForageHealthDot: View {
 /// in place before expecting Reddit posts to surface.
 private struct BingeServerConfigCard: View {
     @AppStorage("binge.bingeServerUrl") private var url: String = ""
+    @AppStorage(BingeServerService.trustRevisionKey)
+    private var daemonTrustRevision: Int = 0
     @AppStorage("binge.stashUrl") private var stashUrl: String = ""
     // Read-only on this card; full get/set lives in the main
     // SettingsView struct above.
@@ -1126,11 +1206,19 @@ private struct BingeServerConfigCard: View {
                         .foregroundStyle(.secondary)
                 }
             } else if config == nil {
+                // With a Retry. The credential rows live in the branch
+                // below, so a daemon that was down for one second left
+                // the user no way back to them: the only retry was
+                // .task(id: url), which needs the URL STRING to change.
+                // Confirming an address did not change it either, so
+                // granting trust left this stuck on "unreachable".
                 Label(
                     "binge-server unreachable",
                     systemImage: "exclamationmark.triangle.fill"
                 )
                 .foregroundStyle(.red)
+                Button("Retry") { Task { await refresh() } }
+                    .font(.caption.weight(.semibold))
             } else if let c = config {
                 stashKeyRow(c)
                 redditCookieRow(c)
@@ -1161,7 +1249,19 @@ private struct BingeServerConfigCard: View {
             )
         }
         .task(id: url) { await refresh() }
-        .task(id: config?.stashApiKeySet ?? false) {
+        // Re-probe when trust is granted: until it is, every request
+        // this card makes is refused before it leaves the app.
+        .task(id: daemonTrustRevision) { await refresh() }
+        // Keyed on the OPTIONAL, not on `?? false`. Collapsing nil and
+        // false made the id false both while config was still nil and
+        // when the daemon reported no key - so the task ran once during
+        // the nil window, early-returned, and never restarted when the
+        // real answer arrived. The push could only fire on a true->false
+        // transition, i.e. retargeting away from a daemon that had the
+        // key. Meanwhile the row sat on "Pushing..." for the session
+        // with nothing in flight, which the doc comment below describes
+        // as the failure signal.
+        .task(id: config?.stashApiKeySet) {
             await maybePushStashKey()
         }
     }
@@ -1358,6 +1458,22 @@ private struct BingeServerConfigCard: View {
     }
 
     private func refresh() async {
+        // Anything half-entered belongs to the destination it was
+        // typed for. The URL field is a sibling section on the same
+        // scrolling Form and this card keeps its state across a URL
+        // change, so a pasted reddit_session could be left sitting in
+        // the box while the user scrolled up and corrected the host -
+        // and Save reads the CURRENT url at send time, so the cookie
+        // went to the new one. The "Saved" ticks are cleared for the
+        // same reason: they describe a daemon that is no longer the
+        // one being configured.
+        cookieInput = ""
+        xAuthInput = ""
+        xCt0Input = ""
+        cookieSaved = false
+        xSaved = false
+        cookieError = nil
+        xError = nil
         probing = true
         config = await BingeServerService.config()
         probing = false

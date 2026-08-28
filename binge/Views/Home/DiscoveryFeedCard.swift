@@ -35,6 +35,8 @@ struct DiscoveryFeedCard: View {
     /// the next mount) it should go away. Persistence not
     /// needed.
     @State private var addError: String?
+    /// A sceneCreate is in flight. Guards the only write on this card.
+    @State private var adding = false
     /// Derived performer slices, computed once per item rather
     /// than on every body render. Plain `var` (computed
     /// properties) would re-filter / re-sort / re-join on every
@@ -173,11 +175,16 @@ struct DiscoveryFeedCard: View {
 
     /// Discovery menu — matches the web's SceneCardMenu. Pre-add:
     /// "Add scene to library" + "View on StashDB". Post-add:
-    /// just "View on StashDB" (the Add row is dropped so a second
-    /// tap can't fire a duplicate sceneCreate).
+    /// just "View on StashDB".
+    ///
+    /// The comment here used to claim dropping the row on sceneAdded
+    /// meant "a second tap can't fire a duplicate sceneCreate". It
+    /// could: sceneAdded only turns true once the write has RETURNED,
+    /// and the write is four round trips downstream of the tap. The
+    /// in-flight flag is what actually closes that window.
     private var menuItems: [SceneCardMenu.Item] {
         var out: [SceneCardMenu.Item] = []
-        if !sceneAdded {
+        if !sceneAdded && !adding {
             out.append(
                 .init(
                     label: "Add scene to library",
@@ -266,7 +273,21 @@ struct DiscoveryFeedCard: View {
     }
 
     private func addToLibrary() {
+        // sceneAdded is not a guard. It is a prop the parent derives
+        // from the bingeSceneAdded notification, which AddSceneService
+        // posts only AFTER sceneCreate returns - and the write is
+        // preceded by four sequential round trips, two of them
+        // whole-library scans. So from the first tap the user was two
+        // taps from a duplicate: the menu row is still rendered,
+        // nothing is disabled, and Stash does not enforce stash_id
+        // uniqueness on scenes. Each extra press left another fileless
+        // row carrying the same stash_id, another stored cover blob,
+        // and a scene binge never surfaces again - so cleanup is
+        // manual.
+        if adding { return }
+        adding = true
         Task {
+            defer { adding = false }
             let svc = AddSceneService(baseURL: baseURL, apiKey: apiKey)
             do {
                 _ = try await svc.addStashDBScene(

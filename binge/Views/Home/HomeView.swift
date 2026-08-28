@@ -24,6 +24,13 @@ struct HomeView: View {
     private var stashApiKey: String { KeychainStore.shared.stashApiKey }
     @AppStorage("binge.includeStashDB") private var includeStashDB: Bool = true
     @AppStorage("binge.includeReddit") private var includeReddit: Bool = true
+    // Was missing from the .task key, so turning PornHub off did not
+    // re-run the fetch at all.
+    @AppStorage("binge.includePornhub") private var includePornhub: Bool = true
+    /// The settings the live view model was last built or refreshed
+    /// for. .task(id:) cannot tell "the id changed" from "the view came
+    /// back", so this does.
+    @State private var lastTaskKey: String = ""
     /// Recent window (days). Mirrored here only so a change in Settings
     /// re-runs the fetch task below; the VM reads the value itself.
     @AppStorage("binge.lookbackDays") private var lookbackDays: Int = 30
@@ -191,6 +198,38 @@ struct HomeView: View {
             .filter { !hidden.contains($0.cat) }
             .sorted { $0.key > $1.key }
             .map(\.entry)
+    }
+
+    /// Mark the first entry active when nothing valid is.
+    ///
+    /// SwiftUI's .scrollPosition only updates its binding on real scroll
+    /// events - an initially visible item does not trigger one - so
+    /// without this nudge the first card stays inactive: the poster
+    /// covers the video and no frame mounts.
+    private func primeActiveEntryIfNeeded() {
+        guard let vm else { return }
+        let entries = merged(
+            library: vm.feed,
+            packs: vm.packs,
+            discovery: vm.discovery,
+            repostCutoff: vm.repostCutoff
+        )
+        // .scrollPosition(id:) is a two-way binding: writing it
+        // SCROLLS. So this must only ever write when there is nothing
+        // sensible on screen to keep.
+        //
+        // It used to re-prime whenever the active id had disappeared
+        // from the list, and ids genuinely disappear a second or two
+        // after first paint: fetchMatchedCasts lands, packGroupKey
+        // starts preferring a StashDB match over an implied source, and
+        // loose scenes get absorbed into newly formed packs. The user
+        // would begin scrolling and get yanked back to the top.
+        // So: prime once, when there is nothing to keep. If the entry
+        // has genuinely vanished, leaving the binding alone keeps the
+        // reader where they were, which is always better than moving
+        // them somewhere they did not ask to go.
+        guard activeFeedEntryId == nil else { return }
+        activeFeedEntryId = entries.first?.id
     }
 
     /// Route a discovery-card performer tap. The performer's
@@ -417,6 +456,16 @@ struct HomeView: View {
                     // (Modifier applies to the closing brace,
                     // see below.)
                     if let vm {
+                        // Merged once, not once per body evaluation, and
+                        // shared with the empty-state check below so the
+                        // two can never disagree about whether there is
+                        // anything on screen.
+                        let entries = merged(
+                            library: vm.feed,
+                            packs: vm.packs,
+                            discovery: vm.discovery,
+                            repostCutoff: vm.repostCutoff
+                        )
                         // Stories row reaches screen edges
                         // intentionally — bubbles look cramped if
                         // they're also inset. The vertical stack's
@@ -433,15 +482,7 @@ struct HomeView: View {
                         // last week interleaves naturally with
                         // recent library imports. Discovery cards
                         // identified by id prefix "discovery:".
-                        ForEach(
-                            merged(
-                                library: vm.feed,
-                                packs: vm.packs,
-                                discovery: vm.discovery,
-                                repostCutoff: vm.repostCutoff
-                            ),
-                            id: \.id
-                        ) { entry in
+                        ForEach(entries, id: \.id) { entry in
                             switch entry {
                             case .library(let scene):
                                 libraryCard(scene, entry: entry, vm: vm)
@@ -496,8 +537,25 @@ struct HomeView: View {
                         if case .error(let diagnosis) = vm.loadState {
                             errorBanner(diagnosis)
                         }
-                        if case .loaded = vm.loadState, vm.feed.isEmpty {
-                            emptyState
+                        // Gated on the merged, filtered list - the one
+                        // the ForEach above just rendered - rather than on
+                        // vm.feed.
+                        //
+                        // vm.feed is only the loose library scenes, so it
+                        // is empty in the ordinary case where every recent
+                        // scene was gathered into a pack, and it was also
+                        // empty on a library carried entirely by StashDB
+                        // discovery. Both showed "No recent scenes" sitting
+                        // underneath a screen full of cards. It also missed
+                        // the opposite case: hiding every category left
+                        // vm.feed full, so the reader got a blank screen
+                        // with nothing saying why.
+                        if case .loaded = vm.loadState, entries.isEmpty {
+                            emptyState(
+                                everythingFiltered: !vm.feed.isEmpty
+                                    || !vm.packs.isEmpty
+                                    || !vm.discovery.isEmpty
+                            )
                         }
                     } else {
                         BingeLoading(minHeight: 220)
@@ -509,12 +567,29 @@ struct HomeView: View {
                 .padding(.top, 4)
                 // Tail-pad so the last card has room below it
                 // before the tab bar overlay starts.
-                .padding(.bottom, 14)
+                // Room for the floating nav, which no longer takes
+                // any of its own. See RootView.
+                .padding(.bottom, 14 + BingeBottomNav.footprint)
                 .scrollTargetLayout()
             }
             .scrollPosition(
                 id: $activeFeedEntryId, anchor: .center
             )
+            // On the ScrollView itself, not on an ancestor.
+            //
+            // This lived on tabContent in RootView, outside every tab's
+            // NavigationStack, and never fired once: a capture of 72
+            // log lines from a live session contained zero phase
+            // changes. onScrollPhaseChange does not cross that
+            // boundary, so the nav's contracted state was never set and
+            // every size value tuned since was dead code.
+            .contractsBottomNav()
+            // The system draws its own darkened edge treatment behind a
+            // bottom bar as content passes under it. Against a floating
+            // capsule that is a black band around the pill rather than
+            // anything glassy, so it is turned off and the glass does
+            // the whole job.
+            .scrollEdgeEffectStyle(nil, for: .bottom)
             .statusBarHidden(tour.isRunning)
             .background(Color.black.ignoresSafeArea())
             .refreshable {
@@ -538,19 +613,44 @@ struct HomeView: View {
             .toolbarColorScheme(.dark, for: .navigationBar)
             .bingeRouteDestinations()
         }
-        .task(id: "\(includeStashDB):\(includeReddit):\(lookbackDays)") {
-            if vm == nil {
+        // stashUrl and the key are part of the identity, not just the
+        // settings.
+        //
+        // The VM holds the address it was built with for its whole life,
+        // and this task neither keyed on that address nor rebuilt when
+        // it changed - so the error banner's own "Open settings" button
+        // could not fix the error it was reporting. The sheet opens over
+        // a still-mounted HomeView, the user corrects the address, and
+        // the task does not re-run; "Try again" then retries against the
+        // old one and shows the same failure. The only escape was
+        // switching tabs, which nothing suggested.
+        .task(
+            id: "\(includeStashDB):\(includeReddit):\(lookbackDays):"
+                + "\(stashUrl):\(stashApiKey.isEmpty)"
+        ) {
+            let key =
+                "\(includeStashDB):\(includeReddit):\(includePornhub):"
+                + "\(lookbackDays):\(stashUrl):\(stashApiKey.isEmpty)"
+            if vm == nil || vm?.baseURL != stashUrl {
                 vm = HomeViewModel(
                     baseURL: stashUrl,
                     apiKey: stashApiKey
                 )
+                lastTaskKey = key
                 await vm?.load()
-            } else {
-                // VM already up — the recent-window (lookbackDays)
-                // setting changed mid-session. The VM reads it fresh
-                // from UserDefaults at fetch time, so refresh() picks
-                // up the new value and re-runs the feed/pack/discovery
-                // assembly with the new window.
+            } else if key != lastTaskKey {
+                // Only when a setting ACTUALLY changed.
+                //
+                // .task(id:) restarts on every re-appearance, not only
+                // on an id change - and this branch called refresh(),
+                // which rm -rf's the whole StashDB cache directory. So
+                // closing a story bubble, the scene player, a performer
+                // profile, or popping back from a drilled reel each
+                // wiped the cache and forced a cold reload: two ~13 MB
+                // feed queries plus a whole-library owned-ids scan plus
+                // fresh stashdb.org round trips, on a phone, for
+                // dismissing a sheet.
+                lastTaskKey = key
                 await vm?.refresh()
             }
             // Prime activeFeedEntryId on first load. SwiftUI's
@@ -559,14 +659,20 @@ struct HomeView: View {
             // don't trigger an update, so without this nudge
             // the first card stays inActive (poster covers the
             // video, audio plays but no frame mounts).
-            if activeFeedEntryId == nil, let vm {
-                activeFeedEntryId = merged(
-                    library: vm.feed,
-                    packs: vm.packs,
-                    discovery: vm.discovery,
-                    repostCutoff: vm.repostCutoff
-                ).first?.id
-            }
+            primeActiveEntryIfNeeded()
+        }
+        // Re-primed whenever the feed is rebuilt.
+        //
+        // Priming ran once, only when activeFeedEntryId was nil. But the
+        // matched-cast fetch lands a second or two after the first paint
+        // and reassembles the feed, and a scene that gains a StashDB
+        // cast can then group into a pack - so the entry that was primed
+        // stops existing, its card's onDisappear tears the player down,
+        // and no card is active any more. Nothing autoplays until the
+        // user scrolls, and pull-to-refresh has the same hole whenever a
+        // pack id changes.
+        .onChange(of: vm?.feedRevision) { _, _ in
+            primeActiveEntryIfNeeded()
         }
         .onChange(of: tour.tick) { _, _ in handleTour() }
         .fullScreenCover(item: $presented) { sheet in
@@ -698,7 +804,13 @@ struct HomeView: View {
     /// IS plenty new, none of it is identified, and "nothing added or
     /// released" would send the reader looking for a bug that is not
     /// there.
-    private var emptyDetail: String {
+    private func emptyDetail(everythingFiltered: Bool) -> String {
+        // There is something to show and the filter is hiding all of it.
+        // Saying "nothing added or released" here would be a lie the
+        // reader can disprove by opening the funnel menu.
+        if everythingFiltered {
+            return "Everything is filtered out. Adjust the filter to see it."
+        }
         let held = vm?.unidentifiedCount ?? 0
         guard held > 0 else {
             return "Nothing added or released in the last \(lookbackDays) days."
@@ -715,15 +827,15 @@ struct HomeView: View {
     }
 
     @ViewBuilder
-    private var emptyState: some View {
+    private func emptyState(everythingFiltered: Bool) -> some View {
         VStack(spacing: 8) {
-            Image(systemName: "tray")
+            Image(systemName: everythingFiltered ? "line.3.horizontal.decrease.circle" : "tray")
                 .font(.system(size: 36))
                 .foregroundStyle(.white.opacity(0.4))
-            Text("No recent scenes")
+            Text(everythingFiltered ? "Nothing shown" : "No recent scenes")
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(.white)
-            Text(emptyDetail)
+            Text(emptyDetail(everythingFiltered: everythingFiltered))
                 .font(.system(size: 12))
                 .foregroundStyle(.white.opacity(0.55))
                 .multilineTextAlignment(.center)

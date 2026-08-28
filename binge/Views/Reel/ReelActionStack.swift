@@ -74,6 +74,13 @@ struct ReelActionStack: View {
     @State private var holdTask: Task<Void, Never>?
 
     // Web's HEART_HOLD_DURATION_MS.
+    /// How far a finger may travel and still count as a tap on the
+    /// heart. Anything beyond this is the reel being scrolled.
+    /// Furthest the finger has travelled during the current press.
+    @State private var heartTravel: CGFloat = 0
+
+    private static let heartTapSlop: CGFloat = 12
+
     private static let holdDuration: Duration = .milliseconds(1500)
 
     var body: some View {
@@ -201,11 +208,34 @@ struct ReelActionStack: View {
         .contentShape(Rectangle())
         .gesture(
             DragGesture(minimumDistance: 0)
-                .onChanged { _ in
+                .onChanged { value in
+                    // Travel is tracked on every frame, not just at the
+                    // end. The unlike below fires from a timer that
+                    // completes while the finger is still down, so the
+                    // check in onEnded - added to stop a scroll counting
+                    // as a tap - never saw it: a thumb resting on the
+                    // heart while scrolling still sent a real
+                    // sceneDecrementO. It is the more destructive of the
+                    // two writes, and it was the unguarded one.
+                    heartTravel = max(
+                        heartTravel,
+                        max(
+                            abs(value.translation.width),
+                            abs(value.translation.height)
+                        )
+                    )
                     // First fingerdown frame starts the hold
                     // timer. onChanged fires many times during a
                     // drag — only react to the first.
                     if !holding {
+                        // Reset at the START of a press, not only at the
+                        // end. onEnded is exactly what SwiftUI does NOT
+                        // deliver when the scroll pan wins arbitration -
+                        // which is the event this guard exists for - so
+                        // clearing it only there left the value latched
+                        // high and silently suppressed the next
+                        // legitimate hold-to-unlike.
+                        heartTravel = 0
                         holding = true
                         didUnlike = false
                         holdTask?.cancel()
@@ -213,24 +243,48 @@ struct ReelActionStack: View {
                             try? await Task.sleep(
                                 for: Self.holdDuration
                             )
-                            if !Task.isCancelled && holding {
-                                didUnlike = true
-                                onUnlike()
-                            }
+                            guard !Task.isCancelled, holding,
+                                heartTravel <= Self.heartTapSlop
+                            else { return }
+                            didUnlike = true
+                            onUnlike()
                         }
                     }
                 }
-                .onEnded { _ in
+                .onEnded { value in
+                // A lift that travelled is a scroll, not a tap.
+                //
+                // This is a raw DragGesture rather than a Button, and a
+                // Button is what normally cancels when the finger leaves
+                // its bounds. With no check at all, putting a thumb on
+                // the heart to scroll the feed and lifting anywhere
+                // fired onLike() - a real sceneIncrementO against the
+                // user's Stash, on a scene they only scrolled past.
                     holdTask?.cancel()
                     let wasUnlike = didUnlike
                     holding = false
                     didUnlike = false
+                    defer { heartTravel = 0 }
+                    let moved = max(
+                        abs(value.translation.width),
+                        abs(value.translation.height)
+                    )
+                    guard moved <= Self.heartTapSlop else { return }
                     if !wasUnlike {
                         likeBounce &+= 1
                         onLike()
                     }
                 }
         )
+        // Same reasoning as the feed card: SwiftUI does not deliver
+        // onEnded when the reel's pan cancels the drag, and the hold
+        // task would then fire onUnlike() against a scene that has
+        // scrolled away.
+        .onDisappear {
+            holdTask?.cancel()
+            holding = false
+            didUnlike = false
+        }
     }
 
     @ViewBuilder

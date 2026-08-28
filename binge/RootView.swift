@@ -11,9 +11,31 @@ struct RootView: View {
     @AppStorage("binge.demoMode") private var demoMode: Bool = false
     private var stashApiKey: String { KeychainStore.shared.stashApiKey }
 
+    /// False in release: the harness does not exist there.
+    private var isNavPreview: Bool {
+        #if DEBUG
+            NavPreviewHarness.isRequested
+        #else
+            false
+        #endif
+    }
+
+    @ViewBuilder
+    private var debugNavPreview: some View {
+        #if DEBUG
+            NavPreviewHarness()
+        #else
+            EmptyView()
+        #endif
+    }
+
     var body: some View {
         let configured = !stashUrl.isEmpty && !stashApiKey.isEmpty
-        if !configured && !demoMode {
+        // Design harness, launch-argument only and debug-only. See
+        // NavPreviewHarness.
+        if isNavPreview {
+            debugNavPreview
+        } else if !configured && !demoMode {
             SettingsView(mode: .setup)
         } else {
             ZStack {
@@ -36,7 +58,28 @@ struct RootView: View {
 // extend behind it visually if it wants to, but in practice both
 // HomeView and ReelView size themselves to the available frame.
 private struct MainShell: View {
-    @State private var tab: BingeTab = .home
+    // `-startTab foryou` opens straight onto a tab. Test-only, and the
+    // reason it exists: verifying the reel in the simulator needs the
+    // reel on screen, and the simulator has no scriptable tap.
+    @State private var tab: BingeTab = MainShell.launchTab
+
+    static var launchTab: BingeTab {
+        #if !DEBUG
+            return .home
+        #else
+        let args = CommandLine.arguments
+        guard let i = args.firstIndex(of: "-startTab"),
+            i + 1 < args.count
+        else { return .home }
+        switch args[i + 1] {
+        case "foryou": return .foryou
+        case "explore": return .explore
+        case "following": return .following
+        case "menu": return .menu
+        default: return .home
+        }
+        #endif
+    }
     // Automated walkthrough director (demo-capture only). Observed so
     // `.switchTab` commands drive the active tab and the pre-roll
     // countdown can overlay the whole shell.
@@ -66,20 +109,44 @@ private struct MainShell: View {
         // composition. Putting it outside opts the whole layout
         // out of keyboard avoidance; the keyboard covers the nav,
         // which is the intended behaviour.
-        VStack(spacing: 0) {
+        // ZStack, and NOT safeAreaInset.
+        //
+        // Two things have to be true at once: content must pass behind
+        // the glass, or the material has nothing to refract and reads
+        // as a grey pill; and the reel must lay out exactly as it did,
+        // because handing safeAreaInset the whole tabContent broke it
+        // twice - slides taller than the viewport, the video collapsed
+        // to a strip with a growing void beneath.
+        //
+        // So the nav simply floats on top and takes NO part in layout,
+        // and each surface makes its own room for it: scrolling tabs
+        // pad their content by BingeBottomNav.footprint, the reel pads
+        // its controls by the same amount and lets the video run full
+        // bleed behind the bar, which is what the reference does too.
+        // Nothing measures the nav, so nothing can be moved by it.
+        ZStack(alignment: .bottom) {
             tabContent
                 .environment(reelNavigator)
                 .environment(filterNavigator)
-            // BingeBottomNav lives outside tabContent so it
-            // sits OUTSIDE each tab's NavigationStack. A pushed
-            // destination (drilled-in reel) inherits tabContent's
-            // frame — which is the area ABOVE the navbar — so
-            // the reel's action stack + progress bar lay out
-            // above the nav, not under it. `.safeAreaInset` on
-            // the parent here was getting eaten by the
-            // NavigationStack push transition.
+                // Content runs to the PHYSICAL bottom, not to the top
+                // of the home-indicator inset.
+                //
+                // Without this the reel's video stopped ~34pt short and
+                // the capsule sat half on video and half on black,
+                // which no amount of tuning the glass could fix - it
+                // had nothing to refract across half its width. Every
+                // surface already pads its own content by
+                // BingeBottomNav.footprint, so nothing ends up
+                // unreachable underneath.
+                .ignoresSafeArea(edges: .bottom)
             BingeBottomNav(selected: $tab)
         }
+        // On the STACK, not just on its children. The nav ignoring the
+        // inset internally does not help while the ZStack still aligns
+        // it to the safe-area edge: the 34pt home-indicator inset was
+        // being added to the nav's own 24pt offset, putting the capsule
+        // at 59pt off the bottom instead of 24.
+        .ignoresSafeArea(edges: .bottom)
         .overlay { tourCountdownOverlay }
         // Director drives the active tab during a walkthrough.
         .onChange(of: tour.tick) { _, _ in

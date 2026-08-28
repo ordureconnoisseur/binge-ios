@@ -258,7 +258,9 @@ final class HomeViewModel {
         }
 
         var packs: [SceneFeedPack] = []
-        var packedKeys: Set<String> = []
+        // The scenes a pack actually holds, by id - not the groups that
+        // formed one. See the loose-scene pass below for why.
+        var packedSceneIds: Set<String> = []
         let iso = ISO8601DateFormatter()
 
         for (groupKey, list) in byPrimary {
@@ -316,35 +318,34 @@ final class HomeViewModel {
                     isRepost: isRepost
                 )
             )
-            packedKeys.insert(groupKey)
+            for packed in inWindow { packedSceneIds.insert(packed.id) }
         }
 
-        // A performer who formed a pack is represented by that pack
-        // card, so we don't also surface their loose individual
-        // scenes — otherwise a bulk-import performer would flood the
-        // feed with a pack AND dozens of cards. Everyone else shows
-        // all their scenes in the window (no per-performer cap).
+        // A scene already inside a pack card is not also shown loose,
+        // otherwise a bulk-import performer would fill the feed with a
+        // pack AND dozens of cards. Everyone else shows every scene in
+        // the window, with no per-performer cap.
+        //
+        // Keyed on the scenes the pack holds, not on the group that
+        // formed it. A pack gathers only what falls inside its own
+        // seven-day window, but this pass used to skip everything
+        // sharing the group key, which is the whole lookback. So a
+        // performer with a fresh bulk import also lost her older scenes
+        // still inside the lookback: they were in no pack and got no
+        // card of their own, and the library looked emptier than it is.
         var out: [BingeScene] = []
         for s in scenes {
-            guard
-                let key = packGroupKey(
-                    s,
-                    matchedPerformers: matchedPerformers,
-                    impliedSources: impliedSources
-                )
-            else {
-                // Nothing identifies it well enough to group, so it can
-                // only ever stand on its own.
-                out.append(s)
-                continue
-            }
-            if packedKeys.contains(key) { continue }
+            if packedSceneIds.contains(s.id) { continue }
             out.append(s)
         }
         return (out, packs)
     }
 
-    private let baseURL: String
+    /// Readable so the view can tell whether this VM was built against
+    /// the address currently configured. It is fixed for the VM's
+    /// lifetime, which is why the view has to rebuild rather than
+    /// mutate it.
+    let baseURL: String
     private let apiKey: String
     /// Read fresh from UserDefaults each fetch (not captured at
     /// init) so toggling "Discover from StashDB / Reddit" in Settings
@@ -605,7 +606,29 @@ final class HomeViewModel {
                 unidentifiedCount = await countUnidentified(
                     client: client, since: sinceIso
                 )
+                // Re-taken, because that was an await. Everything below
+                // overwrites the feed unconditionally, so a stale run
+                // resuming here blanked a newer one that had already
+                // painted - and countUnidentified swallows
+                // CancellationError to return 0, so even a cancelled
+                // task ran on to do it. The trigger is ordinary: narrow
+                // the lookback to a window with nothing in it, widen it
+                // again, and the empty answer lands last.
+                guard gen == fetchGeneration else { return }
             }
+            // Cleared here, with the story tails. Leaving it meant
+            // turning "Discover from StashDB" off kept the previous
+            // run's discovery cards in the feed - fetchDiscovery simply
+            // is not called, so nothing overwrote them - and a StashDB
+            // outage left stale ones on screen indefinitely, because
+            // both early-returns happen before the assignment. The
+            // comment on includeDiscovery claims this already happened.
+            discovery = []
+            // Optimistic o-counter values belong to the rows they were
+            // taken from. Kept across a fetch, a stale override masked
+            // the fresh o_counter and then became the base the next
+            // increment counted from.
+            oCounterOverrides = [:]
             // Stories stay performer-only. A story is one performer's
             // strip, so a scene with nobody linked has no strip to
             // belong to however well StashDB knows it.
@@ -777,7 +800,12 @@ final class HomeViewModel {
     /// Rebuild the feed from the scenes that passed the identification
     /// rule. Separate from `fetch()` so the matched-cast pass can redo
     /// it when names arrive, without another round trip.
+    /// Bumped whenever the feed is rebuilt, so the view can notice that
+    /// the entry it had marked active may no longer exist.
+    private(set) var feedRevision = 0
+
     private func reassembleFeed() {
+        feedRevision &+= 1
         let assembled = Self.assemblePacks(
             identifiedSource,
             recentWindowDays: lookbackDays,
@@ -842,8 +870,18 @@ final class HomeViewModel {
             apiKey: box.apiKey
         )
         let linked = await linkedTask
-        let owned = await ownedTask
+        let ownedMaybe = await ownedTask
         let trending = await trendingTask
+        // No discovery pass when we do not know what the user owns.
+        //
+        // The filter that keeps owned scenes out of discovery is the
+        // only thing standing between the user and an Add button on a
+        // scene they already have - and Add creates a second, fileless
+        // scene carrying a stash_id the library already uses. An unknown
+        // answer is not an empty one, so the surface waits rather than
+        // offering something it cannot vouch for. The web client refuses
+        // the same way, by throwing.
+        guard let owned = ownedMaybe else { return }
         let costar: [StashDBScene]
         if linked.isEmpty {
             costar = []

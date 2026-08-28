@@ -18,9 +18,13 @@ final class StashDBService {
     /// soft cap — large arrays cause server-side validation errors
     /// or timeouts. 100 mirrors the web's batch size.
     private static let performerBatchSize = 100
-    /// Slim ceiling on pages we'll walk per batch. 50 × 100 = 5000
-    /// scenes per batch which is overkill in practice.
-    private static let maxPagesPerBatch = 5
+    /// Ceiling on pages we'll walk per batch. 50 × 100 = 5000 scenes,
+    /// matching the web client. The constant used to be 5 while this
+    /// comment described 50, so a library with enough linked performers
+    /// silently lost the OLDEST scenes in its window - the query sorts
+    /// by date descending, so truncation takes the tail - and the two
+    /// clients showed different discovery feeds for the same library.
+    private static let maxPagesPerBatch = 50
     private static let pageSize = 100
 
     init(baseURL: String, apiKey: String) {
@@ -61,7 +65,10 @@ final class StashDBService {
 
     /// Library performers that have a stash_id pointing at
     /// stashdb.org. Drives the co-star discovery seed.
-    func fetchLinkedPerformers() async -> [LinkedPerformer] {
+    /// Optional on purpose: nil means the query failed, [] means the
+    /// user genuinely has no linked performers. The caller caches this
+    /// for an hour, and the two must not be confused - see the catch.
+    func fetchLinkedPerformers() async -> [LinkedPerformer]? {
         let client = StashClient(baseURL: baseURL, apiKey: apiKey)
         do {
             let resp: FindLinkedPerformersResponse = try await client.gql(
@@ -87,15 +94,27 @@ final class StashDBService {
             }
             return out
         } catch {
+            // Not [].
+            //
+            // Any Stash-side failure - the phone asleep on cellular,
+            // Stash restarting, a rotated key, a 502 from a proxy - used
+            // to return an empty list, which was then cached for an hour
+            // as the truth. For that hour the discovery seed was skipped
+            // entirely, and tapping a performer the user had already
+            // followed opened the read-only StashDB profile with a
+            // Follow button, which is exactly what the lookup exists to
+            // prevent.
             print("[binge] linked performers fetch failed: \(error)")
-            return []
+            return nil
         }
     }
 
     /// Set of stash_ids the user already has imported locally.
     /// Used to filter discovered StashDB scenes so we don't
     /// surface ones the user already owns.
-    func fetchOwnedStashIds() async -> Set<String> {
+    /// nil means the query failed; an empty set means the user owns
+    /// nothing matched. Same reasoning as fetchLinkedPerformers.
+    func fetchOwnedStashIds() async -> Set<String>? {
         let client = StashClient(baseURL: baseURL, apiKey: apiKey)
         do {
             let resp: FindOwnedStashIdsResponse = try await client.gql(
@@ -110,8 +129,11 @@ final class StashDBService {
             }
             return owned
         } catch {
+            // An empty owned set means "you own none of these", so
+            // caching a failure as one offered the user scenes they
+            // already have, with an Add to library button, for an hour.
             print("[binge] owned stash_ids fetch failed: \(error)")
-            return []
+            return nil
         }
     }
 
@@ -211,7 +233,7 @@ final class StashDBService {
         ]
         do {
             req.httpBody = try JSONSerialization.data(withJSONObject: body)
-            let (data, resp) = try await URLSession.shared.data(for: req)
+            let (data, resp) = try await CredentialSession.shared.data(for: req)
             if let http = resp as? HTTPURLResponse, http.statusCode != 200 {
                 print("[binge] stashdb perf http=\(http.statusCode)")
                 return nil
@@ -246,7 +268,7 @@ final class StashDBService {
         ]
         do {
             req.httpBody = try JSONSerialization.data(withJSONObject: body)
-            let (data, resp) = try await URLSession.shared.data(for: req)
+            let (data, resp) = try await CredentialSession.shared.data(for: req)
             if let http = resp as? HTTPURLResponse, http.statusCode != 200 {
                 print("[binge] stashdb scene http=\(http.statusCode)")
                 return nil
@@ -338,7 +360,7 @@ final class StashDBService {
         ]
         do {
             req.httpBody = try JSONSerialization.data(withJSONObject: body)
-            let (data, resp) = try await URLSession.shared.data(for: req)
+            let (data, resp) = try await CredentialSession.shared.data(for: req)
             if let http = resp as? HTTPURLResponse, http.statusCode != 200 {
                 print(
                     "[binge] stashdb trending perf "
@@ -390,6 +412,27 @@ final class StashDBService {
     /// header. Returns nil on any HTTP / decode / GraphQL error
     /// (the discovery feed degrades silently — no card shown
     /// rather than a hard surface error).
+    /// One id as a GraphQL string literal, escaped per the spec.
+    static func gqlString(_ raw: String) -> String {
+        var out = "\""
+        for ch in raw.unicodeScalars {
+            switch ch {
+            case "\"": out += "\\\""
+            case "\\": out += "\\\\"
+            case "\n": out += "\\n"
+            case "\r": out += "\\r"
+            case "\t": out += "\\t"
+            default:
+                if ch.value < 0x20 {
+                    out += String(format: "\\u%04x", ch.value)
+                } else {
+                    out.unicodeScalars.append(ch)
+                }
+            }
+        }
+        return out + "\""
+    }
+
     private func stashDBPost(
         _ query: String,
         variables: [String: Any],
@@ -427,7 +470,7 @@ final class StashDBService {
             return nil
         }
         do {
-            let (data, resp) = try await URLSession.shared.data(for: req)
+            let (data, resp) = try await CredentialSession.shared.data(for: req)
             if let http = resp as? HTTPURLResponse,
                 http.statusCode != 200
             {
@@ -448,7 +491,18 @@ final class StashDBService {
                     "[binge] stashdb gql errors: "
                         + errs.map(\.message).joined(separator: "; ")
                 )
-                return nil
+                // But keep the data when there is any, as the web
+                // plugin does.
+                //
+                // GraphQL partial success is ordinary, and the batched
+                // cast document asks for twenty scenes in one request
+                // under aliases. Discarding the whole response because
+                // one alias errored threw away the nineteen good
+                // answers beside it - and nothing was cached, so the
+                // same request was reissued and rediscarded on every
+                // feed load. One awkward stash_id in the library was
+                // enough. Per-alias nulls are handled downstream.
+                if env.data == nil { return nil }
             }
             return env.data
         } catch {
@@ -475,8 +529,21 @@ final class StashDBService {
     /// variable, so its shape is checked before it goes anywhere near
     /// the query.
     private static func isPlausibleStashID(_ id: String) -> Bool {
-        !id.isEmpty && id.count <= 64
-            && id.allSatisfy { $0.isHexDigit || $0 == "-" }
+        // A StashDB id is a UUID. This used to accept anything hex-ish
+        // of any length, so "42" passed - and stash_ids is a free-text
+        // field that plugins, imports and hand edits all write, so a row
+        // carrying a local Stash id is an ordinary mistake. StashDB then
+        // answers the whole aliased document with a coercion error, and
+        // because a response carrying errors is discarded entirely, the
+        // other nineteen scenes in that chunk lose their cast too, on
+        // every load, forever.
+        //
+        // Swift's isHexDigit also accepts fullwidth digits, so the old
+        // predicate admitted non-ASCII ids the endpoint could not use.
+        guard id.count >= 8, id.count <= 64 else { return false }
+        return id.allSatisfy { c in
+            c == "-" || c.isASCII && c.isHexDigit
+        }
     }
 
     /// Who StashDB says is in each of these scenes, keyed by stash id.
@@ -543,8 +610,17 @@ final class StashDBService {
     ) async -> [String: [MatchedPerformer]] {
         let aliases = ids.enumerated()
             .map { index, id in
+                // The id is INTERPOLATED INTO DOCUMENT TEXT, so it has
+                // to be escaped. Stash does not constrain stash_id to a
+                // UUID - it is whatever a user or scraper wrote - and an
+                // id carrying a quote either restructured this query
+                // (adding top-level aliases to a request that carries
+                // the StashDB API key) or failed to parse, which
+                // silently cost all 20 scenes in the chunk their cast.
+                // isPlausibleStashID upstream is a filter, not an
+                // escape; this is the escape.
                 """
-                  s\(index): findScene(id: "\(id)") {
+                  s\(index): findScene(id: \(Self.gqlString(id))) {
                     performers { performer { id name gender images { url } } }
                   }
                 """
@@ -570,12 +646,17 @@ final class StashDBService {
             // A scene StashDB no longer has decodes as null. Recorded as
             // an empty cast so it is not asked for again on every load.
             let cast = map["s\(index)"] ?? nil
-            out[id] = (cast?.performers ?? []).map { entry in
-                MatchedPerformer(
-                    stashId: entry.performer.id,
-                    name: entry.performer.name,
-                    gender: entry.performer.gender,
-                    image: entry.performer.images.first?.url
+            // compactMap, because an appearance orphaned by a StashDB
+            // edit has no performer on it. Those entries are dropped
+            // rather than failing the scene, and the scene is still
+            // recorded so it is not asked for again next load.
+            out[id] = (cast?.performers ?? []).compactMap { entry in
+                guard let p = entry.performer else { return nil }
+                return MatchedPerformer(
+                    stashId: p.id,
+                    name: p.name,
+                    gender: p.gender,
+                    image: p.images.first?.url
                 )
             }
         }
@@ -673,10 +754,25 @@ private struct StashDBEnvelope<D: Decodable>: Decodable {
 /// One aliased `findScene` in the batched cast document. Null when
 /// StashDB no longer has the scene.
 private struct SceneCastPayload: Decodable {
-    let performers: [Entry]
+    // Both optional on purpose.
+    //
+    // StashDB returns scenes whose performer appearance has been
+    // orphaned by an edit, so the join row exists with no performer on
+    // it, and scenes whose whole performers array is null. With
+    // non-optional types either shape threw, and the throw was not
+    // scoped to the entry or even to the scene: it propagated out of
+    // the aliased document and failed the request for all twenty scenes
+    // in the chunk. None of them were then cached, so the same wasted
+    // request fired on every Home load for the life of the install and
+    // twenty cards permanently showed no cast.
+    //
+    // The single-scene decoder in StashDBModels already handles this;
+    // only the batched document did not. The web plugin hit the same
+    // record and took the same fix.
+    let performers: [Entry]?
 
     struct Entry: Decodable {
-        let performer: Performer
+        let performer: Performer?
         struct Performer: Decodable {
             let id: String
             let name: String

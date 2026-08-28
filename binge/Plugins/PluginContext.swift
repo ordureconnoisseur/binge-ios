@@ -67,15 +67,31 @@ final class PluginContext {
             enabledIds = Set(
                 resp.plugins.filter(\.enabled).map(\.id)
             )
+            answered = true
         } catch {
+            // NOT "no plugins". Recording it that way made every
+            // hasPlugin false for the session with no retry - and
+            // false for Advanced Rating does not hide rating, it
+            // selects BasicRatingModal, which writes rating100
+            // DIRECTLY. That is the field the plugin owns and
+            // recomputes from score tags on the same mutation, so the
+            // user sets 4 stars and watches it snap to 7.3, or sticks
+            // wrongly on an entity with no score tags.
             print("[binge] plugin detection failed: \(error)")
             enabledIds = []
         }
         loaded = true
     }
 
+    /// True only when Stash actually answered which plugins are
+    /// installed. `loaded` is also true after a failure, so anything
+    /// choosing between a safe branch and a destructive one reads
+    /// this instead.
+    private(set) var answered = false
+
     func invalidate() {
         enabledIds = []
         loaded = false
+        answered = false
     }
 }

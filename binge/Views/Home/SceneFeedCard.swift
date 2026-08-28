@@ -87,6 +87,27 @@ struct SceneFeedCard: View {
     @State private var heartHolding: Bool = false
     @State private var heartDidUnlike: Bool = false
     @State private var heartHoldTask: Task<Void, Never>?
+    /// How far a finger may travel and still count as a tap on the
+    /// heart. Anything beyond this is the feed being scrolled.
+    /// Live mirror of `isActive` for the escaping KVO closure below.
+    ///
+    /// This view is a struct, so a closure capturing self freezes every
+    /// plain `let` at capture time - and `attachPlayer()` is only ever
+    /// called while isActive is true, which made the readiness handler's
+    /// `guard isActive` always pass. Its comment says an inactive card
+    /// keeps its poster "or it would uncover black"; that is exactly
+    /// what happened. A @State property is stored in a box the struct
+    /// only references, so reading it through a captured copy gives the
+    /// current value rather than the captured one.
+    @State private var liveIsActive = false
+    /// The pending poster fade, so teardown can cancel it.
+    @State private var posterFadeTask: Task<Void, Never>?
+
+    /// Furthest the finger has travelled during the current press.
+    @State private var heartTravel: CGFloat = 0
+
+    private static let heartTapSlop: CGFloat = 12
+
     private static let heartHoldDuration: Duration = .milliseconds(1500)
     @State private var rateOpen: Bool = false
     /// Multi-performer picker sheet. Opens when the user taps
@@ -162,10 +183,31 @@ struct SceneFeedCard: View {
         // cards now just show the poster image; the player is
         // built lazily when activeId lands on them.
         .onAppear {
+            liveIsActive = isActive
             if isActive { attachPlayer() }
         }
-        .onDisappear { detachPlayer() }
+        .onDisappear {
+            liveIsActive = false
+            detachPlayer()
+            // The hold task is cancelled in onEnded, but SwiftUI does
+            // not deliver onEnded when the scroll view's pan wins
+            // arbitration and cancels the drag. Left running, it fires
+            // onUnlike() a second and a half later - a real
+            // sceneDecrementO against a card that has scrolled away.
+            heartHoldTask?.cancel()
+            heartHolding = false
+            heartDidUnlike = false
+            heartTravel = 0
+        }
         .onChange(of: isActive) { _, active in
+            liveIsActive = active
+            if !active {
+                // Whatever fade was in flight belongs to the last
+                // activation, and landing it now would uncover black on
+                // a card that has no player any more.
+                posterFadeTask?.cancel()
+                posterFadeTask = nil
+            }
             if active {
                 if player == nil {
                     attachPlayer()
@@ -538,9 +580,7 @@ struct SceneFeedCard: View {
         else { return }
         let asset = AVURLAsset(
             url: url,
-            options: [
-                "AVURLAssetHTTPHeaderFieldsKey": ["ApiKey": apiKey]
-            ]
+            options: CredentialSession.assetOptions(for: url, apiKey: apiKey)
         )
         let item = AVPlayerItem(asset: asset)
         item.preferredForwardBufferDuration = 2
@@ -559,6 +599,15 @@ struct SceneFeedCard: View {
                     guard !previewFailed else { return }
                     previewFailed = true
                     detachPlayer()
+                    // Only if this card is still the centred one. The
+                    // fallback used to re-attach and play regardless,
+                    // reading the same frozen isActive - so a card the
+                    // user had already scrolled past built a second
+                    // player on the full-length stream and started it,
+                    // audible, behind whatever was actually on screen.
+                    // A preview 404 is the common path here, not a rare
+                    // one.
+                    guard liveIsActive else { return }
                     attachPlayer()
                 case .readyToPlay:
                     // Only the centered card mounts a video layer, so
@@ -566,11 +615,16 @@ struct SceneFeedCard: View {
                     // uncover black. Waiting for ready also replaces a
                     // blind 300ms hide that uncovered the poster
                     // whether or not anything had started.
-                    guard isActive else { return }
+                    guard liveIsActive else { return }
                     // Same brief hold applyActiveState uses, covering
                     // first-frame decode so the poster does not lift
-                    // onto a black frame.
+                    // onto a black frame. Re-checked after the sleep:
+                    // a fling can move on within those 300ms, and
+                    // dropping the poster then leaves a card showing
+                    // nothing but black until it re-centres or leaves
+                    // the lazy window entirely.
                     try? await Task.sleep(for: .milliseconds(300))
+                    guard liveIsActive, player != nil else { return }
                     posterVisible = false
                 default:
                     break
@@ -805,12 +859,32 @@ struct SceneFeedCard: View {
             Spacer()
             watchFullButton
         }
-        .task { await MultiviewQueueStore.shared.refresh() }
+        // Skipped entirely when the plugin is not installed. This fired
+        // from every card that mounted, including on libraries where the
+        // button it feeds is never rendered.
+        .task {
+            guard PluginContext.shared.hasPlugin(PluginID.multiView) else {
+                return
+            }
+            await MultiviewQueueStore.shared.refresh()
+        }
         .sheet(isPresented: $rateOpen) {
             // Branch on plugin availability so users without
             // the advancedRating plugin still get the native
             // Stash 5-star rating instead of a dead button.
-            if PluginContext.shared.hasAdvancedRating {
+            // `answered`, not just `hasAdvancedRating`. A failed
+            // enumeration made hasAdvancedRating false for the session
+            // with no retry, and false does not hide rating - it picks
+            // BasicRatingModal, which writes rating100 DIRECTLY. That
+            // is the field the plugin owns and recomputes from score
+            // tags on the same mutation, so the user sets 4 stars and
+            // watches it snap to 7.3. When the answer is unknown, take
+            // the branch that cannot do damage: the criterion modal
+            // writes score tags, which the plugin reads and a plain
+            // Stash simply ignores.
+            if PluginContext.shared.hasAdvancedRating
+                || !PluginContext.shared.answered
+            {
                 CriterionRatingModal(target: .scene(id: scene.id))
                     .presentationDetents([.large])
                     .presentationDragIndicator(.visible)
@@ -921,8 +995,28 @@ struct SceneFeedCard: View {
         .contentShape(Rectangle())
         .gesture(
             DragGesture(minimumDistance: 0)
-                .onChanged { _ in
+                .onChanged { value in
+                    // Same reasoning as the reel's heart: the unlike
+                    // fires from a timer that completes while the finger
+                    // is still down, so the travel check in onEnded
+                    // never saw it and a thumb resting here while
+                    // scrolling sent a real sceneDecrementO.
+                    heartTravel = max(
+                        heartTravel,
+                        max(
+                            abs(value.translation.width),
+                            abs(value.translation.height)
+                        )
+                    )
                     if !heartHolding {
+                        // Reset at the START of a press, not only at the
+                        // end. onEnded is exactly what SwiftUI does NOT
+                        // deliver when the scroll pan wins arbitration -
+                        // which is the event this guard exists for - so
+                        // clearing it only there left the value latched
+                        // high and silently suppressed the next
+                        // legitimate hold-to-unlike.
+                        heartTravel = 0
                         heartHolding = true
                         heartDidUnlike = false
                         heartHoldTask?.cancel()
@@ -930,18 +1024,33 @@ struct SceneFeedCard: View {
                             try? await Task.sleep(
                                 for: Self.heartHoldDuration
                             )
-                            if !Task.isCancelled && heartHolding {
-                                heartDidUnlike = true
-                                onUnlike()
-                            }
+                            guard !Task.isCancelled, heartHolding,
+                                heartTravel <= Self.heartTapSlop
+                            else { return }
+                            heartDidUnlike = true
+                            onUnlike()
                         }
                     }
                 }
-                .onEnded { _ in
+                .onEnded { value in
+                // A lift that travelled is a scroll, not a tap.
+                //
+                // This is a raw DragGesture rather than a Button, and a
+                // Button is what normally cancels when the finger leaves
+                // its bounds. With no check at all, putting a thumb on
+                // the heart to scroll the feed and lifting anywhere
+                // fired onLike() - a real sceneIncrementO against the
+                // user's Stash, on a scene they only scrolled past.
                     heartHoldTask?.cancel()
                     let wasUnlike = heartDidUnlike
                     heartHolding = false
                     heartDidUnlike = false
+                    defer { heartTravel = 0 }
+                    let moved = max(
+                        abs(value.translation.width),
+                        abs(value.translation.height)
+                    )
+                    guard moved <= Self.heartTapSlop else { return }
                     if !wasUnlike {
                         likeBounce &+= 1
                         onLike()

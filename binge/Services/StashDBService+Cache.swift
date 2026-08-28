@@ -51,13 +51,26 @@ extension StashDBService {
             StashDBCache.shared.memoWrite(key, value: cached)
             return cached
         }
-        let fresh = await fetchLinkedPerformers()
+        guard let fresh = await fetchLinkedPerformers() else {
+            // The fetch failed. Serve whatever is on disk, even if it is
+            // past its TTL - a stale list of the user's own performers
+            // is far better than an empty one - and write nothing, so
+            // the next caller retries.
+            let stale: [LinkedPerformer] =
+                StashDBCache.shared.read(key, ttl: .greatestFiniteMagnitude)
+                ?? []
+            return stale
+        }
         StashDBCache.shared.write(key, value: fresh)
         StashDBCache.shared.memoWrite(key, value: fresh)
         return fresh
     }
 
-    func cachedOwnedStashIds() async -> Set<String> {
+    /// nil when the answer is unknown. An empty set means the user owns
+    /// none of these, which is a different and much more consequential
+    /// claim - it is what decides whether a scene is offered with an
+    /// Add button.
+    func cachedOwnedStashIds() async -> Set<String>? {
         let key = "owned"
         if let cached: [String] = StashDBCache.shared.memoRead(key) {
             return Set(cached)
@@ -76,12 +89,35 @@ extension StashDBService {
         // site builds its own StashDBService instance, so an
         // instance-level guard would not see the other one.
         if let inFlight = Self.ownedIdsInFlight {
-            return await inFlight.value
+            // A failure falls back to whatever is on disk, stale or not.
+            // With nothing on disk it reports failure, because an empty
+            // set here means "you own none of these" and that is the one
+            // answer that must never be invented.
+            if let shared = await inFlight.value { return shared }
+            guard
+                let stale: [String] = StashDBCache.shared.read(
+                    key, ttl: .greatestFiniteMagnitude
+                )
+            else { return nil }
+            return Set(stale)
         }
         let task = Task { await self.fetchOwnedStashIds() }
         Self.ownedIdsInFlight = task
-        let fresh = await task.value
+        let result = await task.value
         Self.ownedIdsInFlight = nil
+        guard let fresh = result else {
+            // Stale beats empty, and a failure is never written - but a
+            // COLD cache has no stale entry, and returning [] there was
+            // the same fail-open this optional was introduced to close:
+            // callers read it as "you own nothing", so every scene
+            // already in the library came back offering Add.
+            guard
+                let stale: [String] = StashDBCache.shared.read(
+                    key, ttl: .greatestFiniteMagnitude
+                )
+            else { return nil }
+            return Set(stale)
+        }
         let asArray = Array(fresh)
         StashDBCache.shared.write(key, value: asArray)
         StashDBCache.shared.memoWrite(key, value: asArray)
@@ -89,7 +125,7 @@ extension StashDBService {
     }
 
     /// In-flight owned-ids sweep, shared across service instances.
-    private static var ownedIdsInFlight: Task<Set<String>, Never>?
+    private static var ownedIdsInFlight: Task<Set<String>?, Never>?
 
     func cachedTrendingScenes(
         apiKey stashDBKey: String
@@ -232,6 +268,11 @@ extension StashDBService {
             StashDBCache.shared.memoWrite(key, value: snaps)
             return snaps.map(StashDBScene.init)
         }
+        // Only written when something came back. An empty result from a
+        // timeout used to be cached for 24 hours, so a profile opened on
+        // a weak connection reported the performer as having no scenes -
+        // and the sheet does not re-fetch once loaded, so that was the
+        // answer until the next day or a pull-to-refresh.
         let fresh = await fetchScenesForStashDBPerformer(
             stashId: stashId, apiKey: stashDBKey
         )

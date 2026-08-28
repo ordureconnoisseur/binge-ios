@@ -30,6 +30,8 @@ struct StoryViewerSheet: View {
     // Mute functionality removed for now — playback is always unmuted.
     private let muted = false
 
+    @Environment(\.scenePhase) private var scenePhase
+
     @State private var storyIndex: Int
     @State private var sceneIndex: Int = 0
     /// Horizontal travel of an in-progress swipe between performers.
@@ -39,6 +41,9 @@ struct StoryViewerSheet: View {
     /// True while the commit animation runs, so a second swipe cannot
     /// start mid-turn and leave the index and the offset disagreeing.
     @State private var turning = false
+    /// When the fold began, so a completion handler that never
+    /// runs cannot latch swiping off permanently.
+    @State private var turningSince: Date?
     @State private var player: AVPlayer?
     @State private var endObserver: NSObjectProtocol?
     @State private var timeObserver: Any?
@@ -61,7 +66,44 @@ struct StoryViewerSheet: View {
     /// Save-to-Stash status for the current social scene. Reset per
     /// scene in loadScene(). Tapping Save also pauses auto-advance so
     /// the result has time to land.
-    @State private var saveState: SaveState = .idle
+    /// Keyed by scene id, and NOT reset when the scene changes.
+    ///
+    /// A single value reset in loadScene() meant the button forgot it
+    /// had already saved: tap Save, let it finish, tap next then back,
+    /// and it reads "Save to Stash" again - so a second tap re-downloads
+    /// the media and adds a second copy to the library. Nothing marks a
+    /// post as saved anywhere else, so the state has to live for the
+    /// sheet's lifetime.
+    /// Set by goPrev so the storyIndex handler lands on the previous
+    /// performer's last scene rather than their first.
+    /// Wall-clock time this slide spent with the app in the background.
+    ///
+    /// Every timer here measures Date().timeIntervalSince(start), and
+    /// iOS suspends the process on background - so leaving for a minute
+    /// and coming back made the first wake compute elapsed >= total and
+    /// advance immediately. The slide you were on was gone before you
+    /// saw it. Subtracting the time we were away is the same thing the
+    /// web viewer does with its paused accumulator.
+    /// The cap most recently armed, so it can be re-armed against what
+    /// is left rather than starting over.
+    @State private var capDuration: Double = 0
+    @State private var backgroundDebt: TimeInterval = 0
+    @State private var leftForegroundAt: Date?
+
+    @State private var pendingLastScene = false
+
+    @State private var saveStates: [String: SaveState] = [:]
+
+    /// The save state of the scene on screen.
+    private var currentSaveState: SaveState {
+        guard let id = currentScene?.id else { return .idle }
+        return saveStates[id] ?? .idle
+    }
+
+    private func setSaveState(_ state: SaveState, for id: String?) {
+        guard let id else { return }
+        saveStates[id] = state
+    }
     @State private var tour = TourDirector.shared
 
     enum SaveState: Equatable {
@@ -249,6 +291,17 @@ struct StoryViewerSheet: View {
     private func performerSwipe(width: CGFloat) -> some Gesture {
         DragGesture(minimumDistance: 18)
             .onChanged { v in
+                // `turning` is cleared only by the fold animation's
+                // completion handler. If that ever fails to run, both
+                // halves of this gesture bail forever and performer
+                // swiping is dead for the life of the sheet, so the
+                // latch is given an age as well as a flag.
+                if turning, let since = turningSince,
+                    Date().timeIntervalSince(since) > 2
+                {
+                    turning = false
+                    turningSince = nil
+                }
                 guard !turning else { return }
                 // Vertical drags belong to dismissal, not to this.
                 guard abs(v.translation.width) > abs(v.translation.height)
@@ -277,6 +330,7 @@ struct StoryViewerSheet: View {
                     return
                 }
                 turning = true
+                turningSince = Date()
                 withAnimation(.easeOut(duration: 0.26)) {
                     dragX = forward ? -width : width
                 } completion: {
@@ -285,7 +339,11 @@ struct StoryViewerSheet: View {
                     // once would jump: the content would become the new
                     // performer while still rotated away.
                     storyIndex += forward ? 1 : -1
-                    sceneIndex = 0
+                    // sceneIndex is left to the storyIndex handler.
+                    // Zeroing it here fired the sceneIndex handler too,
+                    // so a swipe between performers built a player and
+                    // its observers, tore them down and built them
+                    // again.
                     dragX = 0
                     turning = false
                 }
@@ -340,10 +398,41 @@ struct StoryViewerSheet: View {
         }
         .onAppear { loadScene() }
         .onDisappear { teardown() }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active {
+                guard let away = leftForegroundAt else { return }
+                backgroundDebt += Date().timeIntervalSince(away)
+                leftForegroundAt = nil
+                // The watchdog sleeps on a clock that keeps running
+                // while the process is suspended, so it would fire the
+                // moment we return however long is really left. Re-armed
+                // against what remains of this slide.
+                rearmCapAfterBackground()
+            } else if leftForegroundAt == nil {
+                leftForegroundAt = Date()
+            }
+        }
         .statusBarHidden(tour.isRunning)
+        // Both indices in one handler. Moving to another performer set
+        // sceneIndex to 0, which fired the second handler as well, so
+        // every performer change built an AVPlayer and its observers,
+        // tore them down and built them again. Harmless but wasteful,
+        // on the most expensive transition the sheet has.
         .onChange(of: storyIndex) { _, _ in
-            sceneIndex = 0
-            loadScene()
+            // Owns the reset, so there is exactly one load per change.
+            // When sceneIndex is already 0 the handler below will not
+            // fire, so this one loads; when it is not, setting it fires
+            // that handler instead.
+            let target =
+                pendingLastScene
+                ? max(0, (currentStory?.scenes.count ?? 1) - 1)
+                : 0
+            pendingLastScene = false
+            if sceneIndex == target {
+                loadScene()
+            } else {
+                sceneIndex = target
+            }
         }
         .onChange(of: sceneIndex) { _, _ in loadScene() }
         // Pause the underlying player while the performer
@@ -556,7 +645,11 @@ struct StoryViewerSheet: View {
                     .shadow(color: .black.opacity(0.6), radius: 4, x: 0, y: 1)
             }
             HStack(spacing: 8) {
-                if let url = URL(string: post.permalink) {
+                // Checked before it reaches the system opener: this
+                // string comes off the daemon, and the label beside it
+                // is computed from a different field, so an unchecked
+                // one renders "View on Reddit" over anything at all.
+                if let url = SafeExternalURL.from(post.permalink) {
                     Link(destination: url) {
                         HStack(spacing: 5) {
                             Text(sourceCtaLabel(for: post.domain))
@@ -604,7 +697,7 @@ struct StoryViewerSheet: View {
     /// "Save"; in-flight → spinner; done → "Saved"; error → message.
     @ViewBuilder
     private func saveButton(_ post: RedditStoryPost) -> some View {
-        switch saveState {
+        switch currentSaveState {
         case .saved:
             HStack(spacing: 5) {
                 Image(systemName: "checkmark.circle.fill")
@@ -639,7 +732,7 @@ struct StoryViewerSheet: View {
                 Task { await doSave(post) }
             } label: {
                 HStack(spacing: 5) {
-                    if saveState == .saving {
+                    if currentSaveState == .saving {
                         ProgressView()
                             .controlSize(.small)
                             .tint(.white)
@@ -647,7 +740,13 @@ struct StoryViewerSheet: View {
                         Image(systemName: "square.and.arrow.down")
                             .font(.system(size: 12, weight: .semibold))
                     }
-                    Text(saveState == .saving ? "Saving…" : "Save to Stash")
+                    Text(
+                        currentSaveState == .saving
+                            ? "Saving…"
+                            : currentSaveState == .saved
+                                ? "Saved"
+                                : "Save to Stash"
+                    )
                         .font(.system(size: 13, weight: .semibold))
                 }
                 .foregroundStyle(.white)
@@ -658,7 +757,9 @@ struct StoryViewerSheet: View {
                     Capsule().stroke(Color.white.opacity(0.25), lineWidth: 1)
                 )
             }
-            .disabled(saveState == .saving)
+            .disabled(
+                currentSaveState == .saving || currentSaveState == .saved
+            )
         }
     }
 
@@ -671,10 +772,17 @@ struct StoryViewerSheet: View {
             ),
             let performerId = currentStory?.performer.id
         else {
-            saveState = .failed("Not saveable")
+            setSaveState(.failed("Not saveable"), for: currentScene?.id)
             return
         }
-        saveState = .saving
+        // Captured BEFORE the await. setSaveState used to resolve
+        // currentScene at call time, and the viewer auto-advances on a
+        // timer - so a save slower than the remaining slide time wrote
+        // "saved" against whichever post was on screen when the daemon
+        // replied. The post actually saved still offered to save again,
+        // which is the duplicate download this keying was added to stop.
+        let savingSceneID = currentScene?.id
+        setSaveState(.saving, for: savingSceneID)
         let req = BingeServerService.SaveToStashRequest(
             performerStashId: performerId,
             source: source,
@@ -689,9 +797,9 @@ struct StoryViewerSheet: View {
         let result = await BingeServerService.saveToStash(req)
         switch result {
         case .ok:
-            saveState = .saved
+            setSaveState(.saved, for: savingSceneID)
         case .failure(let msg):
-            saveState = .failed(msg)
+            setSaveState(.failed(msg), for: savingSceneID)
         }
     }
 
@@ -755,7 +863,7 @@ struct StoryViewerSheet: View {
                     .lineLimit(2)
                     .shadow(color: .black.opacity(0.6), radius: 4, x: 0, y: 1)
             }
-            if let url = URL(string: sb.stashboxUrl) {
+            if let url = SafeExternalURL.from(sb.stashboxUrl) {
                 Link(destination: url) {
                     HStack(spacing: 5) {
                         Text("View on StashDB")
@@ -874,6 +982,12 @@ struct StoryViewerSheet: View {
         if sceneIndex > 0 {
             sceneIndex -= 1
         } else if storyIndex > 0 {
+            // Land on the previous performer's LAST scene, not their
+            // first. Stepping back across a seam and being dropped at
+            // the top of a thirty-scene strip means thirty more taps to
+            // get back to where you were. The web viewer does the same
+            // and has a test named for it.
+            pendingLastScene = true
             storyIndex -= 1
         }
     }
@@ -891,7 +1005,15 @@ struct StoryViewerSheet: View {
     /// Arm a wall-clock watchdog that auto-advances after `secs` —
     /// the video preview cap and the no-media fallback. Replaces any
     /// existing cap task; cleared in teardown().
+    /// Give the watchdog back whatever this slide still had coming.
+    private func rearmCapAfterBackground() {
+        guard capDuration > 0 else { return }
+        let remaining = capDuration * (1 - progress)
+        armCap(after: max(0.5, remaining))
+    }
+
     private func armCap(after secs: Double) {
+        capDuration = secs
         capTimer?.cancel()
         capTimer = Task { @MainActor in
             try? await Task.sleep(for: .seconds(secs))
@@ -904,8 +1026,10 @@ struct StoryViewerSheet: View {
     private func loadScene() {
         teardown()
         progress = 0
+        // A fresh slide starts with no debt.
+        backgroundDebt = 0
+        leftForegroundAt = nil
         didAutoAdvance = false
-        saveState = .idle
         switch currentScene {
         case .library(let scene):
             loadLibrary(scene)
@@ -914,7 +1038,13 @@ struct StoryViewerSheet: View {
         case .reddit(let post):
             loadReddit(post)
         case .none:
-            return
+            // A performer whose posts were all filtered out lands here.
+            // Returning left the sheet on a black panel with the
+            // previous scene's spinner still turning and nothing that
+            // would ever advance or dismiss it. Stop the spinner and
+            // move on the way an empty scene otherwise would.
+            loading = false
+            armCap(after: 1.0)
         }
     }
 
@@ -930,7 +1060,8 @@ struct StoryViewerSheet: View {
             let start = Date()
             stashDBTimer = Task { @MainActor in
                 while !Task.isCancelled {
-                    let elapsed = Date().timeIntervalSince(start)
+                    let elapsed =
+                    Date().timeIntervalSince(start) - backgroundDebt
                     progress = min(1, elapsed / total)
                     if elapsed >= total { autoAdvance(); return }
                     try? await Task.sleep(for: .milliseconds(50))
@@ -952,9 +1083,7 @@ struct StoryViewerSheet: View {
         }
         let asset = AVURLAsset(
             url: url,
-            options: [
-                "AVURLAssetHTTPHeaderFieldsKey": ["ApiKey": apiKey]
-            ]
+            options: CredentialSession.assetOptions(for: url, apiKey: apiKey)
         )
         let item = AVPlayerItem(asset: asset)
         item.preferredForwardBufferDuration = 2
@@ -1026,7 +1155,8 @@ struct StoryViewerSheet: View {
         let start = Date()
         stashDBTimer = Task { @MainActor in
             while !Task.isCancelled {
-                let elapsed = Date().timeIntervalSince(start)
+                let elapsed =
+                    Date().timeIntervalSince(start) - backgroundDebt
                 progress = min(1, elapsed / total)
                 if elapsed >= total {
                     autoAdvance()
@@ -1048,7 +1178,8 @@ struct StoryViewerSheet: View {
         let start = Date()
         stashDBTimer = Task { @MainActor in
             while !Task.isCancelled {
-                let elapsed = Date().timeIntervalSince(start)
+                let elapsed =
+                    Date().timeIntervalSince(start) - backgroundDebt
                 progress = min(1, elapsed / total)
                 if elapsed >= total {
                     autoAdvance()

@@ -39,7 +39,8 @@ enum StashLoginService {
         // strict default TLS validation.
         let loginHost = URL(string: trimmedBase)?.host ?? ""
         let delegate = TrustAllSessionDelegate(
-            allowInsecure: isPrivateHost(loginHost)
+            allowInsecure: isPrivateHost(loginHost),
+            allowedHost: loginHost
         )
         let session = URLSession(
             configuration: config,
@@ -147,9 +148,29 @@ enum StashLoginService {
 
     /// Loopback / RFC1918 / Tailscale-CGNAT / .local / .ts.net / bare
     /// hostname → private. Public FQDNs and public IPs → false.
+    ///
+    /// The IPv6 branch has to come before the bare-hostname rule, and
+    /// this copy was missing it. `URL.host` returns an IPv6 literal
+    /// without its brackets, so `2001:4860:4860::8888` contains no dot
+    /// and fell straight through to "no dot means a LAN machine name".
+    /// That answer is the only gate on the delegate below, which accepts
+    /// any server certificate, so a Stash address given as a public
+    /// IPv6 literal disabled TLS validation entirely and then posted the
+    /// user's Stash username and password over it. The same hole was
+    /// found and fixed in BingeServerService.isTrustedURL; this file was
+    /// missed.
     private static func isPrivateHost(_ host: String) -> Bool {
-        let h = host.lowercased()
+        var h = host.lowercased()
         if h.isEmpty { return false }
+        // Defensive: URL.host does not include brackets, but a caller
+        // passing a raw authority might.
+        if h.hasPrefix("[") && h.hasSuffix("]") {
+            h = String(h.dropFirst().dropLast())
+        }
+        // Deliberately the same implementation the daemon-trust check
+        // uses, not a copy of it. This answer decides whether to accept
+        // any certificate at all, so it must not be allowed to drift.
+        if h.contains(":") { return BingeServerService.isPrivateIPv6(h) }
         if h == "localhost" || h.hasSuffix(".local")
             || h.hasSuffix(".internal") || h.hasSuffix(".ts.net")
         {
@@ -171,6 +192,7 @@ enum StashLoginService {
         // Bare hostname (no dot) is a LAN/tailnet machine name.
         return !h.contains(".")
     }
+
 }
 
 enum StashLoginError: LocalizedError {
@@ -219,13 +241,46 @@ private struct ApiKeyResponse: Decodable {
 /// approach Stashy uses — Stash on a LAN IP or Tailscale endpoint
 /// commonly has a self-signed cert that strict TLS would reject.
 private final class TrustAllSessionDelegate: NSObject,
-    URLSessionDelegate
+    URLSessionDelegate, URLSessionTaskDelegate
 {
     /// Only accept an untrusted server cert when the target host is
     /// private/LAN/tailnet. Public hosts fall through to strict default
     /// TLS so a MITM can't intercept the password on the sign-in path.
+    ///
+    /// Held as the host it was decided for, not as a bare flag. The flag
+    /// was computed once from the URL the user typed and then applied to
+    /// every challenge on the session, so a private host that redirected
+    /// to a public one kept the exemption, and with a 307 or 308 the
+    /// password body followed it. Each challenge is now judged against
+    /// the host actually being talked to.
     let allowInsecure: Bool
-    init(allowInsecure: Bool) { self.allowInsecure = allowInsecure }
+    let allowedHost: String
+    init(allowInsecure: Bool, allowedHost: String) {
+        self.allowInsecure = allowInsecure
+        self.allowedHost = allowedHost.lowercased()
+    }
+
+    /// Refuse to follow a redirect onto a different host.
+    ///
+    /// Judging the certificate exemption per host stops an untrusted
+    /// cert being accepted after a redirect, but it does not stop the
+    /// redirect: a private host answering 307 with a valid public
+    /// certificate would still have received the form body, which on
+    /// this path carries the user's Stash username and password.
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest,
+        completionHandler: @escaping (URLRequest?) -> Void
+    ) {
+        let to = request.url?.host?.lowercased() ?? ""
+        if to.isEmpty || to != allowedHost {
+            completionHandler(nil)
+            return
+        }
+        completionHandler(request)
+    }
 
     func urlSession(
         _ session: URLSession,
@@ -235,6 +290,7 @@ private final class TrustAllSessionDelegate: NSObject,
         ) -> Void
     ) {
         if allowInsecure,
+            challenge.protectionSpace.host.lowercased() == allowedHost,
             challenge.protectionSpace.authenticationMethod
                 == NSURLAuthenticationMethodServerTrust,
             let trust = challenge.protectionSpace.serverTrust
