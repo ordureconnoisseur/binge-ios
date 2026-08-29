@@ -7,7 +7,13 @@ set -euo pipefail
 export PATH="/opt/homebrew/bin:$PATH"
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
-BUNDLE_ID="com.ordureconnoisseur.binge"
+# Read from project.yml rather than hardcoded, so the install and the
+# launch cannot disagree. They did: the id changed to bingeios, the app
+# installed correctly under the new one, and this line still tried to
+# launch the old one - reported as "invalid code signature", which sent
+# the diagnosis somewhere it had no business going.
+BUNDLE_ID="$(awk '/PRODUCT_BUNDLE_IDENTIFIER:/ {print $2; exit}' "$REPO/project.yml")"
+[ -n "$BUNDLE_ID" ] || { echo "no PRODUCT_BUNDLE_IDENTIFIER in project.yml" >&2; exit 1; }
 DERIVED="$REPO/build/DerivedData"
 
 cd "$REPO"
