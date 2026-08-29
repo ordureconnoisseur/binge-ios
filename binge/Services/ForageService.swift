@@ -59,20 +59,25 @@ enum ForageService {
         }
         let task = Task { @MainActor in await seedFromPluginConfig() }
         seedTask = task
-        await task.value
+        // Same reasoning as BingeServerService.ensureURLSeeded: a bail
+        // because setup has not happened yet is not a result worth
+        // remembering, or the seed never runs again this launch.
+        if await task.value == false { seedTask = nil }
     }
 
-    @MainActor private static var seedTask: Task<Void, Never>?
+    @MainActor private static var seedTask: Task<Bool, Never>?
 
     @MainActor
-    private static func seedFromPluginConfig() async {
+    /// Returns whether the question is settled: true once Stash has
+    /// been asked, false when it could not be asked yet.
+    private static func seedFromPluginConfig() async -> Bool {
         let existing = (
             UserDefaults.standard.string(forKey: urlStorageKey) ?? ""
         ).trimmingCharacters(in: .whitespacesAndNewlines)
-        if !existing.isEmpty { return }  // user set it
+        if !existing.isEmpty { return true }  // user set it
         let baseURL = UserDefaults.standard.string(forKey: "binge.stashUrl")
             ?? ""
-        if baseURL.isEmpty { return }
+        if baseURL.isEmpty { return false }  // ask again after setup
         let apiKey = KeychainStore.shared.stashApiKey
 
         struct Resp: Decodable {
@@ -100,8 +105,11 @@ enum ForageService {
             if !url.isEmpty, BingeServerService.isTrustedURL(url) {
                 UserDefaults.standard.set(url, forKey: urlStorageKey)
             }
+            return true
         } catch {
-            // Stash unreachable / no config — feature stays off.
+            // Stash unreachable - feature stays off, and the next call
+            // asks again rather than settling on a network blip.
+            return false
         }
     }
 

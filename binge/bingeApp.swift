@@ -12,6 +12,9 @@ struct BingeApp: App {
     // multiview-ios while binge is backgrounded, and a warm resume
     // would otherwise keep showing the stale set.
     @Environment(\.scenePhase) private var scenePhase
+    // Only so the seed below can re-run when it changes. Nothing
+    // here renders it.
+    @AppStorage("binge.stashUrl") private var stashUrl: String = ""
 
     init() {
         // Restore the Stash URL from its Keychain mirror before
@@ -77,10 +80,19 @@ struct BingeApp: App {
         WindowGroup {
             RootView()
                 .preferredColorScheme(.dark)
-                .task {
+                .task(id: stashUrl) {
                     // Let Stash's plugin config supply the binge-server
                     // URL when the user hasn't set one — the loopback
                     // default is never the daemon on a phone.
+                    //
+                    // Keyed on the Stash URL, because on a fresh install
+                    // the first run of this happens before setup, when
+                    // there is no server to ask. Without the key it
+                    // would ask once, too early, and the daemon URL
+                    // would sit empty until the next launch - which is
+                    // what made it look like a field you had to fill in
+                    // yourself.
+                    guard !stashUrl.isEmpty else { return }
                     await BingeServerService.ensureURLSeeded()
                 }
                 .onChange(of: scenePhase) { _, phase in

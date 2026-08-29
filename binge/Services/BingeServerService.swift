@@ -106,20 +106,31 @@ enum BingeServerService {
         }
         let task = Task { @MainActor in await seedFromPluginConfig() }
         seedTask = task
-        await task.value
+        // Only remember the attempt if it could reach a conclusion.
+        // This runs at launch, and on a fresh install that is before
+        // first-run setup has a Stash URL to ask - so it bails with
+        // nothing to do. Memoising THAT meant the seed never ran again
+        // for the life of the process: setup finished, the daemon URL
+        // stayed empty, and the field read as something the app wanted
+        // typed in by hand when Stash had known the answer all along.
+        if await task.value == false { seedTask = nil }
     }
 
-    @MainActor private static var seedTask: Task<Void, Never>?
+    @MainActor private static var seedTask: Task<Bool, Never>?
 
     @MainActor
-    private static func seedFromPluginConfig() async {
+    /// Returns whether the question is settled: true once Stash has
+    /// actually been asked (or there is nothing to ask about),
+    /// false when it could not be asked yet and the caller should
+    /// try again later.
+    private static func seedFromPluginConfig() async -> Bool {
         let existing = (
             UserDefaults.standard.string(forKey: urlStorageKey) ?? ""
         ).trimmingCharacters(in: .whitespacesAndNewlines)
-        if !existing.isEmpty { return }  // user set it
+        if !existing.isEmpty { return true }  // user set it
         let baseURL = UserDefaults.standard.string(forKey: "binge.stashUrl")
             ?? ""
-        if baseURL.isEmpty { return }  // not configured yet
+        if baseURL.isEmpty { return false }  // ask again after setup
         let apiKey = KeychainStore.shared.stashApiKey
 
         struct Resp: Decodable {
@@ -151,9 +162,16 @@ enum BingeServerService {
             } else if !url.isEmpty {
                 print("[bingeServer] ignoring untrusted seeded URL")
             }
+            // Asked and answered, even if the answer was unusable.
+            // Re-asking would return the same thing every call.
+            return true
         } catch {
-            // Stash unreachable / no config — keep the default.
+            // Stash unreachable - keep the default and try again on the
+            // next call rather than settling. A cold launch can beat the
+            // network up, and that is not a reason to spend the whole
+            // session with no daemon URL.
             print("[bingeServer] URL seed skipped: \(error)")
+            return false
         }
     }
 
