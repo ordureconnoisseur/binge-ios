@@ -41,7 +41,17 @@ targets:
         CFBundleVersion: "1"
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.ordureconnoisseur.binge
+        # bingeios, not binge. Apple refused to re-register
+        # com.ordureconnoisseur.binge ("cannot be registered to your
+        # development team because it is not available") after every
+        # provisioning profile on the build machine disappeared, so the
+        # identifier was re-registered under a new name.
+        #
+        # iOS keys the keychain and UserDefaults off the bundle id, so
+        # this installs as a SEPARATE app: the Stash URL, the API key
+        # and every setting start empty, and the old binge stays on the
+        # home screen until it is deleted by hand.
+        PRODUCT_BUNDLE_IDENTIFIER: com.ordureconnoisseur.bingeios
         TARGETED_DEVICE_FAMILY: "1"  # iPhone-only for v0.1
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         # Personal (free) Apple ID team; needed so headless
