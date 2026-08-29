@@ -7,17 +7,22 @@ set -euo pipefail
 export PATH="/opt/homebrew/bin:$PATH"
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
-# Read from project.yml rather than hardcoded, so the install and the
-# launch cannot disagree. They did: the id changed to bingeios, the app
-# installed correctly under the new one, and this line still tried to
-# launch the old one - reported as "invalid code signature", which sent
-# the diagnosis somewhere it had no business going.
-BUNDLE_ID="$(awk '/PRODUCT_BUNDLE_IDENTIFIER:/ {print $2; exit}' "$REPO/project.yml")"
-[ -n "$BUNDLE_ID" ] || { echo "no PRODUCT_BUNDLE_IDENTIFIER in project.yml" >&2; exit 1; }
 DERIVED="$REPO/build/DerivedData"
 
 cd "$REPO"
 git pull --ff-only
+
+# After the pull, not before. Read from project.yml rather than
+# hardcoded, so the install and the launch cannot disagree - they did
+# once: the id changed to bingeios, the app installed correctly under
+# the new one, and the launch still used the old one, reported as
+# "invalid code signature", which sent the diagnosis somewhere it had
+# no business going. Reading it before the pull reintroduces the same
+# bug one run later, because the value would come from the previous
+# commit's project.yml while the build uses this one's.
+BUNDLE_ID="$(awk '/PRODUCT_BUNDLE_IDENTIFIER:/ {print $2; exit}' "$REPO/project.yml")"
+[ -n "$BUNDLE_ID" ] || { echo "no PRODUCT_BUNDLE_IDENTIFIER in project.yml" >&2; exit 1; }
+echo "bundle id: $BUNDLE_ID"
 xcodegen generate
 
 # Target the device SDK directly rather than -destination
