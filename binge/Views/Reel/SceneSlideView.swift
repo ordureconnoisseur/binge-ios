@@ -332,32 +332,43 @@ struct SceneSlideView: View {
             // and the nav read as one piece of chrome instead of three
             // things floating separately.
             //
-            // Masked rather than a plain material: an even frost across
-            // the band would cut a hard horizontal line across the
-            // video. The gradient makes it arrive gradually and reach
-            // full strength behind the nav.
-            VStack(spacing: 0) {
-                Spacer()
-                Rectangle()
-                    .fill(.ultraThinMaterial)
-                    .mask(
-                        LinearGradient(
-                            stops: [
-                                .init(color: .clear, location: 0),
-                                .init(
-                                    color: .black.opacity(0.5),
-                                    location: 0.45
-                                ),
-                                .init(color: .black, location: 1),
-                            ],
-                            startPoint: .top,
-                            endPoint: .bottom
+            // Full strength from the scrub bar down, not a fade to it.
+            //
+            // The gradient used to run from clear at the scrub bar to
+            // solid only at the screen edge, so the strip actually
+            // carrying the caption and the nav was the least frosted
+            // part of it and the video read straight through. The scrub
+            // bar is where chrome begins; below it nothing should
+            // compete with the controls. The fade survives as a short
+            // lead-in at the top, which is all it was ever needed for -
+            // stopping the frost cutting a hard line across the video.
+            //
+            // The height is measured rather than assumed. It used to
+            // add a literal 34, which is this phone's home indicator
+            // and nothing else: the band anchors to the screen bottom
+            // while the scrub bar anchors to the safe area, so on a
+            // device with any other bottom inset the two would not have
+            // lined up at all. The GeometryReader sits outside the
+            // ignoresSafeArea so it still reports the real inset.
+            GeometryReader { geo in
+                VStack(spacing: 0) {
+                    Spacer()
+                    Rectangle()
+                        .fill(.regularMaterial)
+                        .mask(
+                            Self.frostMask(
+                                height: BingeBottomNav.scrubClearance
+                                    + geo.safeAreaInsets.bottom
+                            )
                         )
-                    )
-                    .frame(height: BingeBottomNav.scrubClearance + 34)
+                        .frame(
+                            height: BingeBottomNav.scrubClearance
+                                + geo.safeAreaInsets.bottom
+                        )
+                }
+                .ignoresSafeArea(edges: .bottom)
             }
             .allowsHitTesting(false)
-            .ignoresSafeArea(edges: .bottom)
 
             VStack(spacing: 0) {
                 Spacer()
@@ -1108,6 +1119,25 @@ struct SceneSlideView: View {
     // (matches the preview thumbnail's actual render size) so we
     // don't decode a full-frame for what becomes a 124pt-wide
     // floating box.
+    /// Mask for the bottom frost: a short fade in at the top, solid
+    /// for the rest of the band.
+    ///
+    /// The lead-in is a length in points converted to a fraction, not a
+    /// fraction written directly, so it stays the same thickness
+    /// whatever the device's bottom inset does to the band height.
+    private static func frostMask(height: CGFloat) -> LinearGradient {
+        let lead = min(14 / max(height, 1), 1)
+        return LinearGradient(
+            stops: [
+                .init(color: .clear, location: 0),
+                .init(color: .black, location: lead),
+                .init(color: .black, location: 1),
+            ],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+    }
+
     private func generateThumbnail(at ratio: Double) async -> UIImage? {
         guard let item = player?.currentItem,
               let dur = scene.files.first?.duration,
