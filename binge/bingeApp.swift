@@ -94,6 +94,12 @@ struct BingeApp: App {
                     // yourself.
                     guard !stashUrl.isEmpty else { return }
                     await BingeServerService.ensureURLSeeded()
+                    // Forage's URL comes from the same place and was
+                    // only ever seeded by a forage call, so the field
+                    // sat empty until something happened to use it.
+                    // Seeding it here costs one query it would have
+                    // made anyway.
+                    await ForageService.ensureURLSeeded()
                 }
                 .onChange(of: scenePhase) { _, phase in
                     if phase == .active {
