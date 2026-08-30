@@ -354,7 +354,12 @@ struct SceneSlideView: View {
                 VStack(spacing: 0) {
                     Spacer()
                     Rectangle()
-                        .fill(.regularMaterial)
+                        // ultraThin, not regular. The band needed to
+                        // COVER the whole strip below the scrub bar,
+                        // which it did not; it never needed to be more
+                        // opaque. regularMaterial blacked the video out
+                        // down there instead of frosting it.
+                        .fill(.ultraThinMaterial)
                         .mask(
                             Self.frostMask(
                                 height: BingeBottomNav.scrubClearance
