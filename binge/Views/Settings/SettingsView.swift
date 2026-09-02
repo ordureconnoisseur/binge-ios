@@ -841,6 +841,16 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("This address is not being used yet")
                         .font(.footnote.weight(.semibold))
+                    // An address the user never typed needs to say
+                    // where it came from, or the question below reads
+                    // as the app asking them to vouch for a stranger.
+                    if BingeServerService.currentURLCameFromStash() {
+                        Text(
+                            "Your Stash's binge plugin config suggested it."
+                        )
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    }
                     Text(
                         // Not "it is a public address". The banner also
                         // fires on a schemeless LAN entry and on a

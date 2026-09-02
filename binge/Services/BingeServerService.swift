@@ -150,17 +150,32 @@ enum BingeServerService {
             )
             let url = (r.configuration.plugins.binge?.serverUrl ?? "")
                 .trimmingCharacters(in: .whitespacesAndNewlines)
-            // Stored only if it is somewhere credentials could go
-            // anyway. This value comes off the Stash server rather than
-            // from the person holding the phone, so accepting it
-            // unchecked let anyone who can write that plugin config
-            // choose where the app points. Storing a URL we would then
-            // refuse to authenticate is the worst of both: the feeds
-            // fail and the reason is invisible.
-            if !url.isEmpty, isTrustedURL(url) {
+            // Stored whether or not it is trusted. Trust is decided at
+            // the moment credentials would be sent, by isTrustedURL on
+            // currentURL(), and this value comes off the Stash server
+            // rather than from the person holding the phone, so storing
+            // it hands over nothing: an untrusted address gets the
+            // unauthenticated probes and no key.
+            //
+            // It used to be dropped here instead, on the theory that
+            // storing a URL the app would then refuse to authenticate
+            // left the feeds failing for an invisible reason. But
+            // dropping it left the field EMPTY, which is the same
+            // failure with even less to look at: the phone quietly
+            // talked to localhost, meaning itself, and the one screen
+            // built for this case, the "not being used yet" banner in
+            // Settings with its "Use this address" button, never got a
+            // URL to show. A Funnel name in the plugin config, which is
+            // the normal way a phone reaches the daemon at all, is
+            // untrusted unless Stash is on the same tailnet, so this
+            // was the common path, not the edge.
+            if !url.isEmpty {
                 UserDefaults.standard.set(url, forKey: urlStorageKey)
-            } else if !url.isEmpty {
-                print("[bingeServer] ignoring untrusted seeded URL")
+                UserDefaults.standard.set(url, forKey: seededURLKey)
+                if !isTrustedURL(url) {
+                    print("[bingeServer] seeded URL is not trusted yet; "
+                        + "Settings will ask before sending the key")
+                }
             }
             // Asked and answered, even if the answer was unusable.
             // Re-asking would return the same thing every call.
@@ -173,6 +188,19 @@ enum BingeServerService {
             print("[bingeServer] URL seed skipped: \(error)")
             return false
         }
+    }
+
+    /// The value the seed above last wrote, so Settings can say where an
+    /// address the user never typed came from. Compared against
+    /// currentURL() rather than cleared on edit: once the field says
+    /// something else the claim stops being true on its own.
+    static let seededURLKey = "binge.bingeServerUrlSeededFrom"
+
+    static func currentURLCameFromStash() -> Bool {
+        let seeded = (UserDefaults.standard.string(forKey: seededURLKey) ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: .init(charactersIn: "/"))
+        return !seeded.isEmpty && seeded == currentURL()
     }
 
     static func currentURL() -> String {
