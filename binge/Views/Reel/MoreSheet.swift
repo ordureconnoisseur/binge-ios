@@ -6,6 +6,7 @@ import SwiftUI
 // option for v0.2; future items slot in as additional rows.
 struct MoreSheet: View {
     @AppStorage("binge.autoScroll") private var autoScroll: Bool = false
+    @AppStorage("binge.reelCropToFit") private var cropToFit: Bool = false
 
     @Environment(\.dismiss) private var dismiss
 
@@ -20,6 +21,16 @@ struct MoreSheet: View {
                         isOn: Binding(
                             get: { autoScroll },
                             set: { autoScroll = $0 }
+                        )
+                    )
+                    row(
+                        title: "Crop to fit",
+                        subtitle: "portrait scenes fill the screen above "
+                            + "the seek bar. Landscape scenes are never "
+                            + "cropped",
+                        isOn: Binding(
+                            get: { cropToFit },
+                            set: { cropToFit = $0 }
                         )
                     )
                 }
@@ -38,7 +49,7 @@ struct MoreSheet: View {
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbarColorScheme(.dark, for: .navigationBar)
         }
-        .presentationDetents([.height(220)])
+        .presentationDetents([.height(300)])
         .presentationDragIndicator(.visible)
     }
 

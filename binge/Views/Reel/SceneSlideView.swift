@@ -105,6 +105,18 @@ struct SceneSlideView: View {
 
     @State private var presentedPerformerId: String?
     @State private var moreOpen: Bool = false
+    /// Crop to fit, from the More sheet. Portrait scenes only: the
+    /// picture fills the screen down to the scrub bar and the
+    /// reflection fills the frosted strip below, so the crop is as
+    /// small as it can be. A landscape scene is never cropped; filling
+    /// a phone screen with one would throw most of it away.
+    @AppStorage("binge.reelCropToFit") private var cropToFit: Bool = false
+
+    private var isPortrait: Bool {
+        guard let f = scene.files.first, let w = f.width, let h = f.height
+        else { return false }
+        return h > w
+    }
     @State private var saveOpen: Bool = false
     @State private var rateOpen: Bool = false
     /// True while the user is long-pressing the video. Pauses
@@ -150,10 +162,38 @@ struct SceneSlideView: View {
             }
 
             if let player {
-                // The 22pt below this view is the reflection's room:
-                // see PlayerUIView.reflectsBelow.
-                VideoPlayerView(player: player, reflectsBelow: 22)
-                    .padding(.vertical, 22)
+                Group {
+                    if cropToFit && isPortrait {
+                        // The picture gets everything above the frost
+                        // band and is cropped, as little as needed, to
+                        // fill it; the band itself is the reflection.
+                        // Measured against the real bottom inset, like
+                        // the band, so the two meet at the scrub bar.
+                        GeometryReader { geo in
+                            let band =
+                                BingeBottomNav.scrubClearance
+                                + geo.safeAreaInsets.bottom
+                            let visible =
+                                geo.size.height + geo.safeAreaInsets.bottom
+                                - band
+                            VideoPlayerView(
+                                player: player,
+                                reflectsBelow: band,
+                                gravity: .resizeAspectFill
+                            )
+                            .frame(
+                                width: geo.size.width,
+                                height: max(visible, 1),
+                                alignment: .top
+                            )
+                        }
+                    } else {
+                        // The 22pt below this view is the reflection's
+                        // room: see PlayerUIView.reflectsBelow.
+                        VideoPlayerView(player: player, reflectsBelow: 22)
+                            .padding(.vertical, 22)
+                    }
+                }
                     // Double-tap → like, anywhere. Hold to pause;
                     // release resumes. Pause MUST happen in `perform`
                     // (fires once, AFTER minimumDuration), NOT in

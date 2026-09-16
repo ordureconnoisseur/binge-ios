@@ -18,6 +18,9 @@ struct VideoPlayerView: UIViewRepresentable {
     /// view's edge. nil, the default, draws no reflection, which is
     /// what the feed card, story viewer and scene sheet want.
     var reflectsBelow: CGFloat? = nil
+    /// Aspect-fit by default. The reel passes aspect-fill for Crop to
+    /// fit; see SceneSlideView.
+    var gravity: AVLayerVideoGravity = .resizeAspect
     // Showcase mode — frost the live video for safe capture. @AppStorage
     // makes SwiftUI re-run updateUIView when the setting flips. All four
     // video surfaces (reel, feed card, story viewer, scene sheet) reuse
@@ -35,7 +38,7 @@ struct VideoPlayerView: UIViewRepresentable {
         // The slide's own black background fills the leftover area,
         // producing clean letterbox bars rather than the next
         // slide's frame bleeding to the edges of the visible video.
-        view.playerLayer.videoGravity = .resizeAspect
+        view.playerLayer.videoGravity = gravity
         view.backgroundColor = .black
         view.reflectsBelow = reflectsBelow
         return view
@@ -43,6 +46,10 @@ struct VideoPlayerView: UIViewRepresentable {
 
     func updateUIView(_ uiView: PlayerUIView, context: Context) {
         uiView.playerLayer.player = player
+        if uiView.playerLayer.videoGravity != gravity {
+            uiView.playerLayer.videoGravity = gravity
+            uiView.setNeedsLayout()
+        }
         uiView.reflectsBelow = reflectsBelow
         uiView.setShowcaseBlurred(showcaseBlur)
     }
@@ -173,13 +180,17 @@ final class PlayerUIView: UIView {
         let rect = playerLayer.videoRect
         let H = bounds.height
         let W = bounds.width
-        // Distance from the picture's bottom edge to the screen edge,
-        // and the strip the scrub bar leaves below itself.
-        let gap = (H + bleed) - rect.maxY
+        // The picture's visible bottom edge. Under aspect-fill the
+        // videoRect runs past the layer, which clips it, so the edge
+        // that matters is the layer's own.
+        let pictureBottom = min(rect.maxY, H)
+        // Distance from that edge to the screen edge, and the strip
+        // the scrub bar leaves below itself.
+        let gap = (H + bleed) - pictureBottom
         let band =
             BingeBottomNav.scrubClearance
             + (window?.safeAreaInsets.bottom ?? 0)
-        guard rect.width > 0, gap > 0.5, gap < band, W > 0 else {
+        guard rect.width > 0, gap > 0.5, gap <= band + 0.5, W > 0 else {
             mirrorClip?.isHidden = true
             return
         }
@@ -206,6 +217,9 @@ final class PlayerUIView: UIView {
         if mirror.player !== playerLayer.player {
             mirror.player = playerLayer.player
         }
+        if mirror.videoGravity != playerLayer.videoGravity {
+            mirror.videoGravity = playerLayer.videoGravity
+        }
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         clip.isHidden = false
@@ -215,7 +229,7 @@ final class PlayerUIView: UIView {
         // the clip's top edge: the picture's bottom row is the first
         // row of the reflection.
         mirror.bounds = CGRect(x: 0, y: 0, width: W, height: H)
-        mirror.position = CGPoint(x: W / 2, y: rect.maxY - H / 2)
+        mirror.position = CGPoint(x: W / 2, y: pictureBottom - H / 2)
         CATransaction.commit()
     }
 
