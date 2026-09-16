@@ -29,6 +29,28 @@ struct RootView: View {
         #endif
     }
 
+    init() {
+        Self.seedFromLaunchArguments
+    }
+
+    /// `-seedStashApiKey <key>` stores the key as first-run setup would,
+    /// so the simulator can be pointed at a Stash from the command line
+    /// (`-binge.stashUrl` is read by UserDefaults on its own). Test-only:
+    /// the simulator has no scriptable tap to get through setup, and
+    /// the reel is the screen that needs seeing.
+    private static let seedFromLaunchArguments: Void = {
+        #if DEBUG
+            let args = CommandLine.arguments
+            if let i = args.firstIndex(of: "-seedStashApiKey"),
+                i + 1 < args.count
+            {
+                MainActor.assumeIsolated {
+                    KeychainStore.shared.stashApiKey = args[i + 1]
+                }
+            }
+        #endif
+    }()
+
     var body: some View {
         let configured = !stashUrl.isEmpty && !stashApiKey.isEmpty
         // Design harness, launch-argument only and debug-only. See
@@ -89,7 +111,35 @@ private struct MainShell: View {
     @State private var reelNavigator = ReelNavigator()
     // Reel's active saved filter (set via FilterSheet). Shared
     // across the app so re-entering For You preserves the filter.
-    @State private var filterNavigator = FilterNavigator()
+    @State private var filterNavigator = MainShell.launchFilter()
+
+    /// `-reelPathFilter <text>` starts the reel filtered to scenes
+    /// whose path contains the text. Test-only, for the same reason as
+    /// -startTab: the random reel cannot be told which scene to show,
+    /// and a screenshot needs a known one.
+    private static func launchFilter() -> FilterNavigator {
+        let nav = MainActor.assumeIsolated { FilterNavigator() }
+        #if DEBUG
+            let args = CommandLine.arguments
+            if let i = args.firstIndex(of: "-reelPathFilter"),
+                i + 1 < args.count
+            {
+                let filter = StashSavedFilter(
+                    id: "binge.debug.path",
+                    name: "#\(args[i + 1])",
+                    findFilter: nil,
+                    objectFilter: .object([
+                        "path": .object([
+                            "value": .string(args[i + 1]),
+                            "modifier": .string("INCLUDES"),
+                        ])
+                    ])
+                )
+                MainActor.assumeIsolated { nav.active = filter }
+            }
+        #endif
+        return nav
+    }
 
     @AppStorage("binge.stashUrl") private var stashUrl: String = ""
     private var stashApiKey: String { KeychainStore.shared.stashApiKey }

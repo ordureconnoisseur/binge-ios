@@ -150,7 +150,9 @@ struct SceneSlideView: View {
             }
 
             if let player {
-                VideoPlayerView(player: player)
+                // The 22pt below this view is the reflection's room:
+                // see PlayerUIView.reflectsBelow.
+                VideoPlayerView(player: player, reflectsBelow: 22)
                     .padding(.vertical, 22)
                     // Double-tap → like, anywhere. Hold to pause;
                     // release resumes. Pause MUST happen in `perform`
@@ -321,27 +323,26 @@ struct SceneSlideView: View {
             // Right inset (.padding(.trailing, 76)) reserves a gap
             // so a long performer name + studio line can't run
             // under the action stack on the right.
-            // Progressive frost along the bottom, under the caption
-            // and the chrome but over the video.
+            // One frost from the scrub bar down, under the caption and
+            // the chrome but over the video and its reflection.
             //
             // Without it the capsule is a lone bright object on
             // whatever the video happens to be doing underneath, and
             // white caption text competes with it. The reference lays a
-            // blur over the whole bottom band starting just above the
-            // scrub bar, which is what makes the scrub bar, the caption
-            // and the nav read as one piece of chrome instead of three
+            // blur over the whole bottom band starting at the scrub
+            // bar, which is what makes the scrub bar, the caption and
+            // the nav read as one piece of chrome instead of three
             // things floating separately.
             //
-            // Full strength from the scrub bar down, not a fade to it.
-            //
-            // The gradient used to run from clear at the scrub bar to
-            // solid only at the screen edge, so the strip actually
-            // carrying the caption and the nav was the least frosted
-            // part of it and the video read straight through. The scrub
-            // bar is where chrome begins; below it nothing should
-            // compete with the controls. The fade survives as a short
-            // lead-in at the top, which is all it was ever needed for -
-            // stopping the frost cutting a hard line across the video.
+            // Hard top edge, on purpose. This used to be masked with a
+            // gradient: first a long fade that left the strip carrying
+            // the caption the least frosted part of it, then a short
+            // lead-in. Either way the band read as a gradient dying
+            // into the picture rather than a surface the chrome sits
+            // on, and over the black below the picture it came out as
+            // a grey wash. The scrub bar is where the chrome begins;
+            // everything under it is one material, and the reflection
+            // gives that material a picture to frost instead of black.
             //
             // The height is measured rather than assumed. It used to
             // add a literal 34, which is this phone's home indicator
@@ -360,12 +361,6 @@ struct SceneSlideView: View {
                         // opaque. regularMaterial blacked the video out
                         // down there instead of frosting it.
                         .fill(.ultraThinMaterial)
-                        .mask(
-                            Self.frostMask(
-                                height: BingeBottomNav.scrubClearance
-                                    + geo.safeAreaInsets.bottom
-                            )
-                        )
                         .frame(
                             height: BingeBottomNav.scrubClearance
                                 + geo.safeAreaInsets.bottom
@@ -1124,25 +1119,6 @@ struct SceneSlideView: View {
     // (matches the preview thumbnail's actual render size) so we
     // don't decode a full-frame for what becomes a 124pt-wide
     // floating box.
-    /// Mask for the bottom frost: a short fade in at the top, solid
-    /// for the rest of the band.
-    ///
-    /// The lead-in is a length in points converted to a fraction, not a
-    /// fraction written directly, so it stays the same thickness
-    /// whatever the device's bottom inset does to the band height.
-    private static func frostMask(height: CGFloat) -> LinearGradient {
-        let lead = min(14 / max(height, 1), 1)
-        return LinearGradient(
-            stops: [
-                .init(color: .clear, location: 0),
-                .init(color: .black, location: lead),
-                .init(color: .black, location: 1),
-            ],
-            startPoint: .top,
-            endPoint: .bottom
-        )
-    }
-
     private func generateThumbnail(at ratio: Double) async -> UIImage? {
         guard let item = player?.currentItem,
               let dur = scene.files.first?.duration,

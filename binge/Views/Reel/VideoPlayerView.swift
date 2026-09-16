@@ -13,6 +13,11 @@ import SwiftUI
 // drives attach/detach + the showcase-blur frost below.
 struct VideoPlayerView: UIViewRepresentable {
     let player: AVPlayer
+    /// Reel only. How far the screen continues below this view, in
+    /// points; the reflection runs to the screen edge, not to the
+    /// view's edge. nil, the default, draws no reflection, which is
+    /// what the feed card, story viewer and scene sheet want.
+    var reflectsBelow: CGFloat? = nil
     // Showcase mode — frost the live video for safe capture. @AppStorage
     // makes SwiftUI re-run updateUIView when the setting flips. All four
     // video surfaces (reel, feed card, story viewer, scene sheet) reuse
@@ -32,11 +37,13 @@ struct VideoPlayerView: UIViewRepresentable {
         // slide's frame bleeding to the edges of the visible video.
         view.playerLayer.videoGravity = .resizeAspect
         view.backgroundColor = .black
+        view.reflectsBelow = reflectsBelow
         return view
     }
 
     func updateUIView(_ uiView: PlayerUIView, context: Context) {
         uiView.playerLayer.player = player
+        uiView.reflectsBelow = reflectsBelow
         uiView.setShowcaseBlurred(showcaseBlur)
     }
 }
@@ -48,6 +55,93 @@ struct VideoPlayerView: UIViewRepresentable {
 final class PlayerUIView: UIView {
     override class var layerClass: AnyClass { AVPlayerLayer.self }
     var playerLayer: AVPlayerLayer { layer as! AVPlayerLayer }
+
+    // The reflection under the picture.
+    //
+    // A portrait picture on this phone ends about 77pt short of the
+    // screen edge, just under the scrub bar, and that strip was bare
+    // black under the floating nav. When the picture ends after the
+    // scrub bar and before the screen edge, its bottom is appended
+    // vertically mirrored so the picture runs to the edge as a
+    // reflection; the frost in SceneSlideView then lies over both.
+    //
+    // A second AVPlayerLayer on the SAME player, not a second player:
+    // the pool's whole point is that each slide costs one decoder.
+    // Where the picture sits comes from the main layer's own videoRect,
+    // which already accounts for the file's rotation and the gravity,
+    // so the seam at the picture's bottom edge is continuous.
+    var reflectsBelow: CGFloat? {
+        didSet {
+            if reflectsBelow == nil { tearDownMirror() }
+            setNeedsLayout()
+        }
+    }
+    private var mirrorClip: CALayer?
+    private var mirrorLayer: AVPlayerLayer?
+    private var videoRectObservation: NSKeyValueObservation?
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        layoutMirror()
+    }
+
+    private func tearDownMirror() {
+        videoRectObservation = nil
+        mirrorClip?.removeFromSuperlayer()
+        mirrorClip = nil
+        mirrorLayer = nil
+    }
+
+    private func layoutMirror() {
+        guard let bleed = reflectsBelow else { return }
+        let rect = playerLayer.videoRect
+        let H = bounds.height
+        let W = bounds.width
+        // Distance from the picture's bottom edge to the screen edge,
+        // and the strip the scrub bar leaves below itself.
+        let gap = (H + bleed) - rect.maxY
+        let band =
+            BingeBottomNav.scrubClearance
+            + (window?.safeAreaInsets.bottom ?? 0)
+        guard rect.width > 0, gap > 0.5, gap < band, W > 0 else {
+            mirrorClip?.isHidden = true
+            return
+        }
+        if mirrorClip == nil {
+            let clip = CALayer()
+            clip.masksToBounds = true
+            let mirror = AVPlayerLayer()
+            mirror.videoGravity = .resizeAspect
+            // Flipped about its own centre. position is the centre in
+            // the clip's coordinates and is not affected by the flip.
+            mirror.transform = CATransform3DMakeScale(1, -1, 1)
+            clip.addSublayer(mirror)
+            layer.addSublayer(clip)
+            mirrorClip = clip
+            mirrorLayer = mirror
+            // The picture's rect changes when the item becomes ready
+            // and when the stream is swapped for the HEVC fallback.
+            videoRectObservation = playerLayer.observe(\.videoRect) {
+                [weak self] _, _ in
+                DispatchQueue.main.async { self?.layoutMirror() }
+            }
+        }
+        guard let clip = mirrorClip, let mirror = mirrorLayer else { return }
+        if mirror.player !== playerLayer.player {
+            mirror.player = playerLayer.player
+        }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        clip.isHidden = false
+        clip.frame = CGRect(x: 0, y: rect.maxY, width: W, height: gap)
+        // Same size as the main layer, so the picture lands in the same
+        // place, then slid up so the flipped picture's top edge meets
+        // the clip's top edge: the picture's bottom row is the first
+        // row of the reflection.
+        mirror.bounds = CGRect(x: 0, y: 0, width: W, height: H)
+        mirror.position = CGPoint(x: W / 2, y: rect.maxY - H / 2)
+        CATransaction.commit()
+    }
 
     // Showcase-mode blur: a UIVisualEffectView laid over the player
     // layer, sampling the live AVPlayerLayer as its backdrop (the render
@@ -88,6 +182,7 @@ final class PlayerUIView: UIView {
     }
 
     deinit {
+        videoRectObservation = nil
         // A property animator left paused/active throws when released
         // ("error to release a paused or stopped property animator").
         // Drive it to a releasable state before this view deallocs.
