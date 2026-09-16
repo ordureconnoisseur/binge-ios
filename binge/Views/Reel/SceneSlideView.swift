@@ -354,13 +354,9 @@ struct SceneSlideView: View {
             GeometryReader { geo in
                 VStack(spacing: 0) {
                     Spacer()
-                    Rectangle()
-                        // ultraThin, not regular. The band needed to
-                        // COVER the whole strip below the scrub bar,
-                        // which it did not; it never needed to be more
-                        // opaque. regularMaterial blacked the video out
-                        // down there instead of frosting it.
-                        .fill(.ultraThinMaterial)
+                    // A tunable frost, not a Material: see ReelFrost
+                    // for why the system one was too much.
+                    ReelFrost()
                         .frame(
                             height: BingeBottomNav.scrubClearance
                                 + geo.safeAreaInsets.bottom

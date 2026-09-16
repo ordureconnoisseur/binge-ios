@@ -48,6 +48,82 @@ struct VideoPlayerView: UIViewRepresentable {
     }
 }
 
+// The frost under the reel's scrub bar.
+//
+// Not a SwiftUI material. .ultraThinMaterial is the lightest one
+// there is and it was still too much: it blurs at the full system
+// radius, and its tint lifts a black frame to grey, so on a dark
+// scene the strip below the scrub bar lit up. Neither is adjustable
+// on a Material. This is the same construction as the showcase blur
+// above, a UIVisualEffectView held partway through its animation so
+// the blur is a fraction of the system radius, in the dark variant,
+// with a black veil so black stays black and colour underneath is
+// dimmed rather than brightened. The two numbers are the whole
+// design and live here so they can be tuned in one place.
+struct ReelFrost: UIViewRepresentable {
+    /// Share of the system blur radius. 1 is the full ultra-thin blur.
+    var strength: CGFloat = 0.45
+    /// Black laid over the blur, 0 to 1.
+    var veil: CGFloat = 0.32
+
+    func makeUIView(context: Context) -> FrostUIView {
+        let view = FrostUIView()
+        view.apply(strength: strength, veil: veil)
+        return view
+    }
+
+    func updateUIView(_ uiView: FrostUIView, context: Context) {
+        uiView.apply(strength: strength, veil: veil)
+    }
+}
+
+final class FrostUIView: UIView {
+    private let effectView = UIVisualEffectView(effect: nil)
+    private let veilView = UIView()
+    private var animator: UIViewPropertyAnimator?
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        isUserInteractionEnabled = false
+        effectView.frame = bounds
+        effectView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        addSubview(effectView)
+        veilView.frame = bounds
+        veilView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        veilView.backgroundColor = .black
+        addSubview(veilView)
+    }
+
+    required init?(coder: NSCoder) { nil }
+
+    func apply(strength: CGFloat, veil: CGFloat) {
+        if animator == nil {
+            let a = UIViewPropertyAnimator(duration: 1, curve: .linear) {
+                [effectView] in
+                effectView.effect = UIBlurEffect(
+                    style: .systemUltraThinMaterialDark
+                )
+            }
+            a.pausesOnCompletion = true
+            animator = a
+        }
+        animator?.fractionComplete = min(max(strength, 0.01), 1)
+        veilView.alpha = min(max(veil, 0), 1)
+    }
+
+    deinit {
+        // See PlayerUIView.deinit: a paused animator throws on release.
+        if let a = animator {
+            switch a.state {
+            case .active: a.stopAnimation(true)
+            case .stopped: a.finishAnimation(at: .current)
+            case .inactive: break
+            @unknown default: break
+            }
+        }
+    }
+}
+
 // Tiny UIView subclass whose backing layer is an AVPlayerLayer.
 // Standard pattern — overriding `layerClass` is what AVKit's own
 // AVPlayerView does, and it's the cleanest way to keep the player
